@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
+#root {
+  min-height: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Default = Laranja. Admin pode trocar via `applyUiAccent` (settings.ui_accent). */
+:root {
+  --amber-50: 255 251 235;
+  --amber-100: 254 243 199;
+  --amber-200: 253 230 138;
+  --amber-300: 252 211 77;
+  --amber-400: 251 191 36;
+  --amber-500: 245 158 11;
+  --amber-600: 217 119 6;
+  --amber-700: 180 83 9;
+  --amber-800: 146 64 14;
+  --amber-900: 120 53 15;
+  --amber-950: 69 26 3;
+
+  --orange-50: 255 247 237;
+  --orange-100: 255 237 213;
+  --orange-200: 254 215 170;
+  --orange-300: 253 186 116;
+  --orange-400: 251 146 60;
+  --orange-500: 249 115 22;
+  --orange-600: 234 88 12;
+  --orange-700: 194 65 12;
+  --orange-800: 154 52 18;
+  --orange-900: 124 45 18;
+  --orange-950: 67 20 7;
+
+  --neon-gold-rgb: 251 191 36;
+  --neon-amber-rgb: 245 158 11;
+  --neon-bronze-rgb: 194 65 12;
+  --neon-purple-rgb: 234 88 12;
+  --neon-cyan-rgb: 245 158 11;
+
+  --neon-gold: rgb(var(--neon-gold-rgb));
+  --neon-amber: rgb(var(--neon-amber-rgb));
+  --neon-bronze: rgb(var(--neon-bronze-rgb));
+  --neon-purple: rgb(var(--neon-purple-rgb));
+  --neon-cyan: rgb(var(--neon-cyan-rgb));
+  --neon-green: #22c55e;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+@keyframes nebula-pulse {
+  0% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.65; transform: scale(1.08); }
+  100% { opacity: 0.35; transform: scale(1); }
+}
+
+@keyframes quest-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes quest-bar-glow {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  50% {
+    filter: brightness(1.25);
+  }
+}
+
+.quest-rise {
+  animation: quest-rise 0.45s ease-out both;
+}
+
+.quest-bar-live {
+  animation: quest-bar-glow 2.4s ease-in-out infinite;
+}
+
+.nebula-bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    radial-gradient(circle at 50% 42%, rgb(var(--amber-400) / 0.22), transparent 55%),
+    radial-gradient(circle at 18% 28%, rgb(var(--amber-500) / 0.12), transparent 45%),
+    radial-gradient(circle at 82% 72%, rgb(var(--orange-700) / 0.1), transparent 42%),
+    radial-gradient(circle at 50% 100%, rgb(var(--amber-950) / 0.35), transparent 50%);
+  filter: blur(80px);
+  animation: nebula-pulse 15s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.glass-card {
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.neon-border-gold { box-shadow: 0 0 20px rgb(var(--neon-gold-rgb) / 0.35), inset 0 0 10px rgb(var(--neon-gold-rgb) / 0.12); border-color: rgb(var(--neon-gold-rgb) / 0.55); }
+.neon-border-purple { box-shadow: 0 0 20px rgb(var(--neon-purple-rgb) / 0.28), inset 0 0 10px rgb(var(--neon-purple-rgb) / 0.08); border-color: rgb(var(--neon-purple-rgb) / 0.5); }
+.neon-border-cyan { box-shadow: 0 0 22px rgb(var(--neon-cyan-rgb) / 0.32), inset 0 0 12px rgb(var(--neon-gold-rgb) / 0.1); border-color: rgb(var(--neon-cyan-rgb) / 0.55); }
+.neon-border-green { box-shadow: 0 0 20px rgba(34, 197, 94, 0.3), inset 0 0 10px rgba(34, 197, 94, 0.1); border-color: rgba(34, 197, 94, 0.6); }
+
+.neon-text-gold { text-shadow: 0 0 12px rgb(var(--neon-gold-rgb) / 0.55); }
+.neon-text-purple { text-shadow: 0 0 10px rgb(var(--neon-purple-rgb) / 0.45); }
+.neon-text-cyan { text-shadow: 0 0 12px rgb(var(--neon-cyan-rgb) / 0.5); }
+.neon-text-green { text-shadow: 0 0 10px rgba(34, 197, 94, 0.6); }
+
+/* Global Custom Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(var(--amber-500) / 0.25);
+  border-radius: 10px;
+}
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--amber-500) / 0.3) rgba(0, 0, 0, 0.2);
+}
+
+/**
+ * Esconde barra nativa mas mantém scroll (rato/trackpad/touch).
+ * Usar em filas horizontais (nav do jogo, carrossel dashboard).
+ */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+  background: transparent;
+}

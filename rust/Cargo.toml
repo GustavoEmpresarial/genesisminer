@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["genesis-core", "genesis-node", "genesis-mining-worker", "genesis-hardware", "genesis-auth", "genesis-wallet", "genesis-api"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+version = "0.1.0"

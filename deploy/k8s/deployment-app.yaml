@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: genesis-app
+  namespace: genesis
+  labels:
+    app.kubernetes.io/name: genesis-app
+    app.kubernetes.io/part-of: minestation
+spec:
+  # 1 réplica até uploads serem RWX/S3 (STORAGE.md).
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: genesis-app
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: genesis-app
+    spec:
+      containers:
+        - name: app
+          # Substituir pelo registry quando houver pipeline de imagem.
+          image: genesis-app:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: genesis-app-config
+            - secretRef:
+                name: genesis-app-secrets
+          volumeMounts:
+            - name: media-seed
+              mountPath: /app/storage/media-seed
+              readOnly: true
+            - name: uploads
+              mountPath: /app/storage/uploads
+            - name: backups
+              mountPath: /app/storage/backups
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            # Alinhado ao start_period do compose (90s) — grace para boot.
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /health/ready
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+      volumes:
+        # Catálogo: ConfigMap/emptyDir/imagem — trocar por PVC ROX ou CSI.
+        - name: media-seed
+          emptyDir: {}
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: genesis-uploads
+        - name: backups
+          persistentVolumeClaim:
+            claimName: genesis-backups

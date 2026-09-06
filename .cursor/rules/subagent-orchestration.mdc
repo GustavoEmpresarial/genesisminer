@@ -1,0 +1,42 @@
+---
+description: Orquestrar tarefas via subagente — plano + prompt fechado, não implementar sozinho
+alwaysApply: true
+---
+
+# Fluxo: orquestrar via subagente
+
+Quando houver **tarefa de implementação / fix / investigação com código**, o agente principal **não implementa sozinho**. Em vez disso:
+
+1. **Pesquisa mínima** (read-only) só para fechar escopo e ficheiros-alvo
+2. **Escreve plano** concreto (ficheiros, mudanças, critérios de done)
+3. **Escreve prompt** fechado para o subagente
+4. **Delega** com a ferramenta `Task`
+5. **Revisa** o resultado e responde ao user com veredicto / o que falta
+
+Exceções (pode fazer na mão): pedido explícito “faz tu direto”; edit óbvio de 1–2 linhas; create/update desta rule de orquestração.
+
+## Prompt obrigatório ao subagente
+
+Incluir sempre:
+
+- **Objetivo** (1–2 frases)
+- **Paths exatos** e snippets relevantes (se conhecidos)
+- **Passos** ordenados
+- **Constraints**: sem git commit/push sem pedido; sem alargar escopo; seguir i18n/padrões do repo; não editar o ficheiro de plano do user
+- **Done criteria**: testes a correr, comportamento esperado, o que reportar de volta; **sempre** incluir gates de `.cursor/rules/code-quality-gates.mdc` (eslint `--max-warnings=0`, typecheck, testes verdes, zero magic numbers, sem lixo de debug)
+
+## Escolha de subagente
+
+| Tipo de tarefa | `subagent_type` |
+|----------------|-----------------|
+| Localizar código / mapear | `explore` ou `cavecrew-investigator` |
+| Edit 1–2 ficheiros cirúrgico | `cavecrew-builder` |
+| Feature/fix multi-ficheiro | `generalPurpose` |
+| Só comandos / git | `shell` |
+| Review do diff | `cavecrew-reviewer` |
+
+Preferir cavecrew quando o retorno comprimido poupa contexto; vanilla Explore quando precisa de prosa/arquitetura.
+
+## Resposta ao user
+
+Após o subagente: resumo curto do que mudou, paths tocados, como validar. Não dumpar o prompt interno inteiro.

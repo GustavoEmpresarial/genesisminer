@@ -1,0 +1,26 @@
+# Exemplo — NÃO incluído no kustomization (activar quando houver Ingress controller).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: genesis-app
+  namespace: genesis
+  annotations:
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "32m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - dev.genesisdao.tech
+      secretName: genesis-tls
+  rules:
+    - host: dev.genesisdao.tech
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: genesis-app
+                port:
+                  number: 3000

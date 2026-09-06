@@ -1,0 +1,28 @@
+[package]
+name = "genesis-hardware"
+description = "Hardware engine binary — stock / racks persist + intent I/O in Rust"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "genesis-hardware"
+path = "src/main.rs"
+
+[dependencies]
+genesis-core = { path = "../genesis-core" }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "signal", "sync", "net"] }
+deadpool-postgres = "0.14"
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-uuid-1"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
+uuid = { version = "1", features = ["v4"] }
+axum = "0.8"
+tower-http = { version = "0.6", features = ["trace"] }
+sha2 = "0.10"
+sha1 = "0.10"
+hex = "0.4"
+getrandom = "0.2"

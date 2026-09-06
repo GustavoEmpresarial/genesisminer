@@ -1,0 +1,439 @@
+# Substitui só os contentores Node do Genesis Miner na VM de teste.
+# Postgres / Redis / nginx já existentes em `app_production` ficam de pé.
+# MongoDB foi removido da stack.
+# Contentor Rust: `genesisminer-app` (genesis-api :3000 — nginx `proxy_pass http://app:3000`).
+# Contentor Node: `genesisminer-express` (Express :3001 — SPA / Socket.IO / residual).
+# Contentor Rust: `genesisminer-mining-worker` (yield cron + progress I/O).
+# Contentor Rust: `genesisminer-hardware` (stock / racks persist + intent I/O).
+# Kafka KRaft 1 nó: `genesisminer-kafka` (eventos header / ledger / mining).
+# Alias DNS `app` na rede app_production_default mantém compat com nginx.
+#
+# Hostinger VPS = Compose. Manifests em deploy/k8s/ são para cluster futuro (sem kubectl aqui).
+name: genesisminer
+
+networks:
+  app_production_default:
+    external: true
+
+services:
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: genesisminer-kafka
+    hostname: kafka
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      KAFKA_NODE_ID: "1"
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: "0"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      CLUSTER_ID: GenesisMinerContaboKafka01
+    volumes:
+      - genesisminer_kafka_data:/var/lib/kafka/data
+    networks:
+      app_production_default:
+        aliases:
+          - kafka
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list >/dev/null 2>&1",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 45s
+
+  kafka-init:
+    image: apache/kafka:3.9.0
+    container_name: genesisminer-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    networks:
+      - app_production_default
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        BS=kafka:9092
+        create() {
+          /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$$BS" \
+            --create --if-not-exists \
+            --topic "$$1" --partitions "$$2" --replication-factor 1
+        }
+        create genesis.auth.events 3
+        create genesis.mining.progress 6
+        create genesis.economy.ledger 6
+        create genesis.ops.deadletter 1
+        create genesis.ranking.snapshot 3
+        create genesis.partner_games.session 3
+        create genesis.market.events 3
+        create genesis.lucky_box.open 3
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$$BS" --list
+
+  # Postgres / Redis are external on app_production_default (postgres_app / redis_app).
+  # Port = MINING_WORKER_DEFAULT_PORT (8091) — see mining-worker-client.ts / config.rs.
+  mining-worker:
+    container_name: genesisminer-mining-worker
+    image: genesisminer-mining-worker:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: mining-worker
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      NODE_ENV: production
+      GENESIS_MINING_WORKER: "1"
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres_app:5432/${POSTGRES_DB:-minestation}
+      REDIS_URL: redis://redis_app:6379
+      MINING_WORKER_PORT: "8091"
+      # Shared with `app` / `express` — must be set in deploy/.env (required in production).
+      MINING_WORKER_AUTH_TOKEN: ${MINING_WORKER_AUTH_TOKEN:?set MINING_WORKER_AUTH_TOKEN in deploy/.env}
+      # gerente/enter|leave flip the session manager-mode flag via genesis-auth.
+      GENESIS_AUTH_URL: "http://auth:8091"
+      SCHEDULER_ENABLED: "1"
+      MINING_YIELD_CRON_ENABLED: "1"
+      MINING_YIELD_SCHEDULER_ENABLED: "1"
+      # Ranking snapshot loop on (default); Node app disables its own when WORKER_URL set.
+      # RANKING_REFRESH_LOOP_ENABLED: "1"
+      KAFKA_ENABLED: "1"
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_CLIENT_ID: "genesis-mining-worker"
+    env_file:
+      - .env
+    networks:
+      app_production_default:
+        aliases:
+          - mining-worker
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:$${MINING_WORKER_PORT:-8091}/health || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  # Port = MINING_WORKER_DEFAULT_PORT (8091) — isolated container, same auth header.
+  hardware:
+    container_name: genesisminer-hardware
+    image: genesisminer-hardware:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: hardware
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres_app:5432/${POSTGRES_DB:-minestation}
+      MINING_WORKER_PORT: "8091"
+      MINING_WORKER_AUTH_TOKEN: ${MINING_WORKER_AUTH_TOKEN:?set MINING_WORKER_AUTH_TOKEN in deploy/.env}
+    env_file:
+      - .env
+    networks:
+      app_production_default:
+        aliases:
+          - hardware
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:$${MINING_WORKER_PORT:-8091}/health || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  # Port = WALLET_WORKER_DEFAULT_PORT (8091) — exchange / withdraw / deposit credit; no host publish.
+  wallet:
+    container_name: genesisminer-wallet
+    image: genesisminer-wallet:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: wallet
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres_app:5432/${POSTGRES_DB:-minestation}
+      WALLET_WORKER_PORT: "8091"
+      MINING_WORKER_AUTH_TOKEN: ${MINING_WORKER_AUTH_TOKEN:?set MINING_WORKER_AUTH_TOKEN in deploy/.env}
+    env_file:
+      - .env
+    networks:
+      app_production_default:
+        aliases:
+          - wallet
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:$${WALLET_WORKER_PORT:-8091}/health || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  # Port = AUTH_WORKER_DEFAULT_PORT (8091) — bcrypt + JWT + session/refresh PG; no host publish.
+  auth:
+    container_name: genesisminer-auth
+    image: genesisminer-auth:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: auth
+    restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres_app:5432/${POSTGRES_DB:-minestation}
+      AUTH_WORKER_PORT: "8091"
+      MINING_WORKER_AUTH_TOKEN: ${MINING_WORKER_AUTH_TOKEN:?set MINING_WORKER_AUTH_TOKEN in deploy/.env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in deploy/.env}
+      JWT_ISSUER: ${JWT_ISSUER:-genesis-miner}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-genesis-miner-api}
+      JWT_ACCESS_TTL_SEC: ${JWT_ACCESS_TTL_SEC:-900}
+      JWT_REFRESH_TTL_SEC: ${JWT_REFRESH_TTL_SEC:-1209600}
+      ACCOUNT_MANAGER_ENABLED: ${ACCOUNT_MANAGER_ENABLED:-0}
+      # Turnstile: ENABLED sync app↔auth; SECRET only on auth (siteverify). SITE_KEY on genesis-api for UI.
+      CLOUDFLARE_TURNSTILE_ENABLED: ${CLOUDFLARE_TURNSTILE_ENABLED:-0}
+      CLOUDFLARE_TURNSTILE_SECRET_KEY: ${CLOUDFLARE_TURNSTILE_SECRET_KEY:-}
+      # SMTP: 587 + MAIL_SECURE=0 → STARTTLS; 465 + MAIL_SECURE=1 → SMTPS Wrapper. Do not mix.
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USER: ${MAIL_USER:-}
+      MAIL_PASS: ${MAIL_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_SECURE: ${MAIL_SECURE:-0}
+      FRONTEND_URL: ${FRONTEND_URL:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      SITE_URL: ${SITE_URL:-}
+    env_file:
+      - .env
+    networks:
+      app_production_default:
+        aliases:
+          - auth
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:$${AUTH_WORKER_PORT:-8091}/health || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 30s
+
+  express:
+    container_name: genesisminer-express
+    image: genesisminer-express:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      mining-worker:
+        condition: service_healthy
+      hardware:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+      wallet:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres_app:5432/${POSTGRES_DB:-minestation}
+      REDIS_URL: redis://redis_app:6379
+      PORT: "3001"
+      # Kill-switch de emergência dos crons (default ligado se omitido).
+      # Outros jobs (backup, chat TTL) continuam; yield + ranking = Rust worker.
+      SCHEDULER_ENABLED: "1"
+      # Yield cron / scheduler: off no Node — `mining-worker` owns the tick.
+      MINING_YIELD_SCHEDULER_ENABLED: "0"
+      MINING_YIELD_CRON_ENABLED: "0"
+      # Progress + ranking I/O → Rust worker HTTP (keep compute on; do not set COMPUTE_ENABLED=0).
+      # Ranking refresh loop: Node noops when this URL is set (worker owns RANKING_REFRESH_LOOP).
+      GENESIS_MINING_WORKER_URL: "http://mining-worker:8091"
+      GENESIS_HARDWARE_URL: "http://hardware:8091"
+      GENESIS_AUTH_URL: "http://auth:8091"
+      GENESIS_WALLET_URL: "http://wallet:8091"
+      # Turnstile UI gate (ENABLED + SITE_KEY). Secret stays on `auth` only.
+      CLOUDFLARE_TURNSTILE_ENABLED: ${CLOUDFLARE_TURNSTILE_ENABLED:-0}
+      CLOUDFLARE_TURNSTILE_SITE_KEY: ${CLOUDFLARE_TURNSTILE_SITE_KEY:-}
+      GENESIS_HARDWARE_RUST: "1"
+      MINING_WORKER_AUTH_TOKEN: ${MINING_WORKER_AUTH_TOKEN:?set MINING_WORKER_AUTH_TOKEN in deploy/.env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in deploy/.env}
+      JWT_ISSUER: ${JWT_ISSUER:-genesis-miner}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-genesis-miner-api}
+      JWT_ACCESS_TTL_SEC: ${JWT_ACCESS_TTL_SEC:-900}
+      # Domínio Rust (native/genesis.node na imagem). Residual math via napi.
+      GENESIS_AUTH_RUST: "1"
+      GENESIS_TRANSPARENCY_RUST: "1"
+      GENESIS_USE_RUST: "1"
+      GENESIS_CALCULATOR_RUST: "1"
+      GENESIS_NAV_RUST: "1"
+      GENESIS_CHECKIN_RUST: "1"
+      GENESIS_MINING_RUST: "1"
+      GENESIS_PARTNER_GAMES_RUST: "1"
+      GENESIS_MARKET_RUST: "1"
+      GENESIS_LUCKY_BOXES_RUST: "1"
+      GENESIS_WALLET_RUST: "1"
+      GENESIS_HEADER_RUST: "1"
+      GENESIS_CATALOG_RUST: "1"
+      # Partner Games tab + session API maintenance (1/true = on).
+      PARTNER_GAMES_MAINTENANCE: "1"
+      # Kafka (Compose Hostinger). Cliente no-op se KAFKA_ENABLED≠1.
+      KAFKA_ENABLED: "1"
+      KAFKA_BROKERS: "kafka:9092"
+      KAFKA_CLIENT_ID: "genesis-app"
+      IMG_DIR: /app/storage/media-seed
+      IMG_UPLOADS_DIR: /app/storage/uploads
+      BACKUP_DIR: /app/storage/backups
+    env_file:
+      - .env
+    volumes:
+      - ../storage/media-seed:/app/storage/media-seed
+      - ../storage/uploads:/app/storage/uploads
+      - ../storage/backups:/app/storage/backups
+    networks:
+      app_production_default:
+        aliases:
+          - express
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:3001/health/ready',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 90s
+
+  # Public HTTP shell — alias `app` keeps nginx `proxy_pass http://app:3000`.
+  app:
+    container_name: genesisminer-app
+    image: genesisminer-api:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: api
+    restart: always
+    depends_on:
+      express:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+      mining-worker:
+        condition: service_healthy
+      hardware:
+        condition: service_healthy
+      wallet:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      NODE_ENV: production
+      API_PORT: "3000"
+      GENESIS_EXPRESS_URL: "http://express:3001"
+      GENESIS_AUTH_URL: "http://auth:8091"
+      GENESIS_MINING_WORKER_URL: "http://mining-worker:8091"
+      GENESIS_HARDWARE_URL: "http://hardware:8091"
+      GENESIS_WALLET_URL: "http://wallet:8091"
+      MINING_WORKER_AUTH_TOKEN: ${MINING_WORKER_AUTH_TOKEN:?set MINING_WORKER_AUTH_TOKEN in deploy/.env}
+      CLIENT_DIST: /app/client/dist
+      IMG_DIR: /app/storage/media-seed
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in deploy/.env}
+      JWT_ISSUER: ${JWT_ISSUER:-genesis-miner}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-genesis-miner-api}
+      JWT_ACCESS_TTL_SEC: ${JWT_ACCESS_TTL_SEC:-900}
+      JWT_REFRESH_TTL_SEC: ${JWT_REFRESH_TTL_SEC:-1209600}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
+      FRONTEND_URL: ${FRONTEND_URL:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      SITE_URL: ${SITE_URL:-}
+      CLOUDFLARE_TURNSTILE_ENABLED: ${CLOUDFLARE_TURNSTILE_ENABLED:-0}
+      CLOUDFLARE_TURNSTILE_SITE_KEY: ${CLOUDFLARE_TURNSTILE_SITE_KEY:-}
+      IMG_UPLOADS_DIR: /app/storage/uploads
+      SUPPORT_UPLOAD_DIR: /app/storage/uploads
+      TRUST_CF_CONNECTING_IP: ${TRUST_CF_CONNECTING_IP:-0}
+    env_file:
+      - .env
+    volumes:
+      - ../storage/uploads:/app/storage/uploads
+      - ../storage/media-seed:/app/storage/media-seed
+    networks:
+      app_production_default:
+        aliases:
+          - app
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -fsS http://127.0.0.1:$${API_PORT:-3000}/health || exit 1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  genesisminer_kafka_data:

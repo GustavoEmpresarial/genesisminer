@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: genesis
+resources:
+  # Namespace criado por deploy/k8s — aplicar app kustomize primeiro, ou
+  # incluir ../k8s/namespace.yaml aqui se Kafka for standalone.
+  - ../../k8s/namespace.yaml
+  - service.yaml
+  - statefulset.yaml
+  - topics-job.yaml
+commonLabels:
+  app.kubernetes.io/part-of: minestation
+  app.kubernetes.io/component: kafka

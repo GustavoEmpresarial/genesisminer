@@ -1,0 +1,145 @@
+/**
+ * Partner games hub (BlockMiner) — merged into catalogs as `partnerGames`.
+ */
+import type { MessageTree } from '../../types';
+
+export const partnerGamesEn: MessageTree = {
+  backToYoutube: '← YouTube Partners',
+  sessionAria: 'BlockMiner games session',
+  lobbyAria: 'BlockMiner partner games lobby',
+  brand: 'BlockMiner',
+  title: 'Partner Games',
+  subtitle: 'Play inside Genesis via the /bm/ proxy. Login stays in the iframe.',
+  infoTitle: 'Runs inside Genesis via /bm/ proxy. Login and session stay in the iframe.',
+  partnerSite: 'Partner site',
+  lobbyEyebrow: 'Genesis × Partner',
+  lobbyHeadline: 'Mine. Play. Earn time.',
+  lobbyLead:
+    'Open the BlockMiner hub inside Genesis — login stays in the frame, playtime credits while you play.',
+  lobbyReadyStatus: 'Session ready — hub loads only when you open it',
+  openHubCta: 'Open hub',
+  openExternalCta: 'Partner site',
+  backToLobby: 'Back to lobby',
+  idleHint: 'Load the partner hub here, inside Genesis.',
+  runGame: 'Run game',
+  exitSessionTitle: 'Leave games session',
+  exit: 'Exit',
+  exitFullscreen: 'Exit fullscreen',
+  enterFullscreen: 'Fullscreen',
+  windowed: 'Window',
+  fullscreen: 'Fullscreen',
+  options: 'Options',
+  settingsHint:
+    'Embedded session via /bm/. If it fails, reload or open the partner site.',
+  openSite: 'Open site',
+  stopIframe: 'Stop iframe',
+  reload: 'Reload',
+  session: 'Session',
+  sessionActive: 'Live',
+  sessionStopped: 'Stopped',
+  liveBadge: 'Live',
+  elapsedLabel: 'Session',
+  creditedLabel: 'Credited',
+  creditedMinutesUnit: 'min',
+  heartbeatNote: 'Playtime heartbeats every minute while the hub is open.',
+  footerNote:
+    'Partner rewards and ads are tracked on blockminer.space, not Genesis Miner.',
+  maintenanceAria: 'BlockMiner partner games maintenance',
+  maintenanceTitle: 'Under maintenance',
+  maintenanceBody:
+    'BlockMiner partner games are temporarily unavailable. Please check back soon.'
+};
+
+export const partnerGamesPt: MessageTree = {
+  backToYoutube: '← Parceiros YouTube',
+  sessionAria: 'Sessão de jogos BlockMiner',
+  lobbyAria: 'Lobby de jogos do parceiro BlockMiner',
+  brand: 'BlockMiner',
+  title: 'Jogos do parceiro',
+  subtitle: 'Joga dentro do Genesis via proxy /bm/. O login fica no iframe.',
+  infoTitle: 'Corre dentro do Genesis via proxy /bm/. Login e sessão ficam no iframe.',
+  partnerSite: 'Site do parceiro',
+  lobbyEyebrow: 'Genesis × Parceiro',
+  lobbyHeadline: 'Mina. Joga. Ganha tempo.',
+  lobbyLead:
+    'Abre o hub BlockMiner dentro do Genesis — o login fica no frame e o tempo de jogo credita enquanto jogas.',
+  lobbyReadyStatus: 'Sessão pronta — o hub só carrega quando abrires',
+  openHubCta: 'Abrir hub',
+  openExternalCta: 'Site do parceiro',
+  backToLobby: 'Voltar ao lobby',
+  idleHint: 'Carrega o hub do parceiro aqui, dentro do Genesis.',
+  runGame: 'Correr jogo',
+  exitSessionTitle: 'Sair da sessão de jogos',
+  exit: 'Sair',
+  exitFullscreen: 'Sair do ecrã inteiro',
+  enterFullscreen: 'Ecrã inteiro',
+  windowed: 'Janela',
+  fullscreen: 'Ecrã inteiro',
+  options: 'Opções',
+  settingsHint:
+    'Sessão embutida via /bm/. Se falhar, recarrega ou abre o site do parceiro.',
+  openSite: 'Abrir site',
+  stopIframe: 'Parar iframe',
+  reload: 'Recarregar',
+  session: 'Sessão',
+  sessionActive: 'Ao vivo',
+  sessionStopped: 'Parada',
+  liveBadge: 'Ao vivo',
+  elapsedLabel: 'Sessão',
+  creditedLabel: 'Creditados',
+  creditedMinutesUnit: 'min',
+  heartbeatNote: 'Heartbeats de tempo de jogo a cada minuto com o hub aberto.',
+  footerNote:
+    'Recompensas e anúncios do parceiro são contabilizados no blockminer.space, não no Genesis Miner.',
+  maintenanceAria: 'Manutenção dos jogos do parceiro BlockMiner',
+  maintenanceTitle: 'Em manutenção',
+  maintenanceBody:
+    'Os jogos do parceiro BlockMiner estão temporariamente indisponíveis. Volta em breve.'
+};
+
+export const partnerGamesEs: MessageTree = {
+  backToYoutube: '← Socios YouTube',
+  sessionAria: 'Sesión de juegos BlockMiner',
+  lobbyAria: 'Lobby de juegos del socio BlockMiner',
+  brand: 'BlockMiner',
+  title: 'Juegos del socio',
+  subtitle: 'Juega dentro de Genesis vía proxy /bm/. El login queda en el iframe.',
+  infoTitle: 'Corre dentro de Genesis vía proxy /bm/. Login y sesión quedan en el iframe.',
+  partnerSite: 'Sitio del socio',
+  lobbyEyebrow: 'Genesis × Socio',
+  lobbyHeadline: 'Mina. Juega. Gana tiempo.',
+  lobbyLead:
+    'Abre el hub BlockMiner dentro de Genesis — el login queda en el frame y el tiempo de juego se acredita mientras juegas.',
+  lobbyReadyStatus: 'Sesión lista — el hub solo carga cuando lo abres',
+  openHubCta: 'Abrir hub',
+  openExternalCta: 'Sitio del socio',
+  backToLobby: 'Volver al lobby',
+  idleHint: 'Carga el hub del socio aquí, dentro de Genesis.',
+  runGame: 'Ejecutar juego',
+  exitSessionTitle: 'Salir de la sesión de juegos',
+  exit: 'Salir',
+  exitFullscreen: 'Salir de pantalla completa',
+  enterFullscreen: 'Pantalla completa',
+  windowed: 'Ventana',
+  fullscreen: 'Pantalla completa',
+  options: 'Opciones',
+  settingsHint:
+    'Sesión embebida vía /bm/. Si falla, recarga o abre el sitio del socio.',
+  openSite: 'Abrir sitio',
+  stopIframe: 'Detener iframe',
+  reload: 'Recargar',
+  session: 'Sesión',
+  sessionActive: 'En vivo',
+  sessionStopped: 'Detenida',
+  liveBadge: 'En vivo',
+  elapsedLabel: 'Sesión',
+  creditedLabel: 'Acreditados',
+  creditedMinutesUnit: 'min',
+  heartbeatNote: 'Heartbeats de tiempo de juego cada minuto con el hub abierto.',
+  footerNote:
+    'Las recompensas y anuncios del socio se contabilizan en blockminer.space, no en Genesis Miner.',
+  maintenanceAria: 'Mantenimiento de los juegos del socio BlockMiner',
+  maintenanceTitle: 'En mantenimiento',
+  maintenanceBody:
+    'Los juegos del socio BlockMiner no están disponibles temporalmente. Vuelve pronto.'
+};

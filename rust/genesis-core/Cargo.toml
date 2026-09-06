@@ -1,0 +1,22 @@
+[package]
+name = "genesis-core"
+description = "Pure domain logic for Genesis Miner (Rust migration, slice by slice)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+base64 = "0.22"
+subtle = "2"
+getrandom = "0.2"
+bcrypt = "0.16"
+jsonwebtoken = "9"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+pretty_assertions = "1"

@@ -1,0 +1,126 @@
+════════════════════════════════════════════════════════════════════════════
+GENESIS MINER / MINESTATION — ESTRUTURA DE PASTAS (current/)  [ACTUAL 2026-08-19]
+Mesmo formato do ESTRUTURA.txt de referência. Conteúdo = o que existe no disco.
+Migração do legado → current/ AINDA NÃO ESTÁ COMPLETA.
+Stack: Express + Prisma (backend) | React + Vite (frontend) | Postgres + Redis + MongoDB
+════════════════════════════════════════════════════════════════════════════
+
+current/
+├── server/                                         # backend — Express + Prisma (TypeScript)
+│   ├── bootstrap/                                  # cria o app Express, monta rotas (app.ts, routes.ts, server.ts)
+│   ├── core/                                       # infra transversal (não é módulo de produto)
+│   │   ├── database/                               # Prisma + pool pg
+│   │   ├── mongo/                                  # game_activity_logs
+│   │   ├── http/                                   # CORS, CSP, rate limit, cookies, erros
+│   │   ├── redis/                                  # cliente Redis
+│   │   └── socket/                                 # Socket.IO
+│   ├── modules/                                    # 1 pasta por domínio (controllers/ + services/)
+│   │   ├── account-manager/                        # modo gerente de conta
+│   │   ├── admin/                                  # painel admin, subdividido:
+│   │   │   ├── backup/                             # backups SQL
+│   │   │   ├── dashboard/                          # KPIs do painel
+│   │   │   ├── device-fingerprint/                 # fingerprint admin
+│   │   │   ├── image-asset/                        # upload / estáticos /img
+│   │   │   ├── loot-boxes/                         # escrita catálogo de caixas (admin)
+│   │   │   ├── mining-distribution/                # distribuição de mineração
+│   │   │   ├── referral/                           # comissão de indicação (admin)
+│   │   │   ├── security-bulk/                      # ações de segurança em massa
+│   │   │   ├── suspicious-emails/                  # e-mails suspeitos
+│   │   │   ├── user-audit/                         # auditoria / trace de utilizador
+│   │   │   └── users/                              # GET /api/users + PUT /api/users/block
+│   │   ├── announcements/                          # avisos popup / mini-blog
+│   │   ├── auth/                                   # login, registro, JWT, refresh, cookies
+│   │   ├── batteries/                              # baterias nos racks
+│   │   ├── black-market/                           # marketplace P2P
+│   │   ├── chat/                                   # chat
+│   │   ├── checkin/                                # check-in diário
+│   │   ├── dashboard/                              # agregados da home do JOGADOR
+│   │   ├── guide/                                  # guia (API)
+│   │   ├── inventory/                              # inventário
+│   │   ├── lucky-boxes/                            # caixas da sorte (jogador)
+│   │   ├── merge/                                  # merge station
+│   │   ├── mining-engine/                          # yield, header do jogo, coins cache
+│   │   ├── partners/                               # parceiros + YouTube
+│   │   ├── player-calculator/                      # calculadora (API)
+│   │   ├── profile/                                # perfil, referral, wallet do jogador
+│   │   ├── quests/                                 # missões
+│   │   ├── ranking/                                # ranking
+│   │   ├── roadmap/                                # roadmap (API)
+│   │   ├── rooms/                                  # rig-rooms (catálogo / slots)
+│   │   ├── servers/                                # sala / racks / state
+│   │   ├── shop/                                   # lojinha hardware
+│   │   ├── support/                                # tickets
+│   │   ├── transparency/                           # transparência
+│   │   ├── upgrades/                               # pacotes admin_upgrades (compra + CRUD)
+│   │   ├── wallet/                                 # saldo, saque, exchange
+│   │   ├── wheel/                                  # roleta (API servidor)
+│   │   └── zerads/                                 # offerwall ZerAds
+│   ├── shared/                                     # utilitários entre módulos
+│   │   ├── audit/
+│   │   ├── auth/
+│   │   ├── errors/
+│   │   ├── i18n/
+│   │   ├── security/                               # mailer, turnstile, VPN guard, …
+│   │   ├── settings/                               # key-value `settings`
+│   │   ├── utils/
+│   │   └── validation/
+│   └── types/                                      # augment Express
+├── client/                                         # frontend — React + Vite (TypeScript)
+│   ├── public/                                     # assets estáticos do Vite (landing, logo)
+│   ├── src/
+│   │   ├── app/                                    # App.tsx (landing / jogo / admin)
+│   │   ├── features/                               # 1 pasta por ecrã
+│   │   │   ├── account-manager/  admin/  arcade/  auth/  batteries/
+│   │   │   ├── black-market/  calculator/  chat/  checkin/  dashboard/
+│   │   │   ├── game/  guide/  inventory/  landing/  legal/  lucky-boxes/
+│   │   │   ├── merge/  mini-blog/  offerwall/  partners/  player-calculator/
+│   │   │   ├── profile/  quests/  ranking/  roadmap/  roleta/  servers/
+│   │   │   ├── shell/  shop/  support/  transparency/  upgrades/  wallet/
+│   │   │   └── (várias destas pastas ainda são só .gitkeep — UI do legado por importar)
+│   │   ├── i18n/                                   # só .gitkeep — i18n real em shared/i18n
+│   │   └── shared/                                 # api/, constants/, i18n/, icons/, types/, ui/, utils/
+│   ├── scripts/
+│   └── tests/
+├── prisma/                                         # schema e migrations do Postgres
+│   └── migrations/
+├── tests/                                          # vitest (espelha server/modules)
+├── docs/                                           # documentação
+├── scripts/
+│   └── deploy/
+├── nginx/
+│   ├── certs/
+│   └── includes/
+├── storage/                                        # persistência em disco (media-seed, uploads, backups)
+├── dist/                                           # build do backend (gerado)
+├── ESTRUTURA.txt                                   # mapa de REFERÊNCIA (alvo / legado)
+├── ESTRUTURA-ATUAL.txt                             # este ficheiro (o que existe hoje)
+├── package.json
+├── tsconfig.json
+├── tsconfig.build.json
+├── vitest.config.ts
+└── eslint.config.js
+
+════════════════════════════════════════════════════════════════════════════
+NOTA: este ficheiro descreve SÓ current/. O legado continua a ser referência
+e AINDA NÃO está todo portado para aqui.
+
+AINDA NÃO EXISTE NESTE DISCO (estava no ESTRUTURA.txt de referência):
+- server/cron/   server/workers/   server/core/logger/
+- server/shared/blockchain/
+- modules/email-verification/ (foi para auth/)  modules/promo-redeem/
+- modules/roleta/ (a roleta no server é modules/wheel/)
+- modules/device-fingerprint/ na raiz (está em admin/device-fingerprint/)
+- client/src/features/wheel/ (apagada; UI da roleta = features/roleta/)
+- Dockerfile / docker-compose.yml na raiz do current/
+
+CLIENT — PASTAS SÓ .gitkeep (UI do legado ainda não importada):
+  batteries/  chat/  dashboard/  guide/  legal/  player-calculator/  roadmap/
+
+ADMIN CLIENT: AdminShell + Dashboard + Users no fluxo current; resto das
+abas = JSX legado copiado; muitas rotas de admin-legacy.ts ainda 404 neste server.
+
+SERVER — exemplos de API do legado ainda por portar:
+  GET /api/upgrades (catálogo estilo legado), /api/loot-boxes, /api/access-levels,
+  /api/mining-coins, /api/season-passes, /api/news, /api/admin-upgrades,
+  /api/admin/etherscan/treasury-token-txs, /api/wallet-labels, …
+════════════════════════════════════════════════════════════════════════════

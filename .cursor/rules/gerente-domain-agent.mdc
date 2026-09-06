@@ -1,0 +1,31 @@
+---
+description: Agente do domínio Gerente — investigate → plan → execute → review → document + gates
+globs: "**/gerente/**,**/account-manager/**"
+alwaysApply: false
+---
+
+# Domínio Gerente — workflow obrigatório
+
+Quando o trabalho tocar `server/modules/gerente`, `client/src/features/gerente`, ou residual `account-manager`:
+
+1. **Investigate** — `cavecrew-investigator` / `explore`: limites, imports, duplicatas
+2. **Plan** — paths exactos + done criteria; **não** inventar números
+3. **Execute** — `Task` (`generalPurpose` multi-ficheiro; `cavecrew-builder` ≤2 ficheiros)
+4. **Code review** — `cavecrew-reviewer` no diff
+5. **Document** — DECISIONS + `docs/architecture/modules/gerente.md` se mudar contrato/pastas
+6. **Gates (falha = não done):** seguir `.cursor/rules/code-quality-gates.mdc` + vitest do módulo
+
+## Anti–número mágico
+
+- Idem `code-quality-gates.mdc`
+- Client: sem fallbacks inventados (`?? 5`, `?? 10`, `?? 7`) para tetos de gerência; se a API não envia teto, a UI **não** mostra teto
+
+## Layout
+
+- Domínio: `server/modules/gerente`, `client/src/features/gerente` (API em `features/gerente/api`)
+- Shared só transversal (ex.: `shared/utils/utc-week`); flags de sessão em `shared/types/auth`
+- HTTP continua `/api/account-manager/*` (compat)
+
+## Constraints
+
+Seguir `.cursor/rules/subagent-orchestration.mdc`. Sem git commit/push sem pedido. Sem alargar a payout cron / rename de URL.

@@ -1,0 +1,71 @@
+---
+description: Pasta tests/, tipos de teste, anti-magic-number, lint/typecheck/smoke obrigatórios
+alwaysApply: true
+---
+
+# Testes & QA — MineStation
+
+Gates irmãs: `.cursor/rules/code-quality-gates.mdc` (done = lint + typecheck + testes).
+
+## Onde se trabalha (`tests/`)
+
+Espelha o código de produção. **Não inventar árvore** — se faltar ficheiro no workspace local, sync da VM `/root/genesis-current`.
+
+| Pasta | O quê | Comando |
+|-------|--------|---------|
+| `tests/modules/<feature>/services\|controllers/` | Unit / service / controller (espelha `server/modules/<feature>/`) | `npm test` |
+| `tests/client/…` | Unit client | `npm test` |
+| `tests/core/…` | http, redis, db, kafka, ops, socket | `npm test` |
+| `tests/shared/…` | utils, security, validation, errors | `npm test` |
+| `tests/bootstrap/…` | bootstrap / stamp | `npm test` |
+| `tests/integration/pg/…` | Integração Postgres real | `npm run test:pg-integration` (**fora** do vitest default) |
+| `*.smoke.test.ts` ou `scripts/ops/*smoke*` | Smoke: **processo real** (criar/excluir máquina, stock, salas…) | vitest smoke / script ops |
+
+Nome novo: `tests/modules/<mesmo-módulo>/services|controllers/<ficheiro>.test.ts`.  
+Smoke: `*.smoke.test.ts` sob módulo ou `tests/integration/`.
+
+## Qual tipo usar
+
+1. **Unitário** — função pura / serviço com mocks. Regras e edge cases.
+2. **Controller** — `fakeApp` + handler → status/body.
+3. **Integração PG** — BD real, concorrência, residual.
+4. **Smoke** — fluxo de produto de ponta a ponta (não “envia/recebe mock”). Pediu “teste de verdade” → smoke.
+
+Bug de fluxo real → **não** declarar feito só com unit mock.
+
+## Após mudanças relevantes (obrigatório)
+
+```bash
+npm run lint              # eslint server tests — unused, any indevido, etc.
+npm run typecheck         # tsc -p tsconfig.json — lógica tipada fim-a-fim
+npm test                  # unit/controller
+# se tocou persistência/API crítica:
+npm run test:pg-integration
+# + smoke do fluxo tocado
+```
+
+Client tocado: também `npm --prefix client run typecheck` e eslint em `client/src`.
+
+## Proibido: números mágicos
+
+IA **não inventa** timeout/limite/qty “que parece funcionar” (`30000`, `500`, `3 * 60 * 1000` soltos).
+
+- Usar constantes do sistema: `MS_PER_*`, `MARKET_RESERVE_MS`, config economy, `rateLimit` do módulo, env tipado, `server/shared/utils/time`.
+- Validação segue **contrato existente** (regex item id, DTO, Prisma) — adaptar ao formato do sistema, não inventar ms fixo.
+- Sem fonte → **perguntar**, não chutar.
+- Em testes: factories/fixtures; durações = mesma constante de produção.
+
+```ts
+// BAD
+await sleep(30000);
+
+// GOOD
+import { MS_PER_MINUTE } from '../shared/utils/time.js';
+await sleep(MS_PER_MINUTE);
+```
+
+## ESLint / Typecheck / any
+
+- Lint: unused vars, imports mortos, regras do projeto — `--max-warnings=0`.
+- Typecheck: revisão de tipos início→fim; falhou = não merge/deploy (stub local → typecheck na VM).
+- Produção nova: sem `any` solto; desconhecido → `unknown` + narrow. `any` só em harness de teste legado se inevitável.

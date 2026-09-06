@@ -1,0 +1,119 @@
+════════════════════════════════════════════════════════════════════════════
+GENESIS MINER / MINESTATION — ESTRUTURA DE PASTAS (current/)
+Adaptado do padrão BlockMiner 2.1 pro nosso mapa real de domínios.
+Stack: Express + Prisma (backend) | React + Vite (frontend) | Postgres + Redis + MongoDB
+════════════════════════════════════════════════════════════════════════════
+
+current/
+├── server/                                         # backend — Express + Prisma (TypeScript)
+│   ├── bootstrap/                                  # cria o app Express, monta rotas, /health (era server.ts)
+│   ├── core/                                       # infra transversal (não é módulo de produto)
+│   │   ├── database/                               # cliente Prisma singleton (era config/prisma.ts, config/db.ts)
+│   │   ├── mongo/                                  # cliente Mongo p/ game_activity_logs (era lib/mongoLogs.ts)
+│   │   ├── http/                                   # middlewares: auth, CORS, rate limit, erros (era utils/corsConfig, apiErrorResponse)
+│   │   ├── logger/                                 # logger estruturado (era lib/logThrottle.ts)
+│   │   ├── redis/                                  # cliente Redis singleton (era lib/redisDistributedLock.ts)
+│   │   └── socket/                                 # setup Socket.IO (chat realtime) (era modules/chat/chat.socket.ts)
+│   ├── cron/                                       # jobs agendados — mineração, payout, limpeza (era backend/cron/*)
+│   ├── workers/                                    # workers BullMQ (era backend/workers/bullGenesisWorker.ts)
+│   ├── modules/                                    # CORAÇÃO do produto — 1 pasta por domínio de negócio
+│   │   ├── account-manager/                        # payout semanal de comissão (era modules/account-manager)
+│   │   ├── admin/                                  # painel admin, subdividido por área:
+│   │   │   ├── mining-distribution/                #   distribuição de mineração (era controllers/adminMiningDistribution*)
+│   │   │   ├── referral/                           #   comissão de indicação (era controllers/adminReferralController)
+│   │   │   ├── security-bulk/                      #   ações de segurança em massa (era controllers/adminSecurityBulk*)
+│   │   │   ├── user-audit/                         #   auditoria de usuário (era controllers/adminUserAudit*, services/adminUserAccountTrace/InventoryAudit)
+│   │   │   ├── backup/                             #   backup do sistema (era controllers/backupController, models/backupModel)
+│   │   │   ├── suspicious-emails/                  #   detecção de e-mail suspeito (era modules/admin/suspiciousEmails)
+│   │   │   └── image-asset/                        #   gestão de assets de imagem (era controllers/imageAssetController, models/imageAssetModel)
+│   │   ├── auth/                                   # login, registro, JWT, refresh, cookies (era src/auth/* + modules/login)
+│   │   ├── batteries/                              # inventário/integridade de baterias dos racks (era modules/batteries)
+│   │   ├── black-market/                           # marketplace P2P (era modules/black-market + controllers/p2pMarketController)
+│   │   ├── chat/                                   # chat realtime (era modules/chat)
+│   │   ├── checkin/                                # check-in diário, bônus, streak (era modules/checkin)
+│   │   ├── dashboard/                               # dados agregados da home do jogador (era modules/dashboard)
+│   │   ├── device-fingerprint/                     # fingerprint anti-fraude (era models/deviceFingerprintModel, controllers/deviceFingerprintAdmin*)
+│   │   ├── email-verification/                     # verificação de e-mail (era modules/email-verification)
+│   │   ├── guide/                                  # conteúdo de ajuda in-app (era modules/guide)
+│   │   ├── announcements/                          # avisos/modais no jogo (ex in-app-announcements)
+│   │   ├── inventory/                              # inventário e auditoria de itens (era modules/inventory + services/inventorySnapshotService — checar duplicata)
+│   │   ├── lucky-boxes/                            # caixas de sorte, idempotência (era modules/lucky-boxes)
+│   │   ├── merge/                                  # fusão de itens/estatísticas (era modules/merge)
+│   │   ├── partners/                                # cadastro/perfil de parceiros + YouTube (era modules/partners + controllers/partnerYoutubeController)
+│   │   ├── player-calculator/                      # calculadora de rendimento do jogador (era controllers/playerCalculatorController, services/playerCalculatorService)
+│   │   ├── profile/                                 # identidade, senha, wallet history, referral (era modules/profile)
+│   │   ├── promo-redeem/                           # resgate de código promocional (era controllers/promoRedeemController, models/promoRedeemModel)
+│   │   ├── quests/                                  # missões por período (era modules/quests)
+│   │   ├── roadmap/                                 # roadmap público (era modules/roadmap)
+│   │   ├── roleta/                                  # roleta de prêmios (era controllers/roletaController, models/roleta*)
+│   │   ├── servers/                                 # sala de servidores / posicionamento de racks (era modules/servers)
+│   │   ├── shop/                                    # catálogo, carrinho, checkout (era modules/shop)
+│   │   ├── support/                                 # tickets, anexos, mutações (era modules/support + controllers/supportMutation/supportTicket*)
+│   │   ├── upgrades/                                # catálogo e compra de upgrades de rack (era modules/upgrades)
+│   │   ├── wallet/                                  # saldo, saque, exchange, locks (era modules/wallet)
+│   │   ├── wheel/                                   # roda de prêmios (era modules/wheel)
+│   │   └── zerads/                                  # offerwall parceiro ZerAds (era controllers/zeradsCallbackController)
+│   └── shared/                                      # utilitários compartilhados entre módulos
+│       ├── blockchain/                              # RPC EVM (Base/BNB/Polygon), ethers (era .env RPCs + lib de wallet)
+│       ├── errors/                                  # erros HTTP padronizados (era utils/apiErrorResponse.ts)
+│       ├── http/                                    # helpers de resposta HTTP (era utils/prismaHttpResponse.ts)
+│       ├── security/                                # mailer, turnstile, VPN guard, auth flow secret (era utils/mailer, cloudflareTurnstile, signupProxyVpnGuard)
+│       ├── utils/                                   # utilitários genéricos (era lib/safeText, lib/rpcBackoff, etc.)
+│       └── validation/                              # validação genérica reusável (era backend/validation/*)
+├── client/                                          # frontend — React + Vite (TypeScript)
+│   ├── public/                                      # assets estáticos
+│   ├── src/
+│   │   ├── app/                                     # bootstrap do React: rotas, providers globais (era App.tsx, index.tsx)
+│   │   ├── features/                                # 1 pasta por tela/funcionalidade — espelha server/modules
+│   │   │   ├── account-manager/  admin/  auth/  batteries/  black-market/  chat/
+│   │   │   ├── checkin/  dashboard/  guide/  inventory/  legal/  lucky-boxes/
+│   │   │   ├── merge/  partners/  player-calculator/  profile/  quests/  roadmap/
+│   │   │   ├── roleta/  servers/  shell/  shop/  support/  upgrades/  wallet/  wheel/
+│   │   │   └── (era frontend/components/*.tsx, achatado — cada arquivo vira uma feature)
+│   │   ├── i18n/                                    # traduções (a confirmar se já existe no legado)
+│   │   └── shared/                                  # componentes/hooks/stores reutilizados (era frontend/lib, frontend/stores, frontend/utils)
+│   ├── scripts/                                     # scripts auxiliares de build/dev
+│   └── tests/                                       # testes de frontend (era frontend/test)
+├── prisma/                                          # schema e migrations do Postgres (era backend/prisma)
+│   └── migrations/
+├── tests/                                           # testes de integração (Postgres/Redis/Mongo reais), 1 pasta/domínio
+├── docs/                                            # documentação do projeto (já em andamento)
+├── scripts/
+│   └── deploy/                                      # pipeline de deploy pra VPS (era deploy_vps.py + app_production/*.sh)
+├── nginx/                                           # config do reverse proxy (era app_production/nginx)
+│   ├── certs/
+│   └── includes/
+├── storage/                                         # arquivos persistidos em disco (volume Docker)
+│   ├── backups/                                     # dumps / backups
+│   ├── media-seed/                                  # catálogo de imagens (URL pública /img/…)
+│   │   ├── miner/                                   # GPUs / ASICs / hardware genérico
+│   │   ├── rack/                                    # chassis / racks
+│   │   ├── fan/                                     # fans / cooling
+│   │   ├── chip/                                    # chips IA / multipliers
+│   │   ├── battery/                                 # baterias
+│   │   ├── charger/                                 # carregadores / circuitos
+│   │   ├── coin/                                    # ícones de moedas
+│   │   ├── support/                                 # anexos de suporte
+│   │   ├── partner/                                 # parceiros
+│   │   ├── favicon/
+│   │   ├── landing/
+│   │   └── (aliases PT: baterias→battery, moedas→coin, …)
+│   └── uploads/                                     # uploads runtime (ads, chat-audio, partner-avatars)
+├── dist/                                            # build compilado do backend (gerado, não editar — .gitignore)
+├── Dockerfile
+├── ESTRUTURA.txt
+├── docker-compose.yml
+├── package.json
+└── tsconfig.json
+
+════════════════════════════════════════════════════════════════════════════
+NOTA: legacy/ é SOMENTE REFERÊNCIA histórica — nunca editada.
+current/ é o projeto ativo em construção (skeleton criado, código ainda não migrado).
+
+PENDÊNCIAS DE MAPEAMENTO (confirmar antes de migrar):
+- modules/inventory vs services/inventorySnapshotService.ts — possível duplicata.
+- lib/genesisStack vs lib/stack — confirmar se são a mesma coisa.
+- contracts/ do BlockMiner não tem equivalente aqui — confirmar se há on-chain real
+  ou se é só RPC read-only (ver .env: BASE_RPC, BNB_RPC, POLYGON_RPC, ETHERSCAN_API_KEY).
+- client/src/i18n — confirmar se o legado já tem traduções ou se é novo.
+════════════════════════════════════════════════════════════════════════════

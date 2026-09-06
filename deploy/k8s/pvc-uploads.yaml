@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: genesis-uploads
+  namespace: genesis
+  labels:
+    app.kubernetes.io/name: genesis-app
+    genesis.io/volume: uploads
+spec:
+  accessModes:
+    # RWX necessário se replicas > 1 sem object storage.
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  # storageClassName: <preencher no cluster>
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: genesis-backups
+  namespace: genesis
+  labels:
+    app.kubernetes.io/name: genesis-app
+    genesis.io/volume: backups
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi

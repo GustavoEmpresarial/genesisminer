@@ -1,0 +1,47 @@
+---
+description: Regras obrigatórias — zero magic numbers, eslint/typecheck/testes verdes, sem lixo
+alwaysApply: true
+---
+
+# Regras obrigatórias de código
+
+Aplicar em **toda** implementação / fix / refactor. Definition of done = lint + typecheck + testes verdes; se algo não der, **reportar** — nunca silenciar.
+
+## 1. Zero números mágicos
+
+- Nunca inventar timeouts, limites, tamanhos, tolerâncias ou regex “que parecem ok”.
+- Fonte: constante nomeada, config/env, schema, contrato API, ou tipo já existente.
+- Validação **adapta-se** ao formato/unidade do sistema (ex. `MS_PER_*` em `server/shared/utils/time.ts`), não a ms/qty chutados.
+- Sem fonte de verdade → **perguntar** ao user, não assumir.
+
+## 2. ESLint limpo
+
+- Corrigir tudo antes de entregar: unused, unreachable, `any` indevido, regras do projeto.
+- Preferir binário local e paths tocados:
+  - Server/tests: `./node_modules/.bin/eslint <paths> --max-warnings=0` (ou `npm run lint` no âmbito do repo).
+  - Client: eslint nos ficheiros tocados sob `client/src` com `--max-warnings=0`.
+- Warnings contam como falha (`--max-warnings=0`).
+
+## 3. Typecheck limpo
+
+- Server: `npm run typecheck` (`tsc -p tsconfig.json`).
+- Client: `npm --prefix client run typecheck` (`tsc --noEmit`).
+- Proibido `any`, `as any`, `@ts-ignore`, `@ts-expect-error` sem justificativa escrita no código.
+- Desconhecido → `unknown` + narrowing, ou tipar de verdade.
+
+## 4. Testes
+
+- Correr a suíte relevante (módulo tocado + regressão mínima) e deixar **verde**.
+- Não apagar/alterar teste só para passar — ou o código está errado, ou a mudança de comportamento precisa de justificação explícita.
+- Comportamento novo → teste novo.
+- Mapa completo (unit vs smoke vs PG) e pasta `tests/`: ver `.cursor/rules/testing-and-qa.mdc`.
+- Bug de fluxo real → **smoke** (criar/excluir/gravar), não só unit com mock.
+
+## 5. Sem lixo de debug
+
+- Proibido no código final: `console.log` de debug, `debugger`, código comentado morto, TODO vago, mock esquecido.
+- Log operacional: logger/padrão já usado no módulo (não inventar console).
+
+## 6. Orquestração
+
+Seguir `.cursor/rules/subagent-orchestration.mdc`. Estas gates são **done criteria** obrigatórios no prompt ao subagente e na revisão do agente principal.

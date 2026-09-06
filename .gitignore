@@ -1,0 +1,41 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+
+# --- Dados e segredos: NUNCA commitar ---
+# Dump da base de produção (~1.1 GB, contém PII de jogadores: emails,
+# hashes de password, saldos, transações). Acima do limite de 100 MB do GitHub.
+*.dump
+*.sql.gz
+*.backup
+
+# Media e uploads (~455 MB). `uploads/` tem conteúdo enviado por utilizadores
+# (anexos de suporte, avatares de parceiros, áudio de chat).
+storage/media-seed/
+storage/uploads/
+storage/backups/*
+!storage/backups/.gitkeep
+
+# --- Artefactos locais ---
+hashlib
+council/
+*.log
+coverage/
+.vitest-cache/
+.DS_Store
+scripts/deploy/vm_config_secret.py
+
+# --- Rust migration ---
+rust/target/
+native/*.node
+!native/.gitkeep
+
+# --- Python cache (may embed vm_config_secret constants) ---
+__pycache__/
+*.pyc
+*.pyo
+
+# --- Deploy artefacts ---
+.last-deployed-image

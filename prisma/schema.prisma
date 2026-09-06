@@ -1,0 +1,1705 @@
+// =============================================================================
+// Mine Station — PostgreSQL (fonte de verdade). Espelho mantido com Prisma.
+//
+// Manutenção do schema
+//   1) Alterações via Prisma: `cd backend && npx prisma migrate dev` (preferível em produção séria).
+//   2) Alterações só em SQL / initDb: `cd backend && npx prisma db pull` e rever o diff do
+//      `schema.prisma` antes de commit (alinha com `config/initDb.ts`).
+//   3) `npx prisma generate` após mudar este ficheiro (o `build:app` do backend já inclui generate).
+//
+// Desenho
+//   - Sem relações `@relation` entre models: o código usa SQL explícito / find por id; reduz
+//     conflitos com tabelas legadas e `db.query` no `server.ts`.
+//   - Trilho Mongo de atividade de jogo foi removido do current/; admin usa Postgres
+//     onde houver cobertura (ex.: P2P). Não recriar tabela de game_activity no SQL.
+//
+// Ver também: `backend/docs/PRISMA_DATA_SCOPE.md`
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Utilizadores, sessões, JWT refresh, níveis de acesso ---
+
+/** Conta de jogador/admin. `is_admin`/`is_super_admin`/`is_blocked` são flags 0/1 (não boolean nativo). */
+model users {
+  id                 Int     @id @default(autoincrement())
+  username           String
+  email              String  @unique
+  password           String?
+  is_admin           Int?    @default(0)
+  is_super_admin     Int     @default(0)
+  polygon_wallet     String?
+  is_blocked         Int?    @default(0)
+  access_level_id    String?
+  referral_code      String?
+  referred_by        String?
+  last_active_at     BigInt?
+  ranking_excluded   Int?    @default(0)
+  registration_ip    String?
+  admin_permissions    String?
+  email_verification_required Int @default(0)
+  email_verified     Int     @default(0)
+  password_reset_token_hash       String?
+  password_reset_token_expires_at BigInt?
+  login_failure_count             Int     @default(0)
+  login_locked_until              BigInt?
+  email_verification_token_hash   String?
+
+  @@index([is_blocked, ranking_excluded], map: "users_blocked_ranking_excluded_idx")
+  @@map("users")
+}
+
+/** Concessão de nível de acesso a um utilizador (histórico de quando foi concedido). */
+model user_access_levels {
+  user_id         Int
+  access_level_id String
+  granted_at      BigInt
+
+  @@id([user_id, access_level_id])
+  @@map("user_access_levels")
+}
+
+/** Registo simples de quem indicou quem (username do indicado). */
+model referrals {
+  id                 Int    @id @default(autoincrement())
+  user_id            Int
+  referred_username  String
+
+  @@index([referred_username], map: "referrals_referred_username_idx")
+  @@map("referrals")
+}
+
+/** Comissões de referral creditadas (idempotência por `idempotency_key`, ex. deposit_tx:0x…). */
+model referral_commission_ledger {
+  id                 String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  idempotency_key    String  @unique @db.VarChar(240)
+  referrer_user_id   Int
+  referred_user_id   Int
+  source_type        String  @default("deposit") @db.VarChar(32)
+  base_amount_usdc   Float
+  commission_percent Float
+  commission_usdc    Float
+  created_at         BigInt
+
+  @@map("referral_commission_ledger")
+}
+
+/** Desafio único para ligar carteira Polygon por assinatura (evita gravar endereço sem prova). */
+model profile_wallet_connect_challenges {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    Int
+  message    String
+  expires_at BigInt
+  used_at    BigInt?
+
+  @@index([user_id])
+  @@index([expires_at])
+  @@map("profile_wallet_connect_challenges")
+}
+
+/** Auditoria de ações do perfil (sem dados sensíveis em `meta`). */
+model profile_audit_log {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     Int?
+  action      String  @db.VarChar(120)
+  route       String? @db.VarChar(200)
+  request_id  String? @db.VarChar(64)
+  meta        String?
+  created_at  BigInt
+
+  @@index([user_id, created_at])
+  @@map("profile_audit_log")
+}
+
+/** Histórico append-only de ligações / trocas / remoções da carteira Polygon do perfil. */
+model user_wallet_history {
+  id                      String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                 Int
+  wallet_address          String?
+  network                 String  @default("polygon") @db.VarChar(32)
+  action                  String  @db.VarChar(32)
+  previous_wallet_address String?
+  new_wallet_address      String?
+  ip_address              String? @db.VarChar(80)
+  user_agent              String? @db.VarChar(500)
+  signature_address       String? @db.VarChar(80)
+  signature_message       String?
+  created_at              BigInt
+  metadata                Json?
+  actor_type              String  @default("user") @db.VarChar(24)
+  actor_user_id           Int?
+  source                  String? @db.VarChar(80)
+  notes                   String?
+
+  @@index([user_id])
+  @@index([created_at])
+  @@index([wallet_address])
+  @@index([action])
+  @@index([actor_type])
+  @@map("user_wallet_history")
+}
+
+/** Histórico de depósitos on-chain confirmados (USDC) por utilizador; `tx_hash` é único (evita duplo crédito). */
+model user_deposit_history {
+  id              String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         Int
+  tx_hash         String  @db.VarChar(120)
+  network         String  @default("polygon") @db.VarChar(32)
+  amount_usdc     Float?
+  wallet_address  String? @db.VarChar(80)
+  token_contract  String? @db.VarChar(120)
+  created_at      BigInt
+
+  @@unique([tx_hash], map: "user_deposit_history_tx_hash_unique")
+  @@index([user_id, created_at(sort: Desc)], map: "user_deposit_history_user_created_idx")
+  @@index([wallet_address], map: "user_deposit_history_wallet_idx")
+  @@map("user_deposit_history")
+}
+
+// --- Economia de mineração: moedas, catálogo de peças, compatibilidade de racks ---
+
+/** Catálogo de moedas mineráveis no jogo (parâmetros usados no cálculo de yield). */
+model mining_coins {
+  id                 String  @id
+  name               String
+  symbol             String  @default("")
+  description        String  @default("")
+  network_hashrate   Float   @default(0)
+  block_reward       Float   @default(0)
+  block_time         Float   @default(60)
+  price_usd          Float   @default(0)
+  algorithm          String  @default("")
+  difficulty         Float   @default(1)
+  multiplier         Float   @default(1)
+  color              String  @default("#ffffff")
+  min_proportion     Float
+  usdc_rate          Float
+  is_active          Int
+  target_daily_usd   Float?  @default(0)
+  show_in_exchange   Int?    @default(1)
+  nft_room_only      Int     @default(0)
+
+  @@map("mining_coins")
+}
+
+/** Catálogo de níveis/planos de acesso (VIP tiers) que podem ser comprados ou concedidos. */
+model access_levels {
+  id                 String  @id
+  name               String
+  description        String
+  is_default         Int
+  is_active          Int
+  price_usdc         Float?
+  contract_address   String?
+  inactive_message   String?
+  news_posting_enabled Int?  @default(0)
+  allowed_pages      String?
+
+  @@map("access_levels")
+}
+
+/** Catálogo mestre de itens do jogo (ASICs, racks, baterias, infraestrutura, multiplicadores, NFTs). */
+model upgrades {
+  id                   String  @id
+  name                 String
+  category             String
+  type                 String
+  base_cost            Float
+  base_production      Float
+  power_consumption    Float?
+  power_capacity       Float?
+  multiplier            Float?
+  slots_capacity       Int?
+  ai_slots_capacity    Int?
+  description          String
+  icon                 String
+  status               String
+  is_nft               Int
+  nft_contract         String?
+  nft_token_id         String?
+  max_global_stock     Int?
+  total_sold           Int?    @default(0)
+  image                String?
+  reward_wh            Float?  @default(0)
+  layout               String?
+  sell_in_hardware_market Int? @default(1)
+  sell_in_black_market Int?    @default(1)
+  is_active            Int?    @default(1)
+  /** Moeda fixa na Sala NFT (por modelo de ASIC); NULL = não aplicável / outras salas. */
+  nft_mining_coin_id   String?
+  /** Legado: none | daily | weekly | monthly | annual */
+  asic_duration_kind   String?  @default("none")
+  /** Validade custom: quantidade (0 = permanente) */
+  asic_duration_amount Int?     @default(0)
+  /** day | week | month | year */
+  asic_duration_unit   String?
+  /** common | uncommon | rare | epic | legendary | supreme — usado no Merge */
+  rarity               String  @default("common")
+  /** standard | nft | asic | any | asic+nft | … — afinidade de sala do chassis. */
+  rack_room_affinity   String? @default("standard")
+
+  @@map("upgrades")
+}
+
+/** Singleton: revisão monotônica do catálogo `upgrades` (OCC admin vs merge). */
+model upgrades_catalog_meta {
+  id       Int    @id @default(1)
+  revision BigInt @default(0)
+
+  @@map("upgrades_catalog_meta")
+}
+
+/** Histórico de fusões (merge) de itens por raridade, com taxa cobrada em USDC. */
+model merge_history {
+  id              BigInt  @id @default(autoincrement())
+  user_id         Int
+  source_item_id  String
+  result_item_id  String
+  source_rarity   String
+  result_rarity   String
+  fee_usdc        Float   @default(0)
+  created_at      BigInt
+
+  @@index([user_id, created_at], map: "merge_history_user_created_idx")
+  @@map("merge_history")
+}
+
+/** Chat global entre jogadores. */
+model chat_messages {
+  id                 BigInt  @id @default(autoincrement())
+  user_id            Int
+  username_snapshot  String
+  channel            String  @default("global")
+  body               String
+  kind               String  @default("text")
+  audio_url          String?
+  duration_ms        Int?
+  created_at         BigInt
+  edited_at          BigInt?
+  deleted_at         BigInt?
+
+  @@index([channel, created_at(sort: Desc)], map: "chat_messages_channel_created_idx")
+  @@map("chat_messages")
+}
+
+/** Singleton id=1 — ganho % e taxas % por raridade (admin). */
+model merge_settings {
+  id                     Int    @id @default(1)
+  gain_percent           Float  @default(5)
+  cost_pct_json          String @default("{\"common\":10,\"uncommon\":15,\"rare\":20,\"epic\":25,\"legendary\":30}")
+  rack_hs_bonus_pct_json String @default("{\"common\":0,\"uncommon\":0,\"rare\":0,\"epic\":0,\"legendary\":0,\"supreme\":0}")
+  enabled                Int    @default(1)
+  enabled_machine        Int    @default(1)
+  enabled_multiplier     Int    @default(1)
+  enabled_infrastructure Int    @default(1)
+  updated_at             BigInt @default(0)
+
+  @@map("merge_settings")
+}
+
+/** Compatibilidade: quais racks (`upgrades.id`) aceitam determinado upgrade (`upgrade_id`). */
+model upgrade_compat_racks {
+  upgrade_id String
+  rack_id    String
+
+  @@id([upgrade_id, rack_id])
+  @@map("upgrade_compat_racks")
+}
+
+// --- Caixas, notícias, passes de época ---
+
+/** Catálogo de caixas de prémios (loot boxes) disponíveis na loja. */
+model loot_boxes {
+  id             String  @id
+  name           String
+  description    String
+  price          Float
+  trigger        String
+  icon           String
+  is_active      Int?    @default(1)
+  /// Estoque global na loja; `null` = ilimitado.
+  stock          Int?
+  max_per_order  Int     @default(20)
+  /// Máximo de unidades desta caixa no inventário do jogador; `null` = sem limite.
+  max_per_user   Int?
+
+  @@map("loot_boxes")
+}
+
+/** Tabela de prémios possíveis de uma `loot_boxes` (item, faixa de quantidade, probabilidade). */
+model loot_box_items {
+  id           Int     @id @default(autoincrement())
+  box_id       String
+  item_type    String
+  item_id      String
+  min_qty      Int
+  max_qty      Int
+  probability  Float
+
+  @@map("loot_box_items")
+}
+
+/** Faixa de notícias/avisos do sistema exibida no jogo. */
+model system_news {
+  id         String  @id
+  text       String
+  link       String?
+  active     Int
+  duration   Int?
+  author_name String?
+  created_at BigInt
+
+  @@map("system_news")
+}
+
+/** Anúncios in-app (modal/banner) com janela de exibição opcional (`starts_at`/`ends_at`). */
+model in_app_announcements {
+  id          String  @id
+  title       String
+  message     String
+  link        String?
+  image_url   String?
+  is_active   Int     @default(1)
+  priority    Int     @default(0)
+  starts_at   BigInt?
+  ends_at     BigInt?
+  created_at  BigInt
+  created_by  Int?
+
+  reads in_app_announcement_reads[]
+
+  @@index([is_active, created_at], map: "idx_in_app_announcements_active_created")
+  @@map("in_app_announcements")
+}
+
+/** Marca de leitura do utilizador para um `in_app_announcements` (evita reexibir). */
+model in_app_announcement_reads {
+  user_id          Int
+  announcement_id  String
+  read_at          BigInt
+
+  announcement in_app_announcements @relation(fields: [announcement_id], references: [id], onDelete: Cascade)
+
+  @@id([user_id, announcement_id])
+  @@index([user_id], map: "idx_in_app_announcement_reads_user_id")
+  @@map("in_app_announcement_reads")
+}
+
+/** Catálogo de passes de época (season pass) à venda. */
+model season_passes {
+  id          String  @id
+  season_id   String
+  name        String
+  description String
+  price_usdc  Float
+  emblem_url  String?
+  is_active   Int
+
+  @@map("season_passes")
+}
+
+/** Registo de compra de um `season_passes` por utilizador. */
+model season_purchases {
+  user_id      Int
+  pass_id      String
+  season_id    String
+  purchased_at BigInt
+
+  @@id([user_id, pass_id])
+  @@map("season_purchases")
+}
+
+// --- Estado persistido do jogador (save-game): saldos, stock, rigs, oficina ---
+
+/** Save-game principal do jogador: saldo USDC, totais de depósito/saque, check-in diário. */
+model game_states {
+  id                       Int     @id @default(autoincrement())
+  user_id                  Int     @unique
+  usdc                     Float
+  start_time               BigInt
+  claimed_referrals        Int
+  referral_bonus_claimed Int
+  last_updated_at          BigInt?
+  total_usdc_deposited     Float?
+  total_crypto_withdrawn   Float?
+  black_market_balance     Float?  @default(0)
+  server_updated_at        BigInt? @default(0)
+  usdc_bonus               Float?  @default(0)
+  /** Check-in diário (sistema substituto do carregamento de baterias).
+   *  Dia local America/Sao_Paulo no formato 'YYYY-MM-DD'. NULL = nunca fez check-in.
+   *  Mantido para diagnóstico — a regra de freeze usa `last_checkin_at_ms`. */
+  last_checkin_day         String? @db.VarChar(10)
+  /** Timestamp (ms epoch) do último check-in. Ciclo BRT 21:00→21:00
+   *  (America/Sao_Paulo): freeze se o último check-in caiu noutro ciclo.
+   *  NULL = nunca fez check-in. */
+  last_checkin_at_ms       BigInt?
+  /** Sequência consecutiva de dias com check-in (estatística / UI). */
+  checkin_streak           Int     @default(0)
+  /** H/s acumulados de recompensa de check-in (bónus permanente de mineração). */
+  checkin_bonus_hps        Float   @default(0)
+  /** USD recuperado por mineração de ASICs na Sala NFT (payback). */
+  nft_asic_mined_usd_total Float   @default(0)
+
+  @@index([last_checkin_day], map: "game_states_last_checkin_day_idx")
+  @@index([last_checkin_at_ms], map: "game_states_last_checkin_at_ms_idx")
+  @@map("game_states")
+}
+
+// --- Definições chave-valor (flags, intervalos de backup, etc.) ---
+
+/** Definições globais chave-valor (flags, parâmetros de backup, etc.). */
+model settings {
+  key   String @id
+  value String
+
+  @@map("settings")
+}
+
+/** Inventário do jogador: quantidade (`qty`) de cada item de catálogo (`item_id`) na sua posse. */
+model stock {
+  user_id Int
+  item_id String
+  qty     Int
+
+  @@id([user_id, item_id])
+  @@map("stock")
+}
+
+/**
+ * Identidade por unidade física (peça imprimível/clonável).
+ * `stock.qty` continua cache desnormalizado (UI / hot path).
+ * Timed ASIC: `id` = `player_asic_leases.id`.
+ */
+model item_instances {
+  id               String   @id @db.Uuid
+  /// Unique printable code: catalog_item_id (VarChar 200) + ':' + hyphenated UUID (36) = 237.
+  code             String   @unique @db.VarChar(237)
+  catalog_item_id  String   @db.VarChar(200)
+  user_id          Int
+  status           String   @db.VarChar(32)
+  rack_id          String?  @db.VarChar(120)
+  slot_index       Int?
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([user_id, catalog_item_id, status], map: "item_instances_user_item_status_idx")
+  @@index([user_id, status], map: "item_instances_user_status_idx")
+  @@map("item_instances")
+}
+
+/** Auditoria de movimentos de inventário (compra, instalação, ajuste, etc.). */
+model inventory_movements {
+  id               String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id          Int
+  action           String  @db.VarChar(64)
+  catalog_item_id  String? @db.VarChar(200)
+  instance_id      String? @db.VarChar(200)
+  quantity_before  Int?
+  quantity_after   Int?
+  meta               String? @db.Text
+  created_at         BigInt
+
+  @@index([user_id])
+  @@map("inventory_movements")
+}
+
+/** Idempotência de ticks `computeProgressForUser` (evita duplo commit em retry). */
+model mining_progress_commit_ledger {
+  id               BigInt   @id @default(autoincrement())
+  user_id          Int
+  idempotency_key  String   @db.VarChar(200)
+  created_at       DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([user_id, idempotency_key], map: "mining_progress_commit_ledger_user_key_uidx")
+  @@index([user_id, created_at(sort: Desc)], map: "mining_progress_commit_ledger_user_created_idx")
+  @@map("mining_progress_commit_ledger")
+}
+
+/** Carrinho de compras ativo do jogador na loja (1 por utilizador). */
+model shop_carts {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    Int    @unique
+  updated_at BigInt
+
+  @@map("shop_carts")
+}
+
+/** Linhas (produto + quantidade) de um `shop_carts`. */
+model shop_cart_lines {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cart_id    String @db.Uuid
+  product_id String @db.VarChar(200)
+  qty        Int
+  updated_at BigInt
+
+  @@unique([cart_id, product_id])
+  @@index([cart_id])
+  @@map("shop_cart_lines")
+}
+
+/** Idempotência de checkout da loja (evita duplo débito/entrega no mesmo request). */
+model shop_checkout_idempotency {
+  user_id             Int
+  idempotency_key     String  @db.VarChar(128)
+  new_usdc            Float
+  total_cost          Float
+  lines_json          String  @db.Text
+  created_at          BigInt
+  request_fingerprint String? @db.VarChar(64)
+
+  @@id([user_id, idempotency_key])
+  @@map("shop_checkout_idempotency")
+}
+
+/** Idempotência de compra de slots de sala (`POST /api/rig-rooms/purchase-slot`). */
+model room_slot_purchase_idempotency {
+  user_id             Int
+  idempotency_key     String  @db.VarChar(128)
+  room_id             String
+  slots_purchased     Int
+  total_price         Float
+  new_usdc            Float
+  request_fingerprint String? @db.VarChar(64)
+  created_at          BigInt
+
+  @@id([user_id, idempotency_key])
+  @@map("room_slot_purchase_idempotency")
+}
+
+/** Caixas (`loot_boxes`) que o jogador possui mas ainda não abriu. */
+model unopened_boxes {
+  user_id Int
+  box_id  String
+  qty     Int
+
+  @@id([user_id, box_id])
+  @@map("unopened_boxes")
+}
+
+/// Abertura de caixa (auditoria; prémios entregues na mesma transação que consome `unopened_boxes`).
+model lucky_box_openings {
+  id              String   @id @default(uuid()) @db.Uuid
+  user_id         Int
+  box_id          String
+  rewards_json    Json
+  gained_usdc     Decimal  @default(0) @db.Decimal(24, 8)
+  created_at      BigInt
+  idempotency_key String?  @db.VarChar(128)
+
+  @@index([user_id, created_at(sort: Desc)])
+  @@index([box_id])
+  @@map("lucky_box_openings")
+}
+
+/// Resposta em cache para idempotência de compra / abertura / resgate (evita duplicação em retry).
+model lucky_box_idempotency {
+  user_id               Int
+  scope                 String  @db.VarChar(32)
+  idempotency_key       String  @db.VarChar(128)
+  http_status           Int
+  body_json             String
+  created_at            BigInt
+  request_fingerprint   String? @db.VarChar(64)
+
+  @@id([user_id, scope, idempotency_key])
+  @@index([created_at(sort: Desc)])
+  @@map("lucky_box_idempotency")
+}
+
+/// Integridade: `id` e `item_id` não podem ser vazios (CHECK na BD — migration `20260506120000_stored_batteries_nonempty_ids`).
+/// Sistema de carregamento descontinuado (migração `20260516180000_battery_uuids_and_purge_charging`):
+/// cada bateria tem UUID próprio em `id`, é infinita por design e nunca recarrega.
+model stored_batteries {
+  id                  String  @id
+  user_id             Int
+  item_id             String
+  /// Nome mostrado (cópia do catálogo na criação).
+  display_name        String?
+  /// URL ou caminho de imagem (cópia opcional do catálogo).
+  image_url           String? @db.VarChar(2048)
+  /// Estado semântico da instância (migração Fase 3).
+  status      String?
+  location    String?
+  rack_id     String?
+  slot_id     Int?
+  room_id     String?
+  version     Int       @default(0)
+  last_moved_at DateTime? @db.Timestamptz(6)
+  updated_at    DateTime? @default(now()) @db.Timestamptz(6)
+
+  @@index([user_id])
+  @@map("stored_batteries")
+}
+
+/** Rack instalado numa sala do jogador (posição, bateria/wiring montados, ligado/desligado). */
+model placed_racks {
+  id               String  @id
+  user_id          Int
+  item_id          String
+  wiring_id        String?
+  battery_id       String?
+  is_on            Int
+  selected_coin_id String?
+  room_id          String?
+  slot_index       Int?    @default(0)
+  /// Id de catálogo (`upgrades.id`) da bateria montada (UUID em `battery_id`).
+  battery_catalog_item_id   String?
+  battery_display_name      String?
+  battery_image_url         String? @db.VarChar(2048)
+
+  @@index([is_on, user_id], map: "placed_racks_is_on_user_idx")
+  @@index([user_id], map: "placed_racks_user_id_idx")
+  @@map("placed_racks")
+}
+
+/** Slot de máquina (ASIC) dentro de um `placed_racks`; `machine_lease_id` referencia leasing NFT quando aplicável. */
+model rack_slots {
+  rack_id           String
+  slot_index        Int
+  machine_item_id   String?
+  machine_lease_id  String? @db.Uuid
+
+  @@id([rack_id, slot_index])
+  @@map("rack_slots")
+}
+
+/** Aluguer (lease) de ASIC NFT por tempo limitado; `expires_at` controla validade, `status` o estado do lease. */
+model player_asic_leases {
+  id          String  @id @db.Uuid
+  user_id     Int
+  item_id     String
+  acquired_at BigInt
+  expires_at  BigInt
+  /** stock | equipped | expired | listed — `expired` preserva acquired_at/expires_at (não DELETE). */
+  status      String
+  rack_id     String?
+  slot_index  Int?
+
+  @@index([user_id, item_id], map: "idx_player_asic_leases_user_item")
+  @@index([user_id, expires_at], map: "idx_player_asic_leases_expires")
+  @@map("player_asic_leases")
+}
+
+/**
+ * Event log append-only da elegibilidade de mineração (cutover 4C).
+ * Fonte histórica dos factos após o cutover — não substitui o snapshot operacional.
+ */
+model mining_eligibility_events {
+  id               BigInt  @id @default(autoincrement())
+  user_id          Int
+  event_type       String  @db.VarChar(64)
+  at_ms            BigInt
+  identity_kind   String  @db.VarChar(32)
+  lease_id         String? @db.Uuid
+  rack_id          String? @db.VarChar(120)
+  slot_index       Int?
+  catalog_item_id  String? @db.VarChar(200)
+  coin_id          String? @db.VarChar(120)
+  payload          Json?
+  created_at       BigInt
+
+  @@index([user_id, at_ms], map: "mining_eligibility_events_user_at_idx")
+  @@index([lease_id, at_ms], map: "mining_eligibility_events_lease_at_idx")
+  @@index([rack_id, at_ms], map: "mining_eligibility_events_rack_at_idx")
+  @@map("mining_eligibility_events")
+}
+
+/** Slot de item multiplicador instalado num `placed_racks`. */
+model rack_multiplier_slots {
+  rack_id              String
+  slot_index           Int
+  multiplier_item_id   String?
+
+  @@id([rack_id, slot_index])
+  @@map("rack_multiplier_slots")
+}
+
+// --- Mercado P2P / mercado paralelo ---
+
+/** Anúncio de venda no mercado P2P/paralelo entre jogadores (reserva por `reserved_by`/`reserved_until`). */
+model player_listings {
+  id              String  @id
+  user_id         Int
+  item_id         String
+  price           Float
+  expires_at      BigInt
+  is_player       Int?
+  reserved_by     Int?
+  reserved_until  BigInt?
+  qty             Int?    @default(1)
+  status          String? @default("active")
+  buyer_paid_usdc Float?
+
+  @@index([status, expires_at], map: "player_listings_status_expires_idx")
+  @@index([user_id, status], map: "player_listings_user_status_idx")
+  @@index([status, reserved_until], map: "player_listings_status_reserved_until_idx")
+  @@map("player_listings")
+}
+
+/**
+ * Unidades físicas (`item_instances.id`) ligadas a um anúncio P2P.
+ * Sem `@relation` / FKs (padrão do repo). Uma unidade só num anúncio.
+ */
+model player_listing_instances {
+  listing_id   String
+  instance_id  String @db.Uuid
+
+  @@id([listing_id, instance_id])
+  @@unique([instance_id], map: "player_listing_instances_instance_id_key")
+  @@index([listing_id], map: "player_listing_instances_listing_id_idx")
+  @@map("player_listing_instances")
+}
+
+model p2p_market_trade_history {
+  id                   BigInt @id @default(autoincrement())
+  created_at           BigInt
+  buyer_id             Int
+  seller_id            Int
+  item_id              String
+  qty                  Int
+  unit_price           Float
+  buyer_paid_usdc      Float
+  seller_received_usdc Float
+  tax_usdc             Float   @default(0)
+
+  @@index([buyer_id, created_at(sort: Desc)], map: "p2p_trade_history_buyer_created_idx")
+  @@index([seller_id, created_at(sort: Desc)], map: "p2p_trade_history_seller_created_idx")
+  @@map("p2p_market_trade_history")
+}
+
+/** Idempotência de compra P2P (evita duplo débito / dupla entrega no mesmo requestId). */
+model p2p_market_buy_idempotency {
+  buyer_id         Int
+  idempotency_key  String @db.VarChar(128)
+  http_status      Int
+  body_json        String @db.Text
+  created_at       BigInt
+
+  @@id([buyer_id, idempotency_key])
+  @@map("p2p_market_buy_idempotency")
+}
+
+/** Espelho de posse de NFT on-chain (contrato + token id → dono); `metadata` é cache do payload do NFT. */
+model nft_items {
+  contract_address String
+  token_id         String
+  owner_address    String
+  metadata         String?
+
+  @@id([contract_address, token_id])
+  @@map("nft_items")
+}
+
+// --- Sessão legacy (cookie sid) e tokens JWT ---
+
+/** Sessão legada por cookie `sid`; `acting_as_owner_id`/`manager_mode` suportam gerência de conta. */
+model sessions {
+  session_id         String  @id
+  user_id            Int
+  created_at         BigInt
+  expires_at         BigInt
+  original_user_id   Int?
+  last_seen_at       BigInt? @default(0)
+  /** true quando um gerente está a operar a conta do dono (não confundir com admin impersonate). */
+  manager_mode       Int     @default(0)
+  acting_as_owner_id Int?
+
+  @@map("sessions")
+}
+
+/** Contrato dono ↔ gerente (gerência de conta). */
+model account_manager_contracts {
+  id                Int     @id @default(autoincrement())
+  owner_user_id     Int
+  manager_user_id   Int
+  status            String  @db.VarChar(16)
+  hired_at          BigInt?
+  ends_at           BigInt?
+  fire_locked_until BigInt?
+  created_at        BigInt
+  updated_at        BigInt
+
+  @@index([owner_user_id, status])
+  @@index([manager_user_id, status])
+  @@map("account_manager_contracts")
+}
+
+/** Acúmulo semanal (UTC) da share de 10% do gerente sobre o minerado do dono. */
+model account_manager_mining_accrual {
+  id                   BigInt  @id @default(autoincrement())
+  contract_id          Int
+  coin_id              String
+  week_start           BigInt
+  owner_mined_amount   Float   @default(0)
+  manager_share_amount Float   @default(0)
+  paid_at              BigInt?
+
+  @@unique([contract_id, coin_id, week_start])
+  @@index([week_start, paid_at])
+  @@map("account_manager_mining_accrual")
+}
+
+/** Ledger idempotente do payout semanal ao gerente. */
+model account_manager_payout_ledger {
+  id              String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  contract_id     Int
+  coin_id         String
+  week_start      BigInt
+  amount          Float
+  paid_at         BigInt
+  idempotency_key String @unique @db.VarChar(240)
+
+  @@index([contract_id, week_start])
+  @@map("account_manager_payout_ledger")
+}
+
+/** Tokens JWT de refresh (hash), com rotação por `family_id` e revogação (`revoked_at`). */
+model jwt_refresh_tokens {
+  id         BigInt  @id @default(autoincrement())
+  user_id    Int
+  token_hash String
+  family_id  String
+  expires_at BigInt
+  created_at BigInt
+  user_agent String?
+  ip         String?
+  revoked_at BigInt?
+
+  @@map("jwt_refresh_tokens")
+}
+
+/** Saldo de cripto minerada por moeda, por utilizador. */
+model coin_balances {
+  user_id Int
+  coin_id String
+  amount  Float
+
+  @@id([user_id, coin_id])
+  @@map("coin_balances")
+}
+
+/** Total já sacado por moeda, por utilizador (acumulador para limites/relatórios). */
+model coin_withdrawals {
+  user_id           Int
+  coin_id           String
+  total_withdrawn   Float
+
+  @@id([user_id, coin_id])
+  @@map("coin_withdrawals")
+}
+
+// --- Loja admin: packs, visibilidade, compras ---
+
+/** Pack promocional criado pelo admin (bundle de itens/caixas/passes/moedas vendido por `price_usdc`). */
+model admin_upgrades {
+  id                   String @id
+  name                 String
+  description          String?
+  price_usdc           Float
+  grant_usdc           Float? @default(0)
+  grant_access_level_id String?
+  is_active            Int
+  created_at           BigInt
+  version              Int      @default(1)
+  slug                 String?
+  category             String   @default("PROMO_PACK")
+  original_price_usdc  Decimal? @db.Decimal(18, 6)
+  stock_remaining      Int?
+  max_per_user         Int      @default(1)
+  starts_at            BigInt?
+  ends_at              BigInt?
+  sort_order           Int      @default(0)
+  image_url            String?
+
+  @@map("admin_upgrades")
+}
+
+/** Itens (`upgrades`) incluídos num pack `admin_upgrades`. */
+model admin_upgrade_items {
+  upgrade_id String
+  item_id    String
+  qty        Int
+
+  @@id([upgrade_id, item_id])
+  @@map("admin_upgrade_items")
+}
+
+/** Caixas (`loot_boxes`) incluídas num pack `admin_upgrades`. */
+model admin_upgrade_boxes {
+  upgrade_id String
+  box_id     String
+  qty        Int
+
+  @@id([upgrade_id, box_id])
+  @@map("admin_upgrade_boxes")
+}
+
+/** Passes de época (`season_passes`) incluídos num pack `admin_upgrades`. */
+model admin_upgrade_passes {
+  upgrade_id String
+  pass_id    String
+  qty        Int
+
+  @@id([upgrade_id, pass_id])
+  @@map("admin_upgrade_passes")
+}
+
+/** Quantidade de cripto (`mining_coins`) concedida por um pack `admin_upgrades`. */
+model admin_upgrade_coins {
+  upgrade_id String
+  coin_id    String
+  amount     Float
+
+  @@id([upgrade_id, coin_id])
+  @@map("admin_upgrade_coins")
+}
+
+/** Recompensa (item ou moeda) concedida por um `season_passes` (`type` distingue item/coin). */
+model season_pass_rewards {
+  id       Int    @id @default(autoincrement())
+  pass_id  String
+  type     String
+  item_id  String?
+  coin_id  String?
+  qty      Float
+
+  @@map("season_pass_rewards")
+}
+
+/** Registo de compra de um pack `admin_upgrades` por utilizador. */
+model admin_upgrade_purchases {
+  id           String @id @default(uuid()) @db.Uuid
+  user_id      Int
+  upgrade_id   String
+  purchased_at BigInt
+
+  @@index([user_id, upgrade_id])
+  @@map("admin_upgrade_purchases")
+}
+
+/** Idempotência de compra de pack `admin_upgrades` (evita duplo débito no mesmo request). */
+model upgrade_purchase_idempotency {
+  user_id               Int
+  scope                 String  @default("upgrade_purchase")
+  idempotency_key       String
+  response_json         String
+  created_at            BigInt
+  request_fingerprint   String? @db.VarChar(64)
+
+  @@id([user_id, scope, idempotency_key])
+  @@map("upgrade_purchase_idempotency")
+}
+
+/** Restringe a visibilidade de um pack `admin_upgrades` a determinados `access_levels`. */
+model admin_upgrade_visibility {
+  upgrade_id      String
+  access_level_id String
+
+  @@id([upgrade_id, access_level_id])
+  @@map("admin_upgrade_visibility")
+}
+
+/** Notícia submetida por um jogador para revisão/publicação (`status`: pendente/aprovada/rejeitada). */
+model player_news_submissions {
+  id         String @id
+  user_id    Int
+  text       String
+  link       String?
+  status     String
+  created_at BigInt
+
+  @@map("player_news_submissions")
+}
+
+// --- Suporte e moderação de conteúdo ---
+
+/** Ticket de suporte aberto por um utilizador. */
+model support_tickets {
+  id          String @id
+  user_id     Int
+  subject     String
+  message     String
+  attachments Json   @default(dbgenerated("'[]'::jsonb"))
+  status      String @default("open")
+  created_at  BigInt
+
+  @@map("support_tickets")
+}
+
+/** Resposta de um admin a um `support_tickets`. */
+model support_ticket_replies {
+  id            String @id
+  ticket_id     String
+  admin_user_id Int
+  message       String
+  attachments   Json   @default(dbgenerated("'[]'::jsonb"))
+  created_at    BigInt
+
+  @@map("support_ticket_replies")
+}
+
+/** Resposta do próprio jogador a um `support_tickets`. */
+model support_ticket_player_replies {
+  id         String @id
+  ticket_id  String
+  user_id    Int
+  message    String
+  attachments Json  @default(dbgenerated("'[]'::jsonb"))
+  created_at BigInt
+
+  @@map("support_ticket_player_replies")
+}
+
+/** Idempotência de submissão de ticket de suporte. */
+model support_submission_idempotency {
+  user_id         Int
+  scope           String @default("support_submit_ticket")
+  idempotency_key String
+  response_json   String
+  created_at      BigInt
+
+  @@id([user_id, scope, idempotency_key])
+  @@map("support_submission_idempotency")
+}
+
+// --- Salas de rigs (expansão de slots) ---
+
+/** Catálogo de salas de rigs (capacidade de slots, preço progressivo por slot desbloqueado). */
+model rig_rooms {
+  id                        String @id
+  name                      String
+  initial_capacity          Int
+  max_capacity              Int
+  base_slot_price           Float
+  slot_price_increase_percent Float
+  allowed_levels            String?
+  allowed_season_pass_ids     String?
+  is_active                 Int    @default(1)
+  sort_order                Int    @default(0)
+
+  @@map("rig_rooms")
+}
+
+/** Sala (`rig_rooms`) comprada por um utilizador e quantos slots já desbloqueou nela. */
+model user_rig_rooms {
+  user_id         Int
+  room_id         String
+  purchased_at    BigInt
+  unlocked_slots  Int?    @default(0)
+
+  @@id([user_id, room_id])
+  @@map("user_rig_rooms")
+}
+
+// `workshop_slots` removido em 20260516180000_battery_uuids_and_purge_charging
+// (sistema de oficina/carregamento foi descontinuado — baterias são infinitas).
+
+/** Marca de caixa grátis/de evento já reivindicada pelo jogador (evita reclamação duplicada). */
+model player_claimed_boxes {
+  user_id     Int
+  box_id      String
+  claimed_at  BigInt
+
+  @@id([user_id, box_id])
+  @@map("player_claimed_boxes")
+}
+
+/** Último momento em que o jogador executou uma ação diária (`action_key`) — usado para cooldowns/limites. */
+model daily_actions {
+  user_id           Int
+  action_key        String
+  last_performed_at BigInt
+
+  @@id([user_id, action_key])
+  @@map("daily_actions")
+}
+
+// --- Códigos promocionais e resgates ---
+
+/** Código promocional resgatável (concede caixa, upgrade ou pack admin conforme `type`). */
+model promo_codes {
+  code             String  @id
+  loot_box_id      String?
+  upgrade_id       String?
+  admin_upgrade_id String?
+  type             String
+  is_active        Int?    @default(1)
+  created_at       BigInt
+  expires_at       BigInt?
+
+  @@map("promo_codes")
+}
+
+/** Resgate de um `promo_codes` por utilizador (1 por par código+user); campos de roleta cobrem códigos que dão giro. */
+model promo_code_redemptions {
+  code               String
+  user_id            Int
+  redeemed_at        BigInt
+  reward_granted     Int?    @default(1)
+  won_item_id        String?
+  roulette_rolled_at BigInt?
+  roulette_claimed_at BigInt?
+
+  @@id([code, user_id])
+  @@map("promo_code_redemptions")
+}
+
+/** Histórico de parâmetros de yield por moeda ao longo do tempo (auditoria de mudanças de economia). */
+model mining_yield_history {
+  id               Int    @id @default(autoincrement())
+  coin_id          String
+  yield_per_hash   Float
+  block_reward     Float  @default(0)
+  network_hashrate Float  @default(0)
+  effective_at     BigInt
+
+  @@unique([coin_id, effective_at], map: "mining_yield_history_coin_effective_uidx")
+  @@index([effective_at], map: "mining_yield_history_effective_at_idx")
+  @@map("mining_yield_history")
+}
+
+/** Agregado diário (por moeda) de quanto foi minerado/creditado — usado em dashboards/relatórios de economia. */
+model mining_distribution_daily {
+  day_utc       DateTime @db.Date
+  coin_id       String
+  total_coins   Float    @default(0)
+  total_usd     Float    @default(0)
+  credit_rows   Int      @default(0)
+  unique_users  Int      @default(0)
+  updated_at    BigInt   @default(0)
+
+  @@id([day_utc, coin_id])
+  @@index([day_utc(sort: Desc)], map: "idx_mining_distribution_daily_day")
+  @@map("mining_distribution_daily")
+}
+
+// --- Definições globais de economia (mercados, taxas) ---
+
+/** Singleton com flags/parâmetros globais de economia (mercados ligados/desligados, taxa de mercado). */
+model economy_settings {
+  id                              Int @id
+  black_market_enabled            Int?
+  hardware_market_enabled         Int?
+  market_tax_percent              Float?
+  black_market_price_band_percent Float? @default(20)
+
+  @@map("economy_settings")
+}
+
+/** Pedido de saque de cripto para carteira externa (fluxo: pending → processed, com `tx_hash` on-chain). */
+model withdrawal_requests {
+  id             String  @id
+  user_id        Int
+  coin_id        String
+  amount_crypto  Float
+  amount_usdc    Float?
+  fee_amount     Float?  @default(0)
+  net_amount     Float?  @default(0)
+  tx_hash        String?
+  wallet_address String?
+  status         String
+  created_at     BigInt
+  processed_at   BigInt?
+
+  @@index([user_id, created_at(sort: Desc)], map: "withdrawal_requests_user_created_idx")
+  @@map("withdrawal_requests")
+}
+
+// --- Roleta / roda de prémios ---
+
+/** Catálogo de prémios da roleta com peso (`weight`) para sorteio ponderado, agrupados por `tier`. */
+model wheel_prizes {
+  id        String @id
+  label     String
+  weight    Int
+  color     String
+  item_id   String?
+  is_active Int    @default(1)
+  tier      String @default("BASIC")
+
+  @@map("wheel_prizes")
+}
+
+/** Singleton id=1 com parâmetros globais da roleta paga (preço do giro, limites, janela ativa). */
+model wheel_config {
+  id                    Int      @id @default(1)
+  spin_price_usdc       Decimal  @default(1) @db.Decimal(18, 6)
+  currency              String   @default("USDC")
+  is_enabled            Int      @default(1)
+  min_spin_price_usdc   Decimal  @default(1) @db.Decimal(18, 6)
+  max_spins_per_request Int      @default(1)
+  daily_limit           Int?
+  cooldown_seconds      Int      @default(0)
+  starts_at             BigInt?
+  ends_at               BigInt?
+  updated_at            BigInt
+  metadata_json         String?
+
+  @@map("wheel_config")
+}
+
+/** Histórico de giros da roleta (grátis via `code` ou pago, com `idempotency_key` por request). */
+model wheel_spins {
+  id              String   @id
+  user_id         Int
+  kind            String
+  code            String?
+  won_item_id     String
+  box_id          String?
+  charged_usdc    Decimal? @db.Decimal(18, 6)
+  status          String   @default("completed")
+  idempotency_key String?
+  created_at      BigInt
+
+  @@index([user_id, created_at(sort: Desc)])
+  @@index([user_id, idempotency_key])
+  @@map("wheel_spins")
+}
+
+/** Idempotência de operações da roleta (evita duplo débito/giro no mesmo request). */
+model wheel_idempotency {
+  user_id         Int
+  scope           String
+  idempotency_key String
+  response_json   String
+  created_at      BigInt
+
+  @@id([user_id, scope, idempotency_key])
+  @@map("wheel_idempotency")
+}
+
+/** Allowlist de jogadores (por username) com acesso liberado à roleta (gerido em `server/modules/wheel`). */
+model wheel_players {
+  username String @id
+  added_at BigInt
+
+  @@map("wheel_players")
+}
+
+/** Etiqueta/nota admin associada a um endereço de carteira (ex. marcar endereço suspeito). */
+model wallet_labels {
+  address    String @id
+  label      String
+  updated_at BigInt
+
+  @@map("wallet_labels")
+}
+
+// --- Modelos de indicação (comissões por nível) ---
+
+/** Modelo de recompensas de indicação (bónus fixo + % de comissão por tipo de mercado). */
+model referral_models {
+  id                              Int     @id @default(autoincrement())
+  name                            String
+  description                     String?
+  sender_reward_usdc              Float?  @default(0)
+  receiver_reward_usdc            Float?  @default(0)
+  sender_loot_box_id             String?
+  receiver_loot_box_id           String?
+  deposit_commission_percent      Float?  @default(0)
+  hardware_commission_percent     Float?  @default(0)
+  black_market_commission_percent Float?  @default(0)
+  is_active                       Int?    @default(1)
+
+  @@map("referral_models")
+}
+
+/** Associa um `referral_models` ao nível de acesso do indicador (qual modelo de comissão se aplica). */
+model access_level_referral_models {
+  access_level_id   String  @id
+  referral_model_id Int?
+
+  @@map("access_level_referral_models")
+}
+
+// --- Segurança e anti-abuso (dados operacionais em SQL) ---
+
+/** IPs já usados por cada utilizador (detecção de multi-conta/abuso). */
+model user_history_ips {
+  user_id      Int
+  ip           String
+  last_used_at BigInt
+
+  @@id([user_id, ip])
+  @@map("user_history_ips")
+}
+
+/** Log de eventos de fingerprint de dispositivo (anti-abuso/multi-conta). */
+model device_fingerprint_logs {
+  id               BigInt @id @default(autoincrement())
+  user_id          Int
+  event_type       String
+  fingerprint_hash String
+  payload_json     String?
+  ip               String?
+  user_agent       String?
+  created_at       BigInt
+
+  @@map("device_fingerprint_logs")
+}
+
+/** IPs bloqueados de acesso, com motivo (`reason`). */
+model ip_blacklist {
+  ip       String @id
+  reason   String?
+  added_at BigInt
+
+  @@map("ip_blacklist")
+}
+
+/** Log de tentativas de acesso a rotas de admin (auditoria de segurança). */
+model admin_access_logs {
+  id            Int    @id @default(autoincrement())
+  ip            String
+  attempted_url String
+  user_agent    String?
+  details       String?
+  created_at    BigInt
+
+  @@map("admin_access_logs")
+}
+
+/** Pontuação de ameaça por IP dentro de uma janela de tempo (`window_start`), para rate-limit/bloqueio adaptativo. */
+model security_threat_scores {
+  ip           String @id
+  score        Int    @default(0)
+  window_start BigInt
+  updated_at   BigInt
+
+  @@map("security_threat_scores")
+}
+
+// --- Transparência e textos de UI ---
+
+/** Entrada da página de transparência financeira pública (ex. reservas, distribuições). */
+model transparency_entries {
+  id          Int    @id @default(autoincrement())
+  category    String
+  title       String
+  body        String?
+  amount_usdc Float?
+  link_url    String?
+  sort_order  Int    @default(0)
+  created_at  BigInt
+  updated_at  BigInt
+
+  @@map("transparency_entries")
+}
+
+/** Textos de UI editáveis pelo admin (label/valor por chave), sem precisar de deploy. */
+model ui_display_labels {
+  key        String @id @db.VarChar(120)
+  value      String
+  updated_at BigInt
+
+  @@map("ui_display_labels")
+}
+
+/** Categoria do guia/manual do jogo (agrupa `guide_pages`). */
+model guide_categories {
+  id           String @id
+  title        String
+  sort_order   Int    @default(0)
+  is_published Int    @default(1)
+  created_at   BigInt
+  updated_at   BigInt
+
+  pages guide_pages[]
+
+  @@index([is_published, sort_order], map: "idx_guide_categories_pub_sort")
+  @@map("guide_categories")
+}
+
+/** Página de conteúdo (HTML) do guia/manual, pertencente a uma `guide_categories`. */
+model guide_pages {
+  id            String @id
+  category_id   String
+  title         String
+  slug          String @default("")
+  content_html  String @default("")
+  sort_order    Int    @default(0)
+  is_published  Int    @default(0)
+  created_at    BigInt
+  updated_at    BigInt
+
+  category guide_categories @relation(fields: [category_id], references: [id], onDelete: Cascade)
+
+  @@index([category_id, sort_order], map: "idx_guide_pages_cat_sort")
+  @@index([is_published], map: "idx_guide_pages_published")
+  @@map("guide_pages")
+}
+
+/** Item do roadmap público do jogo (`status`: planned/in_progress/done, etc.). */
+model roadmap_steps {
+  id            String  @id
+  title         String
+  description   String  @default("")
+  status        String  @default("planned")
+  planned_date  String?
+  image_url     String?
+  is_highlight  Int     @default(0)
+  sort_order    Int     @default(0)
+  is_published  Int     @default(1)
+  created_at    BigInt
+  updated_at    BigInt
+
+  @@index([is_published, sort_order], map: "idx_roadmap_steps_pub_sort")
+  @@map("roadmap_steps")
+}
+
+// --- Roleta paga (estado pendente por utilizador) ---
+
+/** Giro pago da roleta ainda pendente de resgate pelo utilizador (1 por utilizador). */
+model wheel_paid_pending {
+  user_id     Int    @id
+  won_item_id String
+  charged_usdc Float @default(1)
+  rolled_at   BigInt
+
+  @@map("wheel_paid_pending")
+}
+
+// `charging_history` removido em 20260516180000_battery_uuids_and_purge_charging
+// (oficina/carregamento descontinuados).
+
+/** Cache genérico chave-valor (JSON) usado pela aplicação para evitar recomputação. */
+model app_cache {
+  key        String   @id
+  value      Json?
+  updated_at DateTime? @db.Timestamp(6)
+
+  @@map("app_cache")
+}
+
+// --- Parceiros YouTube ---
+
+/** Submissão diária de vídeo do YouTube por um parceiro/criador para revisão. */
+model partner_youtube_submissions {
+  id               String  @id
+  user_id          Int
+  title            String
+  youtube_url      String
+  youtube_video_id String
+  description      String  @default("")
+  status           String  @default("pending")
+  created_at       BigInt
+  reviewed_at      BigInt?
+  reviewed_by      Int?
+  reject_reason    String?
+  /// YYYYMMDD em UTC — 1 envio por utilizador por dia civil UTC
+  submit_utc_day   Int
+
+  @@map("partner_youtube_submissions")
+}
+
+/** Perfil público de criador YouTube parceiro (canal, avatar, descrição). */
+model partner_youtube_creator_profiles {
+  user_id      Int    @id
+  channel_name String @default("")
+  channel_url  String @default("")
+  avatar_url   String @default("")
+  description  String @default("")
+  updated_at   BigInt @default(0)
+  updated_by   Int?
+
+  @@map("partner_youtube_creator_profiles")
+}
+
+/** Candidatura de utilizador para se tornar parceiro criador de YouTube (`status`: pendente/aprovada/rejeitada). */
+model partner_youtube_applications {
+  id            String  @id
+  user_id       Int
+  channel_name  String
+  channel_url   String
+  avatar_url    String  @default("")
+  description   String  @default("")
+  status        String  @default("pending")
+  created_at    BigInt
+  reviewed_at   BigInt?
+  reviewed_by   Int?
+  reject_reason String?
+
+  @@index([user_id, created_at(sort: Desc)])
+  @@index([status, created_at(sort: Desc)])
+  @@map("partner_youtube_applications")
+}
+
+/** Allowlist manual de utilizadores promovidos a parceiro YouTube sem passar pelo fluxo de candidatura. */
+model partner_youtube_manual_allowlist {
+  user_id  Int    @id
+  added_at BigInt
+  added_by Int?
+
+  @@map("partner_youtube_manual_allowlist")
+}
+
+/** Idempotência genérica de operações de carteira (área wallet/saque). */
+model wallet_idempotency {
+  user_id             Int
+  scope               String
+  idempotency_key     String
+  response_json       String
+  created_at          BigInt
+  request_fingerprint String? @db.VarChar(64)
+
+  @@id([user_id, scope, idempotency_key])
+  @@map("wallet_idempotency")
+}
+
+/// Respostas cacheadas para mutações idempotentes (área Servidores / rigs).
+model game_servers_intent_idempotency {
+  user_id         Int
+  scope           String   @db.VarChar(64)
+  idempotency_key String   @db.VarChar(128)
+  http_status     Int
+  response_json   Json
+  created_at      DateTime @default(now())
+
+  @@id([user_id, scope, idempotency_key])
+  @@index([created_at(sort: Desc)])
+  @@map("game_servers_intent_idempotency")
+}
+
+/** Ledger de operações de carteira (ex. venda de cripto por USDC) com valores brutos, taxa e líquido em alta precisão. */
+model wallet_ledger_entries {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id         Int
+  entry_type      String
+  coin_id         String?
+  sold_crypto     Decimal  @db.Decimal(38, 18)
+  gross_usdc      Decimal  @db.Decimal(38, 18)
+  fee_usdc        Decimal  @db.Decimal(38, 18)
+  net_usdc        Decimal  @db.Decimal(38, 18)
+  idempotency_key String?
+  created_at      BigInt
+
+  @@index([user_id, created_at(sort: Desc)])
+  @@map("wallet_ledger_entries")
+}
+
+// --- Email Marketing ---
+
+/** Campanha de email marketing (rascunho → ativa → concluída), com limite diário de envio. */
+model email_campaigns {
+  id                Int     @id @default(autoincrement())
+  title             String  @db.VarChar(255)
+  subject           String  @db.VarChar(255)
+  body_html         String
+  image_url         String? @db.VarChar(500)
+  status            String  @default("draft") @db.VarChar(50)
+  daily_limit       Int     @default(750)
+  total_recipients  Int     @default(0)
+  total_sent        Int     @default(0)
+  total_failed      Int     @default(0)
+  created_by        Int?
+  created_at        BigInt  @default(0)
+  activated_at      BigInt?
+  completed_at      BigInt?
+  notes             String?
+
+  @@map("email_campaigns")
+}
+
+/** Envio individual de uma `email_campaigns` para um destinatário (status por utilizador). */
+model email_campaign_deliveries {
+  id            Int     @id @default(autoincrement())
+  campaign_id   Int
+  user_id       Int
+  email         String  @db.VarChar(255)
+  status        String  @default("pending") @db.VarChar(50)
+  sent_at       BigInt?
+  error_message String? @db.VarChar(500)
+
+  @@unique([campaign_id, user_id])
+  @@index([campaign_id, status])
+  @@map("email_campaign_deliveries")
+}
+
+// =============================================================================
+// Integração ZERads PTC (Site ID 11294) — callback externo de ~5 em 5 min com
+// `amount` em ZER e `clicks` do utilizador que viu PTC. Convertemos ZER→USDC
+// por taxa fixa de `.env`, splitamos 80/20 (user/plataforma) e creditamos só
+// os 80% em `game_states.usdc`. Validação faz constant-time pwd + whitelist
+// de IP via `CF-Connecting-IP` (Cloudflare → Nginx → Node).
+// =============================================================================
+
+/** Token opaco por utilizador entregue ao ZERads na URL `?user=<token>`. */
+model zerads_user_tokens {
+  user_id    Int    @id
+  token      String @unique @db.VarChar(64)
+  created_at BigInt
+
+  @@map("zerads_user_tokens")
+}
+
+/** Ledger append-only de ganhos ZERads (idempotência por bucket de  60 min). */
+model zerads_earnings_ledger {
+  id                   String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  idempotency_key      String  @unique @db.VarChar(240)
+  user_id              Int
+  amount_zer           Float
+  amount_usdc_total    Float
+  user_amount_usdc     Float
+  platform_amount_usdc Float
+  clicks               Int
+  zer_to_usdc_rate     Float
+  created_at           BigInt
+
+  @@index([user_id, created_at])
+  @@map("zerads_earnings_ledger")
+}
+
+/** Log de todos os callbacks ZERads (sucessos e falhas) para auditoria/abuso. */
+model zerads_callback_log {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    Int?
+  raw_user   String? @db.VarChar(120)
+  amount_zer Float?
+  clicks     Int?
+  cf_ip      String? @db.VarChar(80)
+  req_ip     String? @db.VarChar(80)
+  status     String  @db.VarChar(40)
+  message    String?
+  created_at BigInt
+
+  @@index([user_id, created_at])
+  @@index([status, created_at])
+  @@map("zerads_callback_log")
+}
+
+/** Catálogo de tarefas diárias / semanais (check-in, merge, offerwall, …). */
+model quest_definitions {
+  id           String @id
+  period       String
+  action_type  String
+  title        String
+  description  String @default("")
+  target_count Int    @default(1)
+  reward_usdc  Float  @default(0)
+  sort_order   Int    @default(0)
+  enabled      Int    @default(1)
+  updated_at   BigInt @default(0)
+
+  @@map("quest_definitions")
+}
+
+/** Progresso do jogador por tarefa e período (chave diária/semanal). */
+model user_quest_progress {
+  user_id      Int
+  quest_id     String
+  period_key   String
+  progress     Int    @default(0)
+  completed_at BigInt?
+  claimed_at   BigInt?
+  updated_at   BigInt @default(0)
+
+  @@id([user_id, quest_id, period_key])
+  @@index([user_id, period_key], map: "user_quest_progress_user_period_idx")
+  @@map("user_quest_progress")
+}

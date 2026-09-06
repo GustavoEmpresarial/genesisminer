@@ -1,0 +1,39 @@
+# Job one-shot: cria tópicos canónicos após o broker estar Ready.
+# Aplicar DEPOIS do StatefulSet (ou via hook). Não corre sozinho no kustomize
+# se preferires criar tópicos à mão — está listado no kustomization.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: genesis-kafka-topics-init
+  namespace: genesis
+  labels:
+    app.kubernetes.io/name: genesis-kafka
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 6
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: kafka-topics
+          image: apache/kafka:3.9.0
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              BS=genesis-kafka-bootstrap.genesis.svc.cluster.local:9092
+              create() {
+                /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$BS" \
+                  --create --if-not-exists \
+                  --topic "$1" --partitions "$2" --replication-factor 1
+              }
+              # Partições = lab (topics.md). Ajustar em HA.
+              create genesis.auth.events 3
+              create genesis.mining.progress 6
+              create genesis.economy.ledger 6
+              create genesis.ops.deadletter 1
+              create genesis.ranking.snapshot 3
+              create genesis.partner_games.session 3
+              create genesis.market.events 3
+              create genesis.lucky_box.open 3
+              /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$BS" --list

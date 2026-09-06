@@ -1,0 +1,32 @@
+---
+description: Agente domínio Offerwall — investigate → plan → execute → review → document + gates
+globs: "**/offerwall/**,**/zerads/**"
+alwaysApply: false
+---
+
+# Domínio Offerwall — workflow obrigatório
+
+Quando o trabalho tocar `server/modules/offerwall`, `client/src/features/offerwall`, residual `zerads`, ou `shared/api/zerads.ts`:
+
+1. **Investigate** — `cavecrew-investigator` / `explore`
+2. **Plan** — paths + done criteria; **não** inventar números
+3. **Execute** — `Task` (`generalPurpose` / `cavecrew-builder` ≤2 ficheiros)
+4. **Code review** — `cavecrew-reviewer`
+5. **Document** — DECISIONS + `docs/architecture/modules/offerwall.md` se mudar contrato/pastas
+6. **Gates (falha = não done):** seguir `.cursor/rules/code-quality-gates.mdc` + vitest `tests/modules/offerwall`
+
+## Anti–número mágico
+
+- Idem `code-quality-gates.mdc`; constants em `services/constants.ts` ou env `ZERADS_*`
+- Idempotência bucket = **60 min** (código); docs devem bater — não “corrigir” para 5 min sem pedido
+- Client: timeouts/decimals nomeados; sem fallbacks inventados para caps de crédito
+
+## Layout
+
+- Server: `server/modules/offerwall/` (HTTP continua `/api/zerads/*` + `/zeradsptc.php`)
+- Client UI: `features/offerwall/`; API em `shared/api/zerads.ts` (não mover para feature)
+- Sem shim permanente `modules/zerads`
+
+## Constraints
+
+Seguir `subagent-orchestration.mdc`. Sem git commit/push sem pedido. Sem AdGate/CPALead server / admin panel / rename de URL nesta fatia.

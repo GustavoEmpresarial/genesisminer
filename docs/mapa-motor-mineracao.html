@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0a09" />
+  <title>Mapa — Motor de Mineração · Genesis</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0c0a09;
+      --bg-elev: #1c1917;
+      --bg-card: #292524;
+      --line: #44403c;
+      --text: #fafaf9;
+      --muted: #a8a29e;
+      --copper: #d97706;
+      --copper-dim: #92400e;
+      --mint: #34d399;
+      --warn: #f87171;
+      --ink: #0c0a09;
+      --radius: 14px;
+      --pad: clamp(1rem, 4vw, 1.5rem);
+      --max: 42rem;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 14px;
+      line-height: 1.55;
+      color: var(--text);
+      background:
+        radial-gradient(120% 80% at 10% -10%, rgba(217, 119, 6, 0.18), transparent 55%),
+        radial-gradient(90% 60% at 100% 0%, rgba(52, 211, 153, 0.08), transparent 45%),
+        var(--bg);
+      min-height: 100dvh;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .noise {
+      pointer-events: none;
+      position: fixed;
+      inset: 0;
+      opacity: 0.04;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      z-index: 0;
+    }
+
+    .wrap {
+      position: relative;
+      z-index: 1;
+      max-width: var(--max);
+      margin: 0 auto;
+      padding: calc(var(--pad) + env(safe-area-inset-top)) var(--pad) calc(3rem + env(safe-area-inset-bottom));
+    }
+
+    header {
+      padding: 1.25rem 0 1.75rem;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 1.5rem;
+      animation: rise 0.6s ease both;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.68rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--copper);
+      font-weight: 600;
+      margin-bottom: 0.65rem;
+    }
+    .eyebrow::before {
+      content: "";
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 999px;
+      background: var(--mint);
+      box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.25);
+    }
+
+    h1 {
+      font-family: Syne, system-ui, sans-serif;
+      font-weight: 800;
+      font-size: clamp(1.85rem, 7vw, 2.45rem);
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      margin: 0 0 0.75rem;
+    }
+
+    .lede {
+      color: var(--muted);
+      margin: 0;
+      font-size: 0.92rem;
+      max-width: 36ch;
+    }
+
+    nav.toc {
+      display: flex;
+      gap: 0.5rem;
+      overflow-x: auto;
+      padding: 0.25rem 0 1rem;
+      margin: 0 0 1.25rem;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+      animation: rise 0.7s ease 0.05s both;
+    }
+    nav.toc::-webkit-scrollbar { display: none; }
+    nav.toc a {
+      flex: 0 0 auto;
+      text-decoration: none;
+      color: var(--text);
+      background: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 0.45rem 0.85rem;
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      font-weight: 500;
+    }
+    nav.toc a:active { border-color: var(--copper); color: var(--copper); }
+
+    section {
+      margin-bottom: 1.75rem;
+      animation: rise 0.65s ease both;
+    }
+    section:nth-of-type(2) { animation-delay: 0.08s; }
+    section:nth-of-type(3) { animation-delay: 0.12s; }
+    section:nth-of-type(4) { animation-delay: 0.16s; }
+    section:nth-of-type(5) { animation-delay: 0.2s; }
+    section:nth-of-type(6) { animation-delay: 0.24s; }
+    section:nth-of-type(7) { animation-delay: 0.28s; }
+
+    h2 {
+      font-family: Syne, system-ui, sans-serif;
+      font-size: 1.15rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 0.85rem;
+      display: flex;
+      align-items: baseline;
+      gap: 0.55rem;
+    }
+    h2 .num {
+      color: var(--copper);
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .card {
+      background: linear-gradient(165deg, rgba(41, 37, 36, 0.95), rgba(28, 25, 23, 0.98));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 1rem 1.05rem;
+      margin-bottom: 0.75rem;
+    }
+    .card h3 {
+      margin: 0 0 0.35rem;
+      font-family: Syne, system-ui, sans-serif;
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+    .card p { margin: 0; color: var(--muted); font-size: 0.84rem; }
+
+    .grid-2 {
+      display: grid;
+      gap: 0.75rem;
+    }
+    @media (min-width: 520px) {
+      .grid-2 { grid-template-columns: 1fr 1fr; }
+    }
+
+    /* Vertical flow map */
+    .flow {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      position: relative;
+    }
+    .flow::before {
+      content: "";
+      position: absolute;
+      left: 1.05rem;
+      top: 0.6rem;
+      bottom: 0.6rem;
+      width: 2px;
+      background: linear-gradient(var(--copper), var(--mint));
+      opacity: 0.55;
+    }
+    .flow li {
+      position: relative;
+      padding: 0 0 1rem 2.75rem;
+    }
+    .flow li:last-child { padding-bottom: 0; }
+    .flow .step {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 2.15rem;
+      height: 2.15rem;
+      border-radius: 999px;
+      background: var(--bg-card);
+      border: 2px solid var(--copper);
+      display: grid;
+      place-items: center;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--copper);
+      z-index: 1;
+    }
+    .flow .body {
+      background: var(--bg-elev);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 0.85rem 0.95rem;
+    }
+    .flow .body strong {
+      display: block;
+      font-family: Syne, system-ui, sans-serif;
+      font-size: 0.92rem;
+      margin-bottom: 0.25rem;
+    }
+    .flow .body span {
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+    .flow li.side .step {
+      border-color: var(--mint);
+      color: var(--mint);
+    }
+    .flow li.side .body {
+      border-style: dashed;
+      opacity: 0.92;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin-top: 0.65rem;
+    }
+    .pill {
+      font-size: 0.65rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 0.28rem 0.55rem;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+    .pill.on { border-color: var(--mint); color: var(--mint); }
+    .pill.off { border-color: var(--warn); color: var(--warn); }
+    .pill.coin { border-color: var(--copper); color: var(--copper); }
+
+    .compare {
+      display: grid;
+      gap: 0.75rem;
+    }
+    @media (min-width: 520px) {
+      .compare { grid-template-columns: 1fr 1fr; }
+    }
+    .compare .card.nft { border-color: rgba(217, 119, 6, 0.45); }
+    .compare .card.normal { border-color: rgba(52, 211, 153, 0.3); }
+    .tag {
+      display: inline-block;
+      font-size: 0.62rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+    .tag.nft { color: var(--copper); }
+    .tag.normal { color: var(--mint); }
+
+    dl.glossary {
+      margin: 0;
+      display: grid;
+      gap: 0.65rem;
+    }
+    dl.glossary dt {
+      font-family: Syne, system-ui, sans-serif;
+      font-weight: 700;
+      font-size: 0.88rem;
+      color: var(--copper);
+    }
+    dl.glossary dd {
+      margin: 0.15rem 0 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    ul.rules {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 0.55rem;
+    }
+    ul.rules li {
+      background: var(--bg-elev);
+      border-left: 3px solid var(--copper);
+      border-radius: 0 10px 10px 0;
+      padding: 0.7rem 0.85rem;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    ul.rules li b { color: var(--text); font-weight: 600; }
+
+    footer {
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.72rem;
+    }
+    footer code {
+      color: var(--copper);
+      font-size: 0.68rem;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * { animation: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="noise" aria-hidden="true"></div>
+  <div class="wrap">
+    <header>
+      <div class="eyebrow">Genesis Miner · visão operacional</div>
+      <h1>Motor de mineração</h1>
+      <p class="lede">Mapa do que gera rendimento, como o cron e o crédito funcionam, e a diferença sala normal vs NFT.</p>
+    </header>
+
+    <nav class="toc" aria-label="Secções">
+      <a href="#fluxo">Fluxo</a>
+      <a href="#pecas">Peças</a>
+      <a href="#salas">Salas</a>
+      <a href="#leases">Leases</a>
+      <a href="#regras">Regras</a>
+      <a href="#glossario">Glossário</a>
+    </nav>
+
+    <section id="fluxo">
+      <h2><span class="num">01</span> Fluxo ponta a ponta</h2>
+      <ol class="flow">
+        <li>
+          <div class="step">1</div>
+          <div class="body">
+            <strong>Montagem</strong>
+            <span>Sala → rack → GPUs/ASICs → multiplicadores.</span>
+          </div>
+        </li>
+        <li>
+          <div class="step">2</div>
+          <div class="body">
+            <strong>Portas obrigatórias</strong>
+            <span>Rack ligado (ON) + cablagem + bateria. Sem os três = zero.</span>
+            <div class="pill-row">
+              <span class="pill on">is_on</span>
+              <span class="pill on">wiring</span>
+              <span class="pill on">battery</span>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="step">3</div>
+          <div class="body">
+            <strong>Moeda do rendimento</strong>
+            <span>Sala normal: moeda escolhida no rack. Sala NFT: moeda de cada ASIC (<code>nft_mining_coin_id</code>).</span>
+            <div class="pill-row">
+              <span class="pill coin">selected_coin</span>
+              <span class="pill coin">nft_mining_coin_id</span>
+            </div>
+          </div>
+        </li>
+        <li>
+          <div class="step">4</div>
+          <div class="body">
+            <strong>Yield-cron (rede)</strong>
+            <span>Job ~2 min: soma hashrate global, grava histórico na grelha de 10 min UTC.</span>
+          </div>
+        </li>
+        <li>
+          <div class="step">5</div>
+          <div class="body">
+            <strong>Progress-computer (jogador)</strong>
+            <span>Ao abrir o jogo / snapshot: credita o intervalo desde o último tick até ao <em>creditCap</em>.</span>
+          </div>
+        </li>
+        <li>
+          <div class="step">6</div>
+          <div class="body">
+            <strong>Grelha 10 min UTC</strong>
+            <span>Só blocos fechados pagam. Minutos “abertos” ainda não entram no saldo.</span>
+          </div>
+        </li>
+        <li>
+          <div class="step">7</div>
+          <div class="body">
+            <strong>Saldo</strong>
+            <span>Actualiza <code>coin_balances</code> e avança <code>last_updated_at</code>.</span>
+          </div>
+        </li>
+        <li class="side">
+          <div class="step">※</div>
+          <div class="body">
+            <strong>Lateral: leases &amp; eventos</strong>
+            <span>Expirar ASIC tira a máquina do setup. Eventos de elegibilidade são histórico — hoje <b>não</b> cortam o pagamento.</span>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="pecas">
+      <h2><span class="num">02</span> O que gera (e o que só libera)</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Gera hashrate</h3>
+          <p>GPUs / ASICs nos slots + multiplicadores. Quanto mais potência efectiva, maior fatia do bloco.</p>
+        </div>
+        <div class="card">
+          <h3>Libera o rack</h3>
+          <p>ON, cablagem e bateria. Sem isto o rack nem entra no cron nem no crédito.</p>
+        </div>
+        <div class="card">
+          <h3>Economia da rede</h3>
+          <p>Recompensa do bloco, tempo de bloco e hashrate total → <em>yield por hash</em>.</p>
+        </div>
+        <div class="card">
+          <h3>Catch-up offline</h3>
+          <p>Ao voltar, paga com o <b>setup actual</b> × taxas históricas (até ~72 h). Não rebobina minuto a minuto.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="salas">
+      <h2><span class="num">03</span> Sala normal vs sala NFT</h2>
+      <div class="compare">
+        <div class="card normal">
+          <div class="tag normal">Sala normal</div>
+          <h3>Moeda do rack</h3>
+          <p>Usas a moeda seleccionada no rack. Moedas exclusivas NFT (USDT/USDC/…) não farmam aqui. Chassis NFT (<code>armario_1</code>) fora da sala NFT → não minera.</p>
+        </div>
+        <div class="card nft">
+          <div class="tag nft">Sala Dolar / NFTs</div>
+          <h3>Moeda do ASIC</h3>
+          <p>Cada máquina traz a moeda do catálogo (<code>nft_mining_coin_id</code>). Sem essa moeda no admin, o picker/equip recusa — parece “estoque vazio”.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="leases">
+      <h2><span class="num">04</span> Máquinas temporárias vs permanentes</h2>
+      <div class="card">
+        <h3>Timed (ex.: Dólar Gênesis, Pioneiros)</h3>
+        <p>Cada unidade = 1 linha em <code>player_asic_leases</code>: stock → equipped → expired. O inventário da sala mostra a contagem de leases válidos em stock, não um número solto inventado.</p>
+      </div>
+      <div class="card">
+        <h3>Permanente (GPU clássica)</h3>
+        <p>Só qty em <code>stock</code>. Equip/unequip mexe no stock; não cria lease.</p>
+      </div>
+      <div class="card">
+        <h3>Anti-duplicação</h3>
+        <p>Persist de stock <b>não cria</b> leases novas. Leases só nascem em loja, caixa/loot ou check-in.</p>
+      </div>
+    </section>
+
+    <section id="regras">
+      <h2><span class="num">05</span> Invariantes (não quebrar)</h2>
+      <ul class="rules">
+        <li><b>ON + wiring + battery</b> — senão o rack não paga.</li>
+        <li><b>Snapshot actual</b> — o catch-up usa o setup de agora no intervalo passado (não divide mudanças a meio).</li>
+        <li><b>Grelha 10 min UTC</b> — bloco aberto ainda não credita.</li>
+        <li><b>Sala ≠ NFT</b> — moeda do rack vs moeda do ASIC; não misturar.</li>
+        <li><b>Lease timed</b> — unidade real = lease; stock visual tem de bater com leases stock.</li>
+      </ul>
+    </section>
+
+    <section id="glossario">
+      <h2><span class="num">06</span> Glossário rápido</h2>
+      <div class="card">
+        <dl class="glossary">
+          <div>
+            <dt>Hashrate</dt>
+            <dd>Potência do setup (base × multiplicadores).</dd>
+          </div>
+          <div>
+            <dt>Yield / yield_per_hash</dt>
+            <dd>Moedas por unidade de hashrate por segundo.</dd>
+          </div>
+          <div>
+            <dt>Yield-cron</dt>
+            <dd>Job de rede: actualiza taxas e histórico global.</dd>
+          </div>
+          <div>
+            <dt>Progress-computer</dt>
+            <dd>Função que cria moedas na conta do jogador.</dd>
+          </div>
+          <div>
+            <dt>creditCap</dt>
+            <dd>Fim do intervalo creditável (último bloco 10 min fechado).</dd>
+          </div>
+          <div>
+            <dt>Lease ASIC</dt>
+            <dd>Unidade temporária com <code>expires_at</code>.</dd>
+          </div>
+          <div>
+            <dt>Sala NFT</dt>
+            <dd>Só ASICs; moeda vem do catálogo da máquina.</dd>
+          </div>
+          <div>
+            <dt>Evento de elegibilidade</dt>
+            <dd>Log histórico (equip/unequip/expire) — ainda não gateia pagamento.</dd>
+          </div>
+        </dl>
+      </div>
+    </section>
+
+    <footer>
+      Mapa gerado a partir do código em
+      <code>server/modules/mining-engine/</code>
+      (yield-cron, progress-computer, wall-clock-grid, nft-room-mining, asic-lease).
+      Abre este ficheiro no telemóvel (partilha / Drive / AirDrop) ou serve localmente.
+    </footer>
+  </div>
+</body>
+</html>
