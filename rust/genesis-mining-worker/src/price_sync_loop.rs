@@ -79,6 +79,19 @@ const SYMBOL_TO_COINGECKO: &[(&str, &str)] = &[
     ("CBBTC", "coinbase-wrapped-btc"),
 ];
 
+/// CoinGecko's free endpoint sits behind Cloudflare, which 403s requests with
+/// no `User-Agent` (reqwest sends none by default — that was the silent break).
+const PRICE_SYNC_USER_AGENT: &str =
+    "genesis-miner-price-sync/1.0 (+https://genesisminer.com)";
+
+fn build_client(timeout_ms: u64) -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(Duration::from_millis(timeout_ms))
+        .user_agent(PRICE_SYNC_USER_AGENT)
+        .build()
+        .unwrap_or_default()
+}
+
 fn gecko_for_symbol(sym: &str) -> Option<&'static str> {
     let up = sym.trim().to_ascii_uppercase();
     SYMBOL_TO_COINGECKO
@@ -123,10 +136,7 @@ pub async fn run_price_sync_loop(pool: Pool, locks: RedisLockClient, cfg: Worker
         "live-price sync loop starting"
     );
 
-    let http = reqwest::Client::builder()
-        .timeout(Duration::from_millis(cfg.job_timeout_price_sync_ms.min(15_000)))
-        .build()
-        .unwrap_or_default();
+    let http = build_client(cfg.job_timeout_price_sync_ms.min(15_000));
 
     run_one_tick(&pool, &locks, &cfg, &http).await;
 
@@ -189,10 +199,7 @@ pub async fn run_price_sync_once(
     pool: &Pool,
     cfg: &WorkerConfig,
 ) -> Result<Value, PlayerReadError> {
-    let http = reqwest::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()
-        .unwrap_or_default();
+    let http = build_client(15_000);
     match run_price_sync(pool, cfg, &http).await {
         Ok(updated) => Ok(serde_json::json!({ "ok": true, "updated": updated })),
         Err(e) => Err(PlayerReadError::bad(e)),
