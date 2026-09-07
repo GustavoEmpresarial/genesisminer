@@ -97,6 +97,7 @@ fn router_arc(state: Arc<AppState>) -> Router {
         .merge(crate::admin_wallet_ops::router())
         .merge(crate::admin_wheel::router())
         .merge(crate::admin_transparency::router())
+        .merge(crate::admin_treasury::router())
         .merge(crate::partner_games::router())
         .merge(crate::dashboard::router())
         .merge(crate::partners::router())

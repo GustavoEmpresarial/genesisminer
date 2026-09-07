@@ -15,7 +15,6 @@ import { registerAdminBackupModuleRoutes } from '../modules/admin/backup/index.j
 import {
   registerAdminEconomyStatsModuleRoutes
 } from '../modules/admin/economy-stats/index.js';
-import { registerAdminEtherscanModuleRoutes } from '../modules/admin/etherscan/index.js';
 import { registerAdminUsersModuleRoutes } from '../modules/admin/users/index.js';
 import { registerDeviceFingerprintAdminModuleRoutes } from '../modules/admin/device-fingerprint/index.js';
 import { registerImageAssetModuleRoutes } from '../modules/admin/image-asset/index.js';
@@ -44,7 +43,6 @@ export function registerAllRoutes(app: Express, deps: AppDeps): void {
 
   registerAdminBackupModuleRoutes(app, { isAdmin });
   registerAdminEconomyStatsModuleRoutes(app, { isAdmin });
-  registerAdminEtherscanModuleRoutes(app, { isAdmin });
   registerAdminUsersModuleRoutes(app, {
     isAdmin,
     authenticateToken,

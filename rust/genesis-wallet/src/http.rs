@@ -27,6 +27,7 @@ use crate::admin_withdrawal_status::{
     ADMIN_WITHDRAWAL_STATUS_PATH,
 };
 use crate::config::{WorkerConfig, MINING_WORKER_AUTH_HEADER};
+use crate::treasury_token_txs::{run_treasury_token_txs, TreasuryTokenTxsQuery, TREASURY_TOKEN_TXS_PATH};
 use crate::deposit::{run_deposit_credit, DEPOSIT_CREDIT_PATH};
 use crate::deposit_receipt::{
     run_resolve_deposit_receipt, DepositSettingsPayload, DEPOSIT_RESOLVE_RECEIPT_PATH,
@@ -325,6 +326,7 @@ fn router(state: AppState) -> Router {
         .route(WEB3_SETTINGS_PERSIST_PATH, post(post_web3_settings_persist))
         .route(WALLET_LABELS_LIST_PATH, post(post_wallet_labels_list))
         .route(WALLET_LABELS_UPSERT_PATH, post(post_wallet_labels_upsert))
+        .route(TREASURY_TOKEN_TXS_PATH, post(post_treasury_token_txs))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
             require_worker_auth,
@@ -524,6 +526,35 @@ async fn post_deposit_credit(
             }),
         ),
         Err(e) => wallet_fail(e),
+    }
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TreasuryTokenTxsBody {
+    #[serde(default)]
+    page: Option<String>,
+    #[serde(default)]
+    offset: Option<String>,
+    #[serde(default)]
+    address: Option<String>,
+}
+
+async fn post_treasury_token_txs(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<TreasuryTokenTxsBody>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let q = TreasuryTokenTxsQuery {
+        page: body.page,
+        offset: body.offset,
+        address: body.address,
+    };
+    match run_treasury_token_txs(&state.pool, &state.http, &q).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => {
+            let (sc, Json(fail)) = wallet_fail(e);
+            (sc, Json(serde_json::json!({ "error": fail.error })))
+        }
     }
 }
 

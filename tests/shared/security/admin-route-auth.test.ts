@@ -182,13 +182,8 @@ describe('resolveAdminRouteRequirement', () => {
     expect(allowsAdminRouteAccess(true, new Set(), { kind: 'super' })).toBe(true);
   });
 
-  it('GET /api/admin/etherscan/* é tab reports', () => {
-    expect(resolveAdminRouteRequirement('GET', '/api/admin/etherscan/treasury-token-txs')).toEqual({
-      kind: 'tab',
-      tab: 'reports'
-    });
-    expect(allowsAdminRouteAccess(false, new Set(['reports']), { kind: 'tab', tab: 'reports' })).toBe(true);
-    expect(allowsAdminRouteAccess(false, new Set(['users']), { kind: 'tab', tab: 'reports' })).toBe(false);
+  it('GET /api/admin/etherscan/* é 100% Rust → unmapped → super', () => {
+    expect(resolveAdminRouteRequirement('GET', '/api/admin/etherscan/treasury-token-txs')).toEqual({ kind: 'super' });
   });
 
   it('GET /api/admin/recall-scan é tab backup; POST recall-all é super', () => {

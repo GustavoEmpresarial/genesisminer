@@ -33,6 +33,7 @@ mod pg_types;
 mod player_reads;
 mod quest_claim;
 mod referral_credit;
+mod treasury_token_txs;
 mod util;
 mod withdraw;
 mod zerads_credit;

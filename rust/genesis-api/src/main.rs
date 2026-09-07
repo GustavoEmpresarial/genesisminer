@@ -15,6 +15,7 @@ mod admin_support;
 mod admin_wallet_ops;
 mod admin_wheel;
 mod admin_transparency;
+mod admin_treasury;
 mod admin_users;
 mod admin_wallet_tabs;
 mod client_ip;

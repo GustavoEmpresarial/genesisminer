@@ -201,7 +201,7 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
   if (p.startsWith('/api/admin/economy-stats')) return { kind: 'tab', tab: 'reports' };
   if (p.startsWith('/api/admin/mining-distribution/')) return { kind: 'tab', tab: 'reports' };
   if (p.startsWith('/api/admin/mining-runtime-summary')) return { kind: 'tab', tab: 'reports' };
-  if (p.startsWith('/api/admin/etherscan/')) return { kind: 'tab', tab: 'reports' };
+  // /api/admin/etherscan/* is 100% Rust (genesis-api admin_treasury.rs → genesis-wallet).
   if (p.startsWith('/api/admin/withdrawals')) return { kind: 'super' };
   // /api/admin/economy-settings + /api/admin/mining-coins/sync-live-prices are
   // 100% Rust (genesis-api admin_economy.rs); unmapped /api/admin/* → super anyway.
