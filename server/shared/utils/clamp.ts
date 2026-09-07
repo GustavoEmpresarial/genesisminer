@@ -8,9 +8,8 @@
  * reinventando o mesmo corpo de 3 linhas) — esta é a versão compartilhada,
  * pensada pro mesmo padrão de `shared/utils/time.ts` (fonte única em vez de
  * duplicar). `modules/admin/user-audit`, `modules/admin/referral/services/format.ts`
- * (que reexporta `clamp` para não quebrar consumidores existentes) e
- * `modules/admin/mining-distribution/{services/report,controllers/mining-distribution.controller}.ts`
- * foram migrados para importar daqui — as cópias locais equivalentes foram removidas.
+ * (que reexporta `clamp` para não quebrar consumidores existentes) foram
+ * migrados para importar daqui — as cópias locais equivalentes foram removidas.
  */
 
 /**

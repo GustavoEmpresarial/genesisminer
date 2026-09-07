@@ -8,6 +8,7 @@ mod admin_announcements;
 mod admin_dashboard;
 mod admin_economy;
 mod admin_market;
+mod admin_mining_dist;
 mod admin_partners;
 mod admin_quests;
 mod admin_ranking;

@@ -95,6 +95,13 @@ use crate::quests_admin::{
     run_quests_admin_list, run_quests_admin_save, QuestSaveRequest, QUESTS_ADMIN_LIST_PATH,
     QUESTS_ADMIN_SAVE_PATH,
 };
+use crate::admin_mining_dist::{
+    run_by_coin, run_credits, run_credits_csv, run_overview, run_rebuild_rollups, run_timeline,
+    run_user_summary, CreditsRequest, OverviewRequest, RangeRequest, RebuildRollupsRequest,
+    TimelineRequest, UserSummaryRequest, MINING_DIST_BY_COIN_PATH, MINING_DIST_CREDITS_CSV_PATH,
+    MINING_DIST_CREDITS_PATH, MINING_DIST_OVERVIEW_PATH, MINING_DIST_REBUILD_ROLLUPS_PATH,
+    MINING_DIST_TIMELINE_PATH, MINING_DIST_USER_SUMMARY_PATH,
+};
 use crate::admin_dashboard::{
     run_dashboard_stats, run_ranking_exclusion, run_site_metrics, run_users_map,
     RankingExclusionRequest, DASHBOARD_METRICS_PATH, DASHBOARD_RANKING_EXCLUSION_PATH,
@@ -332,6 +339,13 @@ pub fn router(state: AppState) -> Router {
         .route(CHECKIN_PERFORM_PATH, post(post_checkin_perform))
         .route(QUESTS_STATE_PATH, post(post_quests_state))
         .route(QUESTS_ADMIN_LIST_PATH, post(post_quests_admin_list))
+        .route(MINING_DIST_OVERVIEW_PATH, post(post_md_overview))
+        .route(MINING_DIST_BY_COIN_PATH, post(post_md_by_coin))
+        .route(MINING_DIST_TIMELINE_PATH, post(post_md_timeline))
+        .route(MINING_DIST_CREDITS_PATH, post(post_md_credits))
+        .route(MINING_DIST_CREDITS_CSV_PATH, post(post_md_credits_csv))
+        .route(MINING_DIST_USER_SUMMARY_PATH, post(post_md_user_summary))
+        .route(MINING_DIST_REBUILD_ROLLUPS_PATH, post(post_md_rebuild_rollups))
         .route(DASHBOARD_STATS_PATH, post(post_dashboard_stats))
         .route(DASHBOARD_METRICS_PATH, post(post_dashboard_metrics))
         .route(DASHBOARD_RANKING_EXCLUSION_PATH, post(post_dashboard_ranking_exclusion))
@@ -761,6 +775,28 @@ async fn post_quests_state(
         Err(e) => fail_read(e),
     }
 }
+
+
+macro_rules! md_handler {
+    ($name:ident, $req:ty, $run:ident) => {
+        async fn $name(
+            State(state): State<Arc<AppState>>,
+            Json(body): Json<$req>,
+        ) -> impl axum::response::IntoResponse {
+            match $run(&state.pool, body).await {
+                Ok(v) => ok_payload(v),
+                Err(e) => fail_read(e),
+            }
+        }
+    };
+}
+md_handler!(post_md_overview, OverviewRequest, run_overview);
+md_handler!(post_md_by_coin, RangeRequest, run_by_coin);
+md_handler!(post_md_timeline, TimelineRequest, run_timeline);
+md_handler!(post_md_credits, CreditsRequest, run_credits);
+md_handler!(post_md_credits_csv, CreditsRequest, run_credits_csv);
+md_handler!(post_md_user_summary, UserSummaryRequest, run_user_summary);
+md_handler!(post_md_rebuild_rollups, RebuildRollupsRequest, run_rebuild_rollups);
 
 async fn post_dashboard_stats(
     State(state): State<Arc<AppState>>,

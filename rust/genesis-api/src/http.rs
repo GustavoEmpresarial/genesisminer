@@ -90,6 +90,7 @@ fn router_arc(state: Arc<AppState>) -> Router {
         .merge(crate::admin_dashboard::router())
         .merge(crate::admin_economy::router())
         .merge(crate::admin_market::router())
+        .merge(crate::admin_mining_dist::router())
         .merge(crate::admin_partners::router())
         .merge(crate::admin_quests::router())
         .merge(crate::admin_support::router())

@@ -18,7 +18,6 @@ import {
 import { registerAdminUsersModuleRoutes } from '../modules/admin/users/index.js';
 import { registerDeviceFingerprintAdminModuleRoutes } from '../modules/admin/device-fingerprint/index.js';
 import { registerImageAssetModuleRoutes } from '../modules/admin/image-asset/index.js';
-import { registerAdminMiningDistributionModuleRoutes } from '../modules/admin/mining-distribution/index.js';
 import { registerAdminMiningRuntimeSummaryModuleRoutes } from '../modules/admin/mining-runtime-summary/index.js';
 import { registerAdminPromoCodesModuleRoutes } from '../modules/admin/promo-codes/index.js';
 import { registerAdminRecallAllModuleRoutes } from '../modules/admin/recall-all/index.js';
@@ -56,7 +55,6 @@ export function registerAllRoutes(app: Express, deps: AppDeps): void {
     imgDir: deps.imgDir,
     uploadsDir: deps.uploadsDir
   });
-  registerAdminMiningDistributionModuleRoutes(app, { isAdmin });
   registerAdminMiningRuntimeSummaryModuleRoutes(app, { isAdmin });
   registerAdminPromoCodesModuleRoutes(app, { isAdmin });
   registerAdminRecallAllModuleRoutes(app, { isAdmin });
