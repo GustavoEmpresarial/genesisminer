@@ -101,6 +101,7 @@ pub async fn replace_shop_upgrades(
         soft_retire_upgrade(&tx, id).await?;
     }
 
+    sync_battery_display_copies(&tx).await?;
     sync_nft_room_only_flags(&tx).await?;
     let catalog_revision = bump_upgrades_catalog_revision(&tx).await?;
     tx.commit().await?;
@@ -115,6 +116,44 @@ struct ExistingMeta {
 struct ExistingDuration {
     amount: i32,
     unit: Option<String>,
+}
+
+/// Battery name/image are denormalized snapshots (`stored_batteries.display_name`
+/// / `image_url`, `placed_racks.battery_display_name` / `battery_image_url`,
+/// copied when the instance was created). Renaming a battery in the catalog
+/// would otherwise leave old instances showing the stale label — so on every
+/// catalog save we refresh those copies from `upgrades`. `IS DISTINCT FROM`
+/// keeps it to rows that actually changed.
+async fn sync_battery_display_copies<C: GenericClient>(client: &C) -> Result<(), CatalogError> {
+    client
+        .execute(
+            "UPDATE stored_batteries s
+                SET display_name = u.name,
+                    image_url = u.image
+               FROM upgrades u
+              WHERE u.id = s.item_id
+                AND (
+                  s.display_name IS DISTINCT FROM u.name
+                  OR s.image_url IS DISTINCT FROM u.image
+                )",
+            &[],
+        )
+        .await?;
+    client
+        .execute(
+            "UPDATE placed_racks p
+                SET battery_display_name = u.name,
+                    battery_image_url = u.image
+               FROM upgrades u
+              WHERE u.id = p.battery_catalog_item_id
+                AND (
+                  p.battery_display_name IS DISTINCT FROM u.name
+                  OR p.battery_image_url IS DISTINCT FROM u.image
+                )",
+            &[],
+        )
+        .await?;
+    Ok(())
 }
 
 async fn ensure_meta_row<C: GenericClient>(client: &C) -> Result<(), CatalogError> {
