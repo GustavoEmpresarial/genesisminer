@@ -15,7 +15,6 @@ describe('merge services/merge', () => {
   let dbMock: Record<string, unknown>;
   let settingsMock: Record<string, unknown>;
   let auditMock: Record<string, unknown>;
-  let questMock: Record<string, unknown>;
   let callMergeExecute: ReturnType<typeof vi.fn>;
   let prevHardwareUrl: string | undefined;
 
@@ -51,11 +50,9 @@ describe('merge services/merge', () => {
     };
     settingsMock = { loadMergeSettings: vi.fn().mockResolvedValue(MERGE_SETTINGS), isMergeTypeEnabled: vi.fn().mockReturnValue(true), anyMergeTypeEnabled: vi.fn().mockReturnValue(true) };
     auditMock = { recordInventoryMovement: vi.fn().mockResolvedValue(undefined) };
-    questMock = { bumpQuestProgress: vi.fn().mockResolvedValue(undefined) };
     vi.doMock('../../../../server/core/database/pool.js', () => dbMock);
     vi.doMock('../../../../server/modules/merge/services/settings.js', () => settingsMock);
     vi.doMock('../../../../server/shared/audit/inventory-movement.js', () => auditMock);
-    vi.doMock('../../../../server/modules/quests/services/quest.js', () => questMock);
   });
 
   afterEach(() => {
@@ -64,7 +61,6 @@ describe('merge services/merge', () => {
     vi.doUnmock('../../../../server/core/database/pool.js');
     vi.doUnmock('../../../../server/modules/merge/services/settings.js');
     vi.doUnmock('../../../../server/shared/audit/inventory-movement.js');
-    vi.doUnmock('../../../../server/modules/quests/services/quest.js');
     vi.doUnmock('../../../../server/modules/hardware/services/hardware-client.js');
   });
 
@@ -229,7 +225,6 @@ describe('merge services/merge', () => {
       expect(client.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE game_states SET usdc'))).toBe(false);
       expect(client.query.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO merge_history'))).toBe(false);
       expect(auditMock.recordInventoryMovement).toHaveBeenCalledTimes(2);
-      expect(questMock.bumpQuestProgress).toHaveBeenCalledWith(1, 'merge', 1);
     });
 
     it('count=3: envia historyTimestamps com 3 valores distintos ao worker', async () => {

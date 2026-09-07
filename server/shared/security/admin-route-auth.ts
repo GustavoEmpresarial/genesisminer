@@ -132,9 +132,8 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
   if (p.startsWith('/api/player-news/')) return { kind: 'tab', tab: 'settings:news' };
   if (p.startsWith('/api/admin/checkin-premium-policy')) return { kind: 'tab', tab: 'settings:monetization' };
   if (p.startsWith('/api/admin/checkin-reward-policy')) return { kind: 'tab', tab: 'settings:monetization' };
-  if (p.startsWith('/api/admin/announcements') || p.startsWith('/api/admin/in-app-announcements')) {
-    return { kind: 'tab', tab: 'settings:news' };
-  }
+  // /api/admin/announcements* and /api/admin/quests are 100% Rust (genesis-api
+  // gates them); no rule here — unmapped /api/admin/* falls to `super`.
   if (p === '/api/news' || p.startsWith('/api/news/')) return { kind: 'tab', tab: 'settings:news' };
   if (p === '/api/news-fee' || p === '/api/news-expire-days') return { kind: 'tab', tab: 'settings:news' };
 

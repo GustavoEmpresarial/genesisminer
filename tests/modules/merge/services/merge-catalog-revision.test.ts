@@ -18,7 +18,6 @@ describe('merge catalogRevision OCC (T6)', () => {
   let dbMock: Record<string, unknown>;
   let settingsMock: Record<string, unknown>;
   let auditMock: Record<string, unknown>;
-  let questMock: Record<string, unknown>;
   let metaRevision: number;
   let prevHardwareUrl: string | undefined;
 
@@ -74,11 +73,9 @@ describe('merge catalogRevision OCC (T6)', () => {
       anyMergeTypeEnabled: vi.fn().mockReturnValue(true)
     };
     auditMock = { recordInventoryMovement: vi.fn().mockResolvedValue(undefined) };
-    questMock = { bumpQuestProgress: vi.fn().mockResolvedValue(undefined) };
     vi.doMock('../../../../server/core/database/pool.js', () => dbMock);
     vi.doMock('../../../../server/modules/merge/services/settings.js', () => settingsMock);
     vi.doMock('../../../../server/shared/audit/inventory-movement.js', () => auditMock);
-    vi.doMock('../../../../server/modules/quests/services/quest.js', () => questMock);
   });
 
   afterEach(() => {
@@ -88,7 +85,6 @@ describe('merge catalogRevision OCC (T6)', () => {
     vi.doUnmock('../../../../server/modules/merge/services/settings.js');
     vi.doUnmock('../../../../server/modules/hardware/services/hardware-client.js');
     vi.doUnmock('../../../../server/shared/audit/inventory-movement.js');
-    vi.doUnmock('../../../../server/modules/quests/services/quest.js');
   });
 
   function baseMergeMocks(opts: { insertRowCount: number; existingByStats?: boolean; dupById?: boolean }) {

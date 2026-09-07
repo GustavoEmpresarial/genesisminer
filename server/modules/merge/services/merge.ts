@@ -1,7 +1,7 @@
 /**
  * Migrado de legacy/backend/modules/merge/merge.service.ts (verbatim, usando
- * o pool singleton `core/database/pool.js` em vez de `Pool` injetado por deps,
- * e `bumpQuestProgress` importado estaticamente — `modules/quests` já migrou).
+ * o pool singleton `core/database/pool.js` em vez de `Pool` injetado por deps).
+ * Progresso de missões ('merge') é creditado pelo worker Rust (genesis-hardware).
  */
 import { createHash } from 'node:crypto';
 import type { PoolClient } from 'pg';
@@ -9,7 +9,6 @@ import db from '../../../core/database/pool.js';
 import { HttpControlledError } from '../../../shared/errors/http-controlled-error.js';
 import { assertActiveUserPg } from '../../../shared/security/assert-active-user-tx.js';
 import { recordInventoryMovement } from '../../../shared/audit/inventory-movement.js';
-import { bumpQuestProgress } from '../../quests/services/quest.js';
 import { bumpUpgradesCatalogRevision, lockUpgradesCatalogRevision } from '../../catalog/services/catalog-revision.js';
 import {
   MERGE_ALLOWED_TYPES,
@@ -619,7 +618,8 @@ export async function executeMerge(userId: number, sourceItemId: string, countIn
       });
     }
 
-    void bumpQuestProgress(userId, 'merge', count);
+    // Quest 'merge' progress is credited by the Rust merge worker
+    // (genesis-hardware `merge/resolve.rs`), not here.
 
     return {
       ok: true,
