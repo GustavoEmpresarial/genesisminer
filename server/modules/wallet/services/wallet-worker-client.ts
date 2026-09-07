@@ -38,7 +38,6 @@ const ZERADS_CREDIT_PATH = '/v1/wallet/offerwall/zerads-credit';
 const ADMIN_WITHDRAWAL_STATUS_PATH = '/v1/wallet/admin/withdrawals/status';
 const ADMIN_SET_COIN_BALANCE_PATH = '/v1/wallet/admin/coin-balance/set';
 const ADMIN_SAVE_GAME_BALANCES_PATH = '/v1/wallet/admin/save-game-balances';
-const PARTNER_YOUTUBE_APPROVE_PATH = '/v1/partners/youtube/submissions/approve';
 const WALLET_STATE_PATH = '/v1/wallet/state';
 const WALLET_HISTORY_PATH = '/v1/wallet/history';
 const WITHDRAWALS_HISTORY_PATH = '/v1/withdrawals/history';
@@ -442,23 +441,6 @@ export async function callWalletAdminSaveGameBalances(payload: {
   const { status, body } = await postWalletRaw(ADMIN_SAVE_GAME_BALANCES_PATH, payload);
   requireWalletOk(body, status, 'admin save-game balances');
   return { ok: true };
-}
-
-export type PartnerYoutubeApproveWorkerResult = { ok: true; updated: number };
-
-/** Fail-closed partner YouTube video submission approve (pending → approved). */
-export async function callWalletPartnerYoutubeApprove(payload: {
-  id: string;
-  adminUserId: number;
-  reviewedAt?: number;
-}): Promise<PartnerYoutubeApproveWorkerResult> {
-  const { status, body } = await postWalletRaw(PARTNER_YOUTUBE_APPROVE_PATH, {
-    id: payload.id,
-    adminUserId: payload.adminUserId,
-    ...(payload.reviewedAt != null ? { reviewedAt: payload.reviewedAt } : {})
-  });
-  requireWalletOk(body, status, 'partner youtube approve');
-  return { ok: true, updated: readRequiredNumber(body, 'updated', 'partner youtube approve') };
 }
 
 export async function callWalletState(payload: { userId: number }): Promise<Record<string, unknown>> {

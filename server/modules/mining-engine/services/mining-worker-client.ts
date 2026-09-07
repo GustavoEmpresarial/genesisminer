@@ -105,8 +105,6 @@ const MINING_WORKER_USERS_ASSERT_ACTIVE_PATH = '/v1/users/assert-active';
 const MINING_WORKER_UPLOAD_CHAT_AUDIO_PATH = '/v1/uploads/chat-audio';
 /** Support attachment disk write — fixed contract with the Rust worker. */
 const MINING_WORKER_UPLOAD_SUPPORT_ATTACHMENT_PATH = '/v1/uploads/support-attachment';
-/** Partner avatar disk write — fixed contract with the Rust worker. */
-const MINING_WORKER_UPLOAD_PARTNER_AVATAR_PATH = '/v1/uploads/partner-avatar';
 
 /** Calculator snapshot I/O + assemble — fixed contract with the Rust worker. */
 const MINING_WORKER_CALCULATOR_SNAPSHOT_PATH = '/v1/calculator/snapshot';
@@ -1678,24 +1676,6 @@ export async function callMiningWorkerUploadSupportAttachment(args: {
     'upload support-attachment'
   );
   return readUploadResult(status, body, 'upload support-attachment');
-}
-
-export async function callMiningWorkerUploadPartnerAvatar(args: {
-  buffer: Uint8Array;
-  originalName: string;
-  mime: string;
-}): Promise<MiningWorkerUploadResult> {
-  const form = new FormData();
-  appendUploadFile(form, 'avatar', args.buffer, args.originalName || 'avatar.png');
-  form.append('originalName', args.originalName);
-  form.append('mime', args.mime);
-  const { status, body } = await postMiningWorkerMultipart(
-    MINING_WORKER_UPLOAD_PARTNER_AVATAR_PATH,
-    form,
-    MINING_WORKER_PROGRESS_TIMEOUT_MS,
-    'upload partner-avatar'
-  );
-  return readUploadResult(status, body, 'upload partner-avatar');
 }
 
 function readFiniteNumber(raw: unknown, fallback = 0): number {

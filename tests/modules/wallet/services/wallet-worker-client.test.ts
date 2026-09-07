@@ -164,40 +164,4 @@ describe('wallet-worker-client fail-closed', () => {
     );
   });
 
-  it('partner youtube approve unset URL', async () => {
-    delete process.env.GENESIS_WALLET_URL;
-    vi.resetModules();
-    const { callWalletPartnerYoutubeApprove } = await import(
-      '../../../../server/modules/wallet/services/wallet-worker-client.js'
-    );
-    await expect(
-      callWalletPartnerYoutubeApprove({
-        id: '550e8400-e29b-41d4-a716-446655440000',
-        adminUserId: 1,
-        reviewedAt: Date.now()
-      })
-    ).rejects.toThrow('GENESIS_WALLET_URL unset');
-  });
-
-  it('partner youtube approve happy path maps updated', async () => {
-    process.env.GENESIS_WALLET_URL = 'http://wallet.test';
-    vi.resetModules();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        status: 200,
-        text: async () => JSON.stringify({ ok: true, updated: 1 })
-      }))
-    );
-    const { callWalletPartnerYoutubeApprove } = await import(
-      '../../../../server/modules/wallet/services/wallet-worker-client.js'
-    );
-    const out = await callWalletPartnerYoutubeApprove({
-      id: '550e8400-e29b-41d4-a716-446655440000',
-      adminUserId: 9,
-      reviewedAt: 123
-    });
-    expect(out).toEqual({ ok: true, updated: 1 });
-  });
 });
