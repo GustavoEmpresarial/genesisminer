@@ -20,8 +20,6 @@ export function kafkaClientId(): string {
   return id || 'genesis-app';
 }
 
-/** Consumer group para invalidação do cache do header do jogo. */
-export const KAFKA_HEADER_CACHE_GROUP_ID = 'genesis-app-header-cache';
 
 /** Consumer group para invalidação do fallback local do ranking. */
 export const KAFKA_RANKING_CACHE_GROUP_ID = 'genesis-app-ranking-cache';

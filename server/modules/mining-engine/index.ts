@@ -23,4 +23,3 @@ export {
   resetMiningYieldCronStateForTests,
   MINING_YIELD_HISTORY_INSERT_SQL
 } from './services/yield-cron.js';
-export { invalidatePlayerGameHeaderCache } from './services/player-game-header-cache.js';
