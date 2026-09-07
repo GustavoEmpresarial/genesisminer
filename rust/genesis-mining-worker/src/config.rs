@@ -109,6 +109,18 @@ pub const IDEMPOTENCY_PURGE_BATCH: i64 = 5_000;
 /// Node `MAX_BATCHES_PER_TICK` (idempotency purge).
 pub const IDEMPOTENCY_MAX_BATCHES_PER_TICK: usize = 20;
 
+/// Redis lock for the live-price sync loop (owns legacy
+/// `maybeSyncLiveUsdToMiningCoinsPostgres`, `lib/miningLivePrices.js`).
+pub const REDIS_LOCK_JOB_PRICE_SYNC: &str = "genesis:lock:job:price-sync";
+/// Lock TTL seconds — one interval's worth of headroom.
+pub const REDIS_LOCK_TTL_PRICE_SYNC_SEC: u64 = 5 * (MS_PER_MINUTE / MS_PER_SECOND);
+/// Legacy `DEFAULT_PRICE_DB_SYNC_INTERVAL_MS` (10 min).
+pub const DEFAULT_PRICE_SYNC_INTERVAL_MS: u64 = 10 * MS_PER_MINUTE;
+/// Per-tick timeout — CoinGecko fetch + a short UPDATE loop.
+pub const DEFAULT_JOB_TIMEOUT_PRICE_SYNC_MS: u64 = MS_PER_MINUTE;
+/// CoinGecko `simple/price` endpoint (legacy `COINGECKO_SIMPLE`).
+pub const COINGECKO_SIMPLE_URL: &str = "https://api.coingecko.com/api/v3/simple/price";
+
 /// Redis lock — mirror `REDIS_LOCK_KEYS.jobBackupSql`.
 pub const REDIS_LOCK_JOB_BACKUP_SQL: &str = "genesis:lock:job:backup-sql";
 /// Lock TTL seconds — mirror `REDIS_LOCK_TTL_SECONDS.backupSql` (1800).
@@ -232,6 +244,13 @@ pub struct WorkerConfig {
     pub idempotency_purge_loop_enabled: bool,
     pub idempotency_purge_interval_ms: u64,
     pub job_timeout_idempotency_purge_ms: u64,
+    /// Live-price sync loop (owns legacy `maybeSyncLiveUsdToMiningCoinsPostgres`).
+    /// Gate: legacy `MINING_AUTO_SYNC_USD_PRICES=1` (default off).
+    pub price_sync_loop_enabled: bool,
+    pub price_sync_interval_ms: u64,
+    pub job_timeout_price_sync_ms: u64,
+    /// Legacy `MINING_COINGECKO_IDS_JSON` — `{ "<mining_coins.id>": "<coingecko-id>" }`.
+    pub price_sync_coingecko_ids_json: Option<String>,
     /// Auto SQL backup loop (owns Node `startScheduledSqlBackups`).
     pub backup_sql_loop_enabled: bool,
     pub backup_disable_auto: bool,
@@ -373,6 +392,23 @@ impl WorkerConfig {
                 MS_PER_SECOND,
                 10 * MS_PER_MINUTE,
             ),
+            price_sync_loop_enabled: env_flag_default_off("MINING_AUTO_SYNC_USD_PRICES"),
+            price_sync_interval_ms: env_u64_clamped(
+                "MINING_PRICE_DB_SYNC_INTERVAL_MS",
+                DEFAULT_PRICE_SYNC_INTERVAL_MS,
+                MS_PER_MINUTE,
+                24 * MS_PER_HOUR,
+            ),
+            job_timeout_price_sync_ms: env_u64_clamped(
+                "JOB_TIMEOUT_PRICE_SYNC_MS",
+                DEFAULT_JOB_TIMEOUT_PRICE_SYNC_MS,
+                MS_PER_SECOND,
+                5 * MS_PER_MINUTE,
+            ),
+            price_sync_coingecko_ids_json: std::env::var("MINING_COINGECKO_IDS_JSON")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
             backup_sql_loop_enabled: env_flag_default_on("BACKUP_SQL_LOOP_ENABLED"),
             backup_disable_auto: backup_disable_auto_from_env(),
             backup_auto_local_hour: env_u32_clamped(
@@ -437,6 +473,10 @@ impl WorkerConfig {
 
     pub fn idempotency_purge_loop_active(&self) -> bool {
         self.scheduler_enabled && self.idempotency_purge_loop_enabled
+    }
+
+    pub fn price_sync_loop_active(&self) -> bool {
+        self.scheduler_enabled && self.price_sync_loop_enabled
     }
 
     pub fn backup_sql_loop_active(&self) -> bool {

@@ -33,9 +33,7 @@ const W_ECONOMY_SETTINGS: &str = "/v1/catalog/mining-coins/economy-settings";
 const W_SET_ACTIVE: &str = "/v1/catalog/mining-coins/set-active";
 const W_ECONOMY_STATS: &str = "/v1/admin/economy/coin-stats";
 const W_RUNTIME_SUMMARY: &str = "/v1/admin/economy/runtime-summary";
-
-const SYNC_NOT_IMPLEMENTED_MSG: &str = "Sincronização de preços ao vivo (CoinGecko) não está \
-     disponível nesta build — enriquecimento cosmético não portado.";
+const W_SYNC_LIVE_PRICES: &str = "/v1/admin/economy/sync-live-prices";
 
 async fn economy_settings(
     State(state): State<Arc<AppState>>,
@@ -61,14 +59,13 @@ async fn set_active(
     forward_hardware(&state, W_SET_ACTIVE, json!({ "payload": body })).await
 }
 
+/// On-demand CoinGecko pull for the "Atualizar preços" button. The scheduled
+/// 10-min sync runs in `genesis-mining-worker` (`price_sync_loop.rs`).
 async fn sync_live_prices(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if let Err(e) = require_admin(&state, &headers, &Method::POST, SYNC_LIVE_PRICES_PATH).await {
         return e;
     }
-    json_status(
-        501,
-        json!({ "ok": false, "updated": 0, "error": SYNC_NOT_IMPLEMENTED_MSG }),
-    )
+    forward_mining(&state, W_SYNC_LIVE_PRICES, json!({})).await
 }
 
 /// Per-coin real active miners + hashrate from `placed_racks`. Node returns a

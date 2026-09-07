@@ -95,6 +95,7 @@ use crate::quests_admin::{
     run_quests_admin_list, run_quests_admin_save, QuestSaveRequest, QUESTS_ADMIN_LIST_PATH,
     QUESTS_ADMIN_SAVE_PATH,
 };
+use crate::price_sync_loop::{run_price_sync_once, SYNC_LIVE_PRICES_PATH};
 use crate::admin_economy_reports::{
     run_economy_coin_stats, run_mining_runtime_summary, ECONOMY_STATS_PATH,
     MINING_RUNTIME_SUMMARY_PATH,
@@ -352,6 +353,7 @@ pub fn router(state: AppState) -> Router {
         .route(REF_SUMMARY_PATH, post(post_ref_summary))
         .route(ECONOMY_STATS_PATH, post(post_economy_coin_stats))
         .route(MINING_RUNTIME_SUMMARY_PATH, post(post_mining_runtime_summary))
+        .route(SYNC_LIVE_PRICES_PATH, post(post_sync_live_prices))
         .route(REF_COMMISSIONS_PATH, post(post_ref_commissions))
         .route(REF_LINKS_PATH, post(post_ref_links))
         .route(REF_EXPORT_CSV_PATH, post(post_ref_export_csv))
@@ -809,6 +811,15 @@ async fn post_mining_runtime_summary(
     State(state): State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse {
     match run_mining_runtime_summary(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_sync_live_prices(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match run_price_sync_once(&state.pool, &state.cfg).await {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
     }

@@ -44,6 +44,7 @@ mod partner_games;
 mod partners;
 mod partners_admin;
 mod player_reads;
+mod price_sync_loop;
 mod profile_writes;
 mod progress;
 mod quests_admin;
@@ -203,6 +204,15 @@ async fn main() -> anyhow::Result<()> {
         })
     };
 
+    let price_sync_task = {
+        let pool = pool.clone();
+        let locks = locks.clone();
+        let cfg = cfg.clone();
+        tokio::spawn(async move {
+            price_sync_loop::run_price_sync_loop(pool, locks, cfg).await;
+        })
+    };
+
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             info!(event = "shutdown", "SIGINT — mining worker stopping");
@@ -227,6 +237,9 @@ async fn main() -> anyhow::Result<()> {
         }
         _ = backup_sql_task => {
             warn!("backup sql task ended");
+        }
+        _ = price_sync_task => {
+            warn!("price sync task ended");
         }
     }
 
