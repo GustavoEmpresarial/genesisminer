@@ -200,11 +200,17 @@ describe('resolveAdminRouteRequirement', () => {
     expect(allowsAdminRouteAccess(false, new Set(['backup', 'users']), { kind: 'super' })).toBe(false);
   });
 
-  it('GET /api/admin/market/listings é tab shops', () => {
-    expect(resolveAdminRouteRequirement('GET', '/api/admin/market/listings')).toEqual({ kind: 'tab', tab: 'shops' });
-    expect(allowsAdminRouteAccess(false, new Set(['shops']), { kind: 'tab', tab: 'shops' })).toBe(true);
-    expect(allowsAdminRouteAccess(false, new Set(['users']), { kind: 'tab', tab: 'shops' })).toBe(false);
-    expect(allowsAdminRouteAccess(true, new Set(), { kind: 'tab', tab: 'shops' })).toBe(true);
+  it('rotas 100% migradas para Rust não têm regra aqui (caem no catch-all super)', () => {
+    // Partners/Streamer, Support, lucky/loot-box admin e market/listings são
+    // servidos e autorizados pelo genesis-api (Rust); os handlers Express foram
+    // removidos. Sem regra → `super` (nega por omissão).
+    expect(resolveAdminRouteRequirement('GET', '/api/admin/market/listings')).toEqual({ kind: 'super' });
+    expect(resolveAdminRouteRequirement('GET', '/api/admin/partner-youtube-partners')).toEqual({ kind: 'super' });
+    expect(resolveAdminRouteRequirement('GET', '/api/admin/partner-videos')).toEqual({ kind: 'super' });
+    expect(resolveAdminRouteRequirement('GET', '/api/admin/streamer-room-users')).toEqual({ kind: 'super' });
+    expect(resolveAdminRouteRequirement('GET', '/api/admin/support-tickets')).toEqual({ kind: 'super' });
+    expect(resolveAdminRouteRequirement('POST', '/api/admin/loot-boxes')).toEqual({ kind: 'super' });
+    expect(resolveAdminRouteRequirement('GET', '/api/admin/user-boxes')).toEqual({ kind: 'super' });
   });
 
     it('PUT /api/user é tab users, não super', () => {
@@ -237,13 +243,6 @@ describe('resolveAdminRouteRequirement', () => {
 
   it('device-fingerprints é tab security', () => {
     expect(resolveAdminRouteRequirement('GET', '/api/admin/device-fingerprints')).toEqual({ kind: 'tab', tab: 'security' });
-  });
-
-  it('loot-boxes admin é tab lootboxes', () => {
-    expect(resolveAdminRouteRequirement('POST', '/api/admin/loot-boxes')).toEqual({ kind: 'tab', tab: 'lootboxes' });
-    expect(resolveAdminRouteRequirement('DELETE', '/api/admin/loot-boxes/box_1')).toEqual({ kind: 'tab', tab: 'lootboxes' });
-    expect(resolveAdminRouteRequirement('GET', '/api/admin/user-boxes')).toEqual({ kind: 'tab', tab: 'lootboxes' });
-    expect(resolveAdminRouteRequirement('POST', '/api/admin/delete-user-box')).toEqual({ kind: 'tab', tab: 'lootboxes' });
   });
 
   it('upload-ad aceita partners OU settings:news', () => {

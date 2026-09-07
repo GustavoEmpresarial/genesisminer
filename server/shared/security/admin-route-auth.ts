@@ -109,20 +109,15 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
   if (p === '/api/mining-coins' && method.toUpperCase() === 'POST') return { kind: 'super' };
   if (p.startsWith('/api/mining/coins') && method.toUpperCase() !== 'GET') return { kind: 'super' };
 
-  if (p.startsWith('/api/admin/partner-youtube') || p.startsWith('/api/admin/partner-videos')) {
-    return { kind: 'tab', tab: 'partners' };
-  }
+  // Partners/Streamer YouTube admin, Support admin, Lucky/loot-box admin and the
+  // P2P market listing are 100% Rust (genesis-api gates them via its own
+  // resolve_admin_route_requirement); their Express handlers are deleted, so no
+  // rule is needed here — an unmapped /api/admin/* path falls to the `super`
+  // catch-all below.
   if (p === '/api/admin/upload-ad') return { kind: 'anyOf', tabs: ['partners', 'settings:news'] };
 
-  if (p.startsWith('/api/admin/support-tickets')) return { kind: 'tab', tab: 'support' };
-  if (p.startsWith('/api/admin/support/')) return { kind: 'tab', tab: 'support' };
   if (p === '/api/admin/device-fingerprints') return { kind: 'tab', tab: 'security' };
   if (p.startsWith('/api/admin/security/')) return { kind: 'tab', tab: 'security' };
-
-  if (p.startsWith('/api/admin/loot-boxes')) return { kind: 'tab', tab: 'lootboxes' };
-  if (p.startsWith('/api/admin/user-boxes') || p === '/api/admin/delete-user-box') return { kind: 'tab', tab: 'lootboxes' };
-  if (p.startsWith('/api/admin/loot-box-redemptions/')) return { kind: 'tab', tab: 'lootboxes' };
-  if (p === '/api/loot-boxes' && method.toUpperCase() === 'POST') return { kind: 'tab', tab: 'lootboxes' };
 
   if (p.startsWith('/api/admin/backups') || p === '/api/admin/backup' || p.startsWith('/api/admin/backup-settings')) {
     return { kind: 'tab', tab: 'backup' };
@@ -158,8 +153,6 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
 
   if (p === '/api/admin-upgrades' || p.startsWith('/api/admin-upgrades/')) return { kind: 'tab', tab: 'shops:hardware' };
   if (p === '/api/upgrades' && method.toUpperCase() === 'POST') return { kind: 'tab', tab: 'shops:hardware' };
-
-  if (p === '/api/admin/market/listings') return { kind: 'tab', tab: 'shops' };
 
   if (p === '/api/exchange-settings' && method.toUpperCase() === 'POST') return { kind: 'super' };
 
