@@ -20,6 +20,7 @@
 mod admin_dashboard;
 mod admin_gate;
 mod admin_mining_dist;
+mod admin_referral;
 mod admin_users;
 mod announcements;
 mod backup_sql_loop;

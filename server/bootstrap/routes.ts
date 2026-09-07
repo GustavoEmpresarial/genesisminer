@@ -22,7 +22,6 @@ import { registerAdminMiningRuntimeSummaryModuleRoutes } from '../modules/admin/
 import { registerAdminPromoCodesModuleRoutes } from '../modules/admin/promo-codes/index.js';
 import { registerAdminRecallAllModuleRoutes } from '../modules/admin/recall-all/index.js';
 import { registerAdminRecallScanModuleRoutes } from '../modules/admin/recall-scan/index.js';
-import { registerAdminReferralModuleRoutes } from '../modules/admin/referral/index.js';
 import { registerAdminSecurityBulkModuleRoutes } from '../modules/admin/security-bulk/index.js';
 import { registerAdminSecurityStatsModuleRoutes } from '../modules/admin/security-stats/index.js';
 import { registerAdminSuspiciousEmailsModuleRoutes } from '../modules/admin/suspicious-emails/index.js';
@@ -59,7 +58,6 @@ export function registerAllRoutes(app: Express, deps: AppDeps): void {
   registerAdminPromoCodesModuleRoutes(app, { isAdmin });
   registerAdminRecallAllModuleRoutes(app, { isAdmin });
   registerAdminRecallScanModuleRoutes(app, { isAdmin });
-  registerAdminReferralModuleRoutes(app, { isAdmin });
   registerAdminSecurityBulkModuleRoutes(app, { isAdmin });
   registerAdminSecurityStatsModuleRoutes(app, { isAdmin });
   registerAdminSuspiciousEmailsModuleRoutes(app, { isAdmin });

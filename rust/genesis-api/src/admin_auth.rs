@@ -338,6 +338,11 @@ pub fn resolve_admin_route_requirement(method: &Method, raw_path: &str) -> Admin
     {
         return Tab(TAB_USERS);
     }
+    // Referral-program reports panel (genesis-api `admin_referral.rs`). Parity
+    // with the Node module, which had no tab rule → super-only.
+    if p.starts_with("/api/admin/referrals/") {
+        return Super;
+    }
     if is_get
         && (admin_user_sub_route(p, "/inventory-audit")
             || admin_user_sub_route(p, "/session-snapshots")

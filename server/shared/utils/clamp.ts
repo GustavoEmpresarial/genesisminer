@@ -7,7 +7,7 @@
  * Existiam cópias idênticas desta função em vários módulos admin (cada um
  * reinventando o mesmo corpo de 3 linhas) — esta é a versão compartilhada,
  * pensada pro mesmo padrão de `shared/utils/time.ts` (fonte única em vez de
- * duplicar). `modules/admin/user-audit`, `modules/admin/referral/services/format.ts`
+ * duplicar). `modules/admin/user-audit`
  * (que reexporta `clamp` para não quebrar consumidores existentes) foram
  * migrados para importar daqui — as cópias locais equivalentes foram removidas.
  */

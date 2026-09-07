@@ -12,6 +12,7 @@ mod admin_mining_dist;
 mod admin_partners;
 mod admin_quests;
 mod admin_ranking;
+mod admin_referral;
 mod admin_support;
 mod admin_wallet_ops;
 mod admin_wheel;
