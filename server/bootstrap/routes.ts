@@ -12,13 +12,9 @@ import pool from '../core/database/pool.js';
 import type { AppDeps } from './deps.js';
 
 import { registerAdminBackupModuleRoutes } from '../modules/admin/backup/index.js';
-import {
-  registerAdminEconomyStatsModuleRoutes
-} from '../modules/admin/economy-stats/index.js';
 import { registerAdminUsersModuleRoutes } from '../modules/admin/users/index.js';
 import { registerDeviceFingerprintAdminModuleRoutes } from '../modules/admin/device-fingerprint/index.js';
 import { registerImageAssetModuleRoutes } from '../modules/admin/image-asset/index.js';
-import { registerAdminMiningRuntimeSummaryModuleRoutes } from '../modules/admin/mining-runtime-summary/index.js';
 import { registerAdminPromoCodesModuleRoutes } from '../modules/admin/promo-codes/index.js';
 import { registerAdminRecallAllModuleRoutes } from '../modules/admin/recall-all/index.js';
 import { registerAdminRecallScanModuleRoutes } from '../modules/admin/recall-scan/index.js';
@@ -40,7 +36,6 @@ export function registerAllRoutes(app: Express, deps: AppDeps): void {
   const { authenticateToken, isAdmin, parseCookies, issueJwtAuthCookies } = deps;
 
   registerAdminBackupModuleRoutes(app, { isAdmin });
-  registerAdminEconomyStatsModuleRoutes(app, { isAdmin });
   registerAdminUsersModuleRoutes(app, {
     isAdmin,
     authenticateToken,
@@ -54,7 +49,6 @@ export function registerAllRoutes(app: Express, deps: AppDeps): void {
     imgDir: deps.imgDir,
     uploadsDir: deps.uploadsDir
   });
-  registerAdminMiningRuntimeSummaryModuleRoutes(app, { isAdmin });
   registerAdminPromoCodesModuleRoutes(app, { isAdmin });
   registerAdminRecallAllModuleRoutes(app, { isAdmin });
   registerAdminRecallScanModuleRoutes(app, { isAdmin });

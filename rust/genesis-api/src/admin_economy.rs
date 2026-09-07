@@ -14,20 +14,25 @@ use std::sync::Arc;
 use axum::extract::State;
 use axum::http::{HeaderMap, Method};
 use axum::response::Response;
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
 
 use crate::admin_auth::require_admin;
 use crate::config::AppState;
-use crate::facade::forward_hardware;
+use crate::facade::{forward_hardware, forward_mining};
 use crate::session::json_status;
+use crate::workers::{post_mining, worker_infra_status, worker_unavailable_body};
 
 const ECONOMY_SETTINGS_PATH: &str = "/api/admin/economy-settings";
 const SYNC_LIVE_PRICES_PATH: &str = "/api/admin/mining-coins/sync-live-prices";
 const SET_ACTIVE_PATH: &str = "/api/mining-coins/set-active";
+const ECONOMY_STATS_PATH: &str = "/api/admin/economy-stats";
+const RUNTIME_SUMMARY_PATH: &str = "/api/admin/mining-runtime-summary";
 const W_ECONOMY_SETTINGS: &str = "/v1/catalog/mining-coins/economy-settings";
 const W_SET_ACTIVE: &str = "/v1/catalog/mining-coins/set-active";
+const W_ECONOMY_STATS: &str = "/v1/admin/economy/coin-stats";
+const W_RUNTIME_SUMMARY: &str = "/v1/admin/economy/runtime-summary";
 
 const SYNC_NOT_IMPLEMENTED_MSG: &str = "Sincronização de preços ao vivo (CoinGecko) não está \
      disponível nesta build — enriquecimento cosmético não portado.";
@@ -66,9 +71,34 @@ async fn sync_live_prices(State(state): State<Arc<AppState>>, headers: HeaderMap
     )
 }
 
+/// Per-coin real active miners + hashrate from `placed_racks`. Node returns a
+/// bare array; the worker wraps it as `{ ok, rows }`.
+async fn economy_stats(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    if let Err(e) = require_admin(&state, &headers, &Method::GET, ECONOMY_STATS_PATH).await {
+        return e;
+    }
+    match post_mining(&state.cfg, &state.http, W_ECONOMY_STATS, &json!({})).await {
+        Ok(w) => {
+            let rows = w.body.get("rows").cloned().unwrap_or_else(|| json!([]));
+            json_status(if w.status == 0 { 502 } else { w.status }, rows)
+        }
+        Err(e) => json_status(worker_infra_status(&e), worker_unavailable_body(&e)),
+    }
+}
+
+/// Last yield-tick snapshot from `app_cache.network_stats`.
+async fn runtime_summary(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    if let Err(e) = require_admin(&state, &headers, &Method::GET, RUNTIME_SUMMARY_PATH).await {
+        return e;
+    }
+    forward_mining(&state, W_RUNTIME_SUMMARY, json!({})).await
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route(ECONOMY_SETTINGS_PATH, post(economy_settings))
         .route(SET_ACTIVE_PATH, post(set_active))
         .route(SYNC_LIVE_PRICES_PATH, post(sync_live_prices))
+        .route(ECONOMY_STATS_PATH, get(economy_stats))
+        .route(RUNTIME_SUMMARY_PATH, get(runtime_summary))
 }

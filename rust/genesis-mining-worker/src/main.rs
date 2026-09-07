@@ -18,6 +18,7 @@
 //! Calculator: POST /v1/calculator/snapshot body `{ userId, scope? }`
 
 mod admin_dashboard;
+mod admin_economy_reports;
 mod admin_gate;
 mod admin_mining_dist;
 mod admin_referral;

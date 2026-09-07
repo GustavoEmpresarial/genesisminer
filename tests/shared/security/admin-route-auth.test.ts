@@ -122,12 +122,9 @@ describe('resolveAdminRouteRequirement', () => {
     expect(allowsAdminRouteAccess(false, new Set(['users']), { kind: 'tab', tab: 'security' })).toBe(false);
   });
 
-  it('GET /api/admin/economy-stats e mining-runtime-summary são tab reports', () => {
-    expect(resolveAdminRouteRequirement('GET', '/api/admin/economy-stats')).toEqual({ kind: 'tab', tab: 'reports' });
-    expect(resolveAdminRouteRequirement('GET', '/api/admin/mining-runtime-summary')).toEqual({
-      kind: 'tab',
-      tab: 'reports'
-    });
+  it('GET /api/admin/{economy-stats,mining-runtime-summary} são 100% Rust → unmapped → super', () => {
+    expect(resolveAdminRouteRequirement('GET', '/api/admin/economy-stats')).toEqual({ kind: 'super' });
+    expect(resolveAdminRouteRequirement('GET', '/api/admin/mining-runtime-summary')).toEqual({ kind: 'super' });
     expect(allowsAdminRouteAccess(false, new Set(['reports']), { kind: 'tab', tab: 'reports' })).toBe(true);
     expect(allowsAdminRouteAccess(false, new Set(['users']), { kind: 'tab', tab: 'reports' })).toBe(false);
     expect(allowsAdminRouteAccess(true, new Set(), { kind: 'tab', tab: 'reports' })).toBe(true);

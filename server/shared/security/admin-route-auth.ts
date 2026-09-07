@@ -198,9 +198,8 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
   if (method.toUpperCase() === 'POST' && p === '/api/admin/users/suspicious-emails/deactivate-filtered') {
     return { kind: 'tab', tab: 'users' };
   }
-  if (p.startsWith('/api/admin/economy-stats')) return { kind: 'tab', tab: 'reports' };
   // /api/admin/mining-distribution/* is 100% Rust (genesis-api admin_mining_dist.rs).
-  if (p.startsWith('/api/admin/mining-runtime-summary')) return { kind: 'tab', tab: 'reports' };
+  // /api/admin/{economy-stats,mining-runtime-summary} are 100% Rust (genesis-api admin_economy.rs).
   // /api/admin/etherscan/* is 100% Rust (genesis-api admin_treasury.rs → genesis-wallet).
   if (p.startsWith('/api/admin/withdrawals')) return { kind: 'super' };
   // /api/admin/economy-settings + /api/admin/mining-coins/sync-live-prices are
