@@ -17,6 +17,7 @@
 //! Chat reads: POST /v1/chat/history|get|sender|peers|mentions-search|mentions-resolve
 //! Calculator: POST /v1/calculator/snapshot body `{ userId, scope? }`
 
+mod admin_dashboard;
 mod admin_gate;
 mod admin_users;
 mod announcements;

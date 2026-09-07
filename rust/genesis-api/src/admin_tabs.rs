@@ -11,7 +11,7 @@ use std::sync::Arc;
 use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, Method};
 use axum::response::Response;
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
 
@@ -26,6 +26,7 @@ const UPGRADES_PATH: &str = "/api/upgrades";
 const ECONOMY_SETTINGS_PATH: &str = "/api/economy-settings";
 const EXCHANGE_SETTINGS_PATH: &str = "/api/exchange-settings";
 const MONETIZATION_SETTINGS_PATH: &str = "/api/monetization-settings";
+const ADMIN_MONETIZATION_SETTINGS_PATH: &str = "/api/admin/monetization-settings";
 const UPLOAD_IMAGE_PATH: &str = "/api/upload-image";
 
 /// Worker twins.
@@ -33,6 +34,7 @@ const CATALOG_UPGRADES_REPLACE_PATH: &str = "/v1/catalog/upgrades/replace";
 const ECONOMY_SETTINGS_PERSIST_PATH: &str = "/v1/settings/economy/persist";
 const EXCHANGE_SETTINGS_PERSIST_PATH: &str = "/v1/settings/exchange/persist";
 const MONETIZATION_SETTINGS_PERSIST_PATH: &str = "/v1/settings/monetization/persist";
+const MONETIZATION_SETTINGS_READ_PATH: &str = "/v1/settings/monetization/read";
 const UPLOAD_ADMIN_IMAGE_DATA_URL_PATH: &str = "/v1/uploads/admin-image-data-url";
 
 /// Node `HTTP_BAD_REQUEST` in catalog.controller.ts.
@@ -146,6 +148,26 @@ async fn post_monetization_settings(
     .await
 }
 
+/// Node `GET /api/admin/monetization-settings` — returns the full DTO
+/// (incl. `applixirCallbackSecret`); the public GET at `/api/monetization-settings`
+/// stays in [`crate::player`].
+async fn get_admin_monetization_settings(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(e) =
+        require_admin(&state, &headers, &Method::GET, ADMIN_MONETIZATION_SETTINGS_PATH).await
+    {
+        return e;
+    }
+    let mut res = forward_mining(&state, MONETIZATION_SETTINGS_READ_PATH, Value::Object(Default::default())).await;
+    res.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    res
+}
+
 /// Node reads the three fields off `req.body || {}`; a non-object body just
 /// yields `undefined` everywhere and lands on "Missing dataUrl".
 fn upload_image_body(body: &Value) -> Value {
@@ -198,6 +220,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(ECONOMY_SETTINGS_PATH, post(post_economy_settings))
         .route(EXCHANGE_SETTINGS_PATH, post(post_exchange_settings))
         .route(MONETIZATION_SETTINGS_PATH, post(post_monetization_settings))
+        .route(
+            ADMIN_MONETIZATION_SETTINGS_PATH,
+            get(get_admin_monetization_settings),
+        )
         .route(
             UPLOAD_IMAGE_PATH,
             post(post_upload_image).layer(DefaultBodyLimit::max(DEFAULT_BODY_LIMIT_BYTES)),

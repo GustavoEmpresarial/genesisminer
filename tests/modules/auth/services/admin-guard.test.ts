@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 function fakeReq(overrides: Record<string, unknown> = {}) {
   return {
     headers: {},
-    url: '/api/admin/users/map',
-    originalUrl: '/api/admin/users/map',
+    url: '/api/users',
+    originalUrl: '/api/users',
     method: 'GET',
     userId: undefined,
     ...overrides

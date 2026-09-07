@@ -133,11 +133,9 @@ describe('resolveAdminRouteRequirement', () => {
     expect(allowsAdminRouteAccess(true, new Set(), { kind: 'tab', tab: 'reports' })).toBe(true);
   });
 
-  it('GET /api/admin/monetization-settings e POST /api/monetization-settings são tab settings:monetization; bulk-delete promo é super', () => {
-    expect(resolveAdminRouteRequirement('GET', '/api/admin/monetization-settings')).toEqual({
-      kind: 'tab',
-      tab: 'settings:monetization'
-    });
+  it('POST /api/monetization-settings é tab settings:monetization; bulk-delete promo é super', () => {
+    // GET /api/admin/monetization-settings is 100% Rust now → unmapped → super.
+    expect(resolveAdminRouteRequirement('GET', '/api/admin/monetization-settings')).toEqual({ kind: 'super' });
     expect(resolveAdminRouteRequirement('POST', '/api/monetization-settings')).toEqual({
       kind: 'tab',
       tab: 'settings:monetization'
@@ -249,20 +247,16 @@ describe('resolveAdminRouteRequirement', () => {
     expect(resolveAdminRouteRequirement('POST', '/api/admin/upload-ad')).toEqual({ kind: 'anyOf', tabs: ['partners', 'settings:news'] });
   });
 
-  it('GET /api/admin/metrics aceita metrics OU dashboard', () => {
-    expect(resolveAdminRouteRequirement('GET', '/api/admin/metrics')).toEqual({
-      kind: 'anyOf',
-      tabs: ['metrics', 'dashboard']
-    });
-    expect(
-      allowsAdminRouteAccess(false, new Set(['metrics']), { kind: 'anyOf', tabs: ['metrics', 'dashboard'] })
-    ).toBe(true);
-    expect(
-      allowsAdminRouteAccess(false, new Set(['dashboard']), { kind: 'anyOf', tabs: ['metrics', 'dashboard'] })
-    ).toBe(true);
-    expect(
-      allowsAdminRouteAccess(false, new Set(['users']), { kind: 'anyOf', tabs: ['metrics', 'dashboard'] })
-    ).toBe(false);
+  it('dashboard / wheel admin routes are 100% Rust → unmapped → super', () => {
+    for (const path of [
+      '/api/admin/wheel/config',
+      '/api/admin/dashboard-stats',
+      '/api/admin/metrics',
+      '/api/admin/ranking-exclusion',
+      '/api/admin/users/map'
+    ]) {
+      expect(resolveAdminRouteRequirement('GET', path)).toEqual({ kind: 'super' });
+    }
   });
 
   it('ignora query string ao resolver o path', () => {

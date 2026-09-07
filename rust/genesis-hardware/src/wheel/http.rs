@@ -229,3 +229,70 @@ pub async fn post_roleta_claim(
         Err(e) => wheel_fail_value(e),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Admin editor (`/v1/wheel/admin/*`) — ports server/modules/wheel/services/admin.ts
+// ---------------------------------------------------------------------------
+
+use super::admin::{
+    run_admin_wheel_players_add, run_admin_wheel_players_list, run_admin_wheel_prizes_list,
+    run_admin_wheel_prizes_replace, run_admin_wheel_runtime_config_get,
+    run_admin_wheel_runtime_config_set,
+};
+
+pub async fn post_admin_wheel_prizes_list(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<Value>) {
+    match run_admin_wheel_prizes_list(&state.pool).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => wheel_fail_value(e),
+    }
+}
+
+pub async fn post_admin_wheel_prizes_replace(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<Value>,
+) -> (StatusCode, Json<Value>) {
+    match run_admin_wheel_prizes_replace(&state.pool, &body).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => wheel_fail_value(e),
+    }
+}
+
+pub async fn post_admin_wheel_runtime_config_get(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<Value>) {
+    match run_admin_wheel_runtime_config_get(&state.pool).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => wheel_fail_value(e),
+    }
+}
+
+pub async fn post_admin_wheel_runtime_config_set(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<Value>,
+) -> (StatusCode, Json<Value>) {
+    match run_admin_wheel_runtime_config_set(&state.pool, &body).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => wheel_fail_value(e),
+    }
+}
+
+pub async fn post_admin_wheel_players_list(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<Value>) {
+    match run_admin_wheel_players_list(&state.pool).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => wheel_fail_value(e),
+    }
+}
+
+pub async fn post_admin_wheel_players_add(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<Value>,
+) -> (StatusCode, Json<Value>) {
+    match run_admin_wheel_players_add(&state.pool, &body).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => wheel_fail_value(e),
+    }
+}

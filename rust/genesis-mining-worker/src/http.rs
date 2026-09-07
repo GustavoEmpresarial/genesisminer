@@ -95,6 +95,11 @@ use crate::quests_admin::{
     run_quests_admin_list, run_quests_admin_save, QuestSaveRequest, QUESTS_ADMIN_LIST_PATH,
     QUESTS_ADMIN_SAVE_PATH,
 };
+use crate::admin_dashboard::{
+    run_dashboard_stats, run_ranking_exclusion, run_site_metrics, run_users_map,
+    RankingExclusionRequest, DASHBOARD_METRICS_PATH, DASHBOARD_RANKING_EXCLUSION_PATH,
+    DASHBOARD_STATS_PATH, DASHBOARD_USERS_MAP_PATH,
+};
 use crate::partners_admin::{
     run_admin_allowlist_add, run_admin_allowlist_remove, run_admin_application_approve,
     run_admin_application_reject, run_admin_applications_list, run_admin_creator_get,
@@ -120,12 +125,13 @@ use crate::player_reads::quests::run_quests_state;
 use crate::player_reads::roadmap::run_roadmap;
 use crate::player_reads::settings::{
     run_display_labels, run_economy_settings, run_exchange_settings, run_monetization_settings,
+    run_monetization_settings_admin,
 };
 use crate::player_reads::transparency::{run_transparency_health, run_transparency_list};
 use crate::player_reads::{
     fail_read, now_ms, ok_payload, CHECKIN_PERFORM_PATH, CHECKIN_STATUS_PATH, DISPLAY_LABELS_PATH,
     ECONOMY_SETTINGS_PATH, EXCHANGE_SETTINGS_PATH, GUIDE_PATH, HEADER_HIGHLIGHT_PATH, HEADER_PATH,
-    MONETIZATION_SETTINGS_PATH, NAV_PATH, PROFILE_STATE_PATH, QUESTS_STATE_PATH, ROADMAP_PATH,
+    MONETIZATION_SETTINGS_ADMIN_PATH, MONETIZATION_SETTINGS_PATH, NAV_PATH, PROFILE_STATE_PATH, QUESTS_STATE_PATH, ROADMAP_PATH,
     TRANSPARENCY_HEALTH_PATH, TRANSPARENCY_PATH,
 };
 use crate::profile_writes::{
@@ -326,6 +332,10 @@ pub fn router(state: AppState) -> Router {
         .route(CHECKIN_PERFORM_PATH, post(post_checkin_perform))
         .route(QUESTS_STATE_PATH, post(post_quests_state))
         .route(QUESTS_ADMIN_LIST_PATH, post(post_quests_admin_list))
+        .route(DASHBOARD_STATS_PATH, post(post_dashboard_stats))
+        .route(DASHBOARD_METRICS_PATH, post(post_dashboard_metrics))
+        .route(DASHBOARD_RANKING_EXCLUSION_PATH, post(post_dashboard_ranking_exclusion))
+        .route(DASHBOARD_USERS_MAP_PATH, post(post_dashboard_users_map))
         .route(QUESTS_ADMIN_SAVE_PATH, post(post_quests_admin_save))
         .route(HEADER_PATH, post(post_player_header))
         .route(HEADER_HIGHLIGHT_PATH, post(post_player_header_highlight))
@@ -333,6 +343,7 @@ pub fn router(state: AppState) -> Router {
         .route(ECONOMY_SETTINGS_PATH, post(post_economy_settings))
         .route(EXCHANGE_SETTINGS_PATH, post(post_exchange_settings))
         .route(MONETIZATION_SETTINGS_PATH, post(post_monetization_settings))
+        .route(MONETIZATION_SETTINGS_ADMIN_PATH, post(post_monetization_settings_admin))
         .route(
             ECONOMY_SETTINGS_PERSIST_PATH,
             post(post_economy_settings_persist),
@@ -751,6 +762,43 @@ async fn post_quests_state(
     }
 }
 
+async fn post_dashboard_stats(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match run_dashboard_stats(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_dashboard_metrics(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match run_site_metrics(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_dashboard_ranking_exclusion(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<RankingExclusionRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_ranking_exclusion(&state.pool, body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_dashboard_users_map(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match run_users_map(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
 async fn post_quests_admin_list(
     State(state): State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse {
@@ -815,6 +863,15 @@ async fn post_exchange_settings(
     Json(_body): Json<serde_json::Value>,
 ) -> impl axum::response::IntoResponse {
     match run_exchange_settings(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_monetization_settings_admin(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match run_monetization_settings_admin(&state.pool).await {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
     }

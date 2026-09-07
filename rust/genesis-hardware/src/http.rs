@@ -85,11 +85,16 @@ use crate::shop::SHOP_CHECKOUT_PATH;
 use crate::upgrades::http::post_purchase as post_upgrades_purchase;
 use crate::upgrades::UPGRADE_PACKAGE_PURCHASE_PATH;
 use crate::wheel::http::{
-    post_paid_spin as post_wheel_paid_spin, post_redeem_code as post_wheel_redeem_code,
-    post_roleta_claim, post_roll as post_wheel_roll,
+    post_admin_wheel_players_add, post_admin_wheel_players_list, post_admin_wheel_prizes_list,
+    post_admin_wheel_prizes_replace, post_admin_wheel_runtime_config_get,
+    post_admin_wheel_runtime_config_set, post_paid_spin as post_wheel_paid_spin,
+    post_redeem_code as post_wheel_redeem_code, post_roleta_claim, post_roll as post_wheel_roll,
 };
 use crate::wheel::{
-    ROLETA_CLAIM_PATH, WHEEL_PAID_SPIN_PATH, WHEEL_REDEEM_CODE_PATH, WHEEL_ROLL_PATH,
+    ROLETA_CLAIM_PATH, WHEEL_ADMIN_PLAYERS_ADD_PATH, WHEEL_ADMIN_PLAYERS_PATH,
+    WHEEL_ADMIN_PRIZES_PATH, WHEEL_ADMIN_PRIZES_REPLACE_PATH, WHEEL_ADMIN_RUNTIME_CONFIG_PATH,
+    WHEEL_ADMIN_RUNTIME_CONFIG_SET_PATH, WHEEL_PAID_SPIN_PATH, WHEEL_REDEEM_CODE_PATH,
+    WHEEL_ROLL_PATH,
 };
 use crate::partners_streamer::{
     deactivate_streamer_room, STREAMER_ROOM_DEACTIVATE_PATH, STREAMER_ROOM_ID,
@@ -248,6 +253,24 @@ pub fn router(state: AppState) -> Router {
         .route(WHEEL_REDEEM_CODE_PATH, post(post_wheel_redeem_code))
         .route(WHEEL_ROLL_PATH, post(post_wheel_roll))
         .route(ROLETA_CLAIM_PATH, post(post_roleta_claim))
+        .route(WHEEL_ADMIN_PRIZES_PATH, post(post_admin_wheel_prizes_list))
+        .route(
+            WHEEL_ADMIN_PRIZES_REPLACE_PATH,
+            post(post_admin_wheel_prizes_replace),
+        )
+        .route(
+            WHEEL_ADMIN_RUNTIME_CONFIG_PATH,
+            post(post_admin_wheel_runtime_config_get),
+        )
+        .route(
+            WHEEL_ADMIN_RUNTIME_CONFIG_SET_PATH,
+            post(post_admin_wheel_runtime_config_set),
+        )
+        .route(WHEEL_ADMIN_PLAYERS_PATH, post(post_admin_wheel_players_list))
+        .route(
+            WHEEL_ADMIN_PLAYERS_ADD_PATH,
+            post(post_admin_wheel_players_add),
+        )
         .route(LUCKY_BOX_BUY_PATH, post(post_lucky_box_buy))
         .route(LUCKY_BOX_OPEN_PATH, post(post_lucky_box_open))
         .route(

@@ -103,7 +103,7 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
   if (p === '/api/admin/restore') return { kind: 'super' };
   if (p === '/api/admin/promo-codes/bulk-delete') return { kind: 'super' };
 
-  if (p.startsWith('/api/admin/wheel/')) return { kind: 'tab', tab: 'games' };
+  // /api/admin/wheel/* is 100% Rust (genesis-api admin_wheel.rs, tab games).
   if (p === '/api/admin/reset-daily-boost') return { kind: 'tab', tab: 'games' };
   /** Calculadora / moedas mineradas no painel: só super (operador admin fica só em Transações USDC nos Relatórios). */
   if (p === '/api/mining-coins' && method.toUpperCase() === 'POST') return { kind: 'super' };
@@ -138,7 +138,7 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
   if (p === '/api/news-fee' || p === '/api/news-expire-days') return { kind: 'tab', tab: 'settings:news' };
 
   if (p.startsWith('/api/season-passes') || p === '/api/season-pass/grant') return { kind: 'tab', tab: 'settings:monetization' };
-  if (p.startsWith('/api/admin/monetization-settings')) return { kind: 'tab', tab: 'settings:monetization' };
+  // /api/admin/monetization-settings (GET) is 100% Rust (genesis-api admin_tabs.rs).
   if (p === '/api/monetization-settings' && method.toUpperCase() === 'POST') return { kind: 'tab', tab: 'settings:monetization' };
   if (p.startsWith('/api/admin/promo-codes')) return { kind: 'anyOf', tabs: ['settings:monetization', 'lootboxes'] };
 
@@ -157,7 +157,6 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
 
   if (p === '/api/users' && method.toUpperCase() === 'GET') return { kind: 'tab', tab: 'users' };
   if (p === '/api/user' && method.toUpperCase() === 'PUT') return { kind: 'tab', tab: 'users' };
-  if (p === '/api/admin/users/map') return { kind: 'tab', tab: 'users' };
   if (p === '/api/users/block' && method.toUpperCase() === 'PUT') return { kind: 'tab', tab: 'users' };
   if (p.startsWith('/api/user/') && method.toUpperCase() === 'DELETE') return { kind: 'tab', tab: 'users' };
   if (p.startsWith('/api/admin/referral-models')) return { kind: 'tab', tab: 'users' };
@@ -174,8 +173,6 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
     return { kind: 'tab', tab: 'users' };
   }
   if (p === '/api/admin/update-coin-balance' || p === '/api/admin/bulk-update-coin-balance') return { kind: 'tab', tab: 'users' };
-  if (p === '/api/admin/ranking-exclusion') return { kind: 'tab', tab: 'users' };
-
   if (p === '/api/admin/ranking') return { kind: 'tab', tab: 'users' };
   if (p === '/api/admin/accounts-dormant-mining') return { kind: 'tab', tab: 'users' };
   /** Gravar estado do jogo a partir da Gestão de Utilizadores — antes caía no catch-all `/api/admin/*` → `super`. */
@@ -210,9 +207,8 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
   if (p === '/api/admin/mining-coins/sync-live-prices' && method.toUpperCase() === 'POST') return { kind: 'super' };
   if (p === '/api/economy-settings' && method.toUpperCase() === 'POST') return { kind: 'tab', tab: 'reports' };
 
-  if (p === '/api/admin/dashboard-stats') return { kind: 'tab', tab: 'dashboard' };
-  /** UI AdminPanel: aba Métricas OU Dashboard. Antes do catch-all `/api/admin/` → super. */
-  if (p === '/api/admin/metrics') return { kind: 'anyOf', tabs: ['metrics', 'dashboard'] };
+  // /api/admin/{dashboard-stats,metrics,ranking-exclusion,users/map} are 100% Rust
+  // (genesis-api admin_dashboard.rs; auth by tab dashboard / metrics / users).
 
   if (p.startsWith('/api/admin/guide')) return { kind: 'tab', tab: 'settings:pages' };
   if (p.startsWith('/api/admin/roadmap')) return { kind: 'tab', tab: 'settings:pages' };

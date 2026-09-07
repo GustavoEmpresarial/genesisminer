@@ -12,7 +12,6 @@ import pool from '../core/database/pool.js';
 import type { AppDeps } from './deps.js';
 
 import { registerAdminBackupModuleRoutes } from '../modules/admin/backup/index.js';
-import { registerAdminDashboardModuleRoutes } from '../modules/admin/dashboard/index.js';
 import {
   registerAdminCoinEconomyModuleRoutes,
   registerAdminEconomyStatsModuleRoutes
@@ -23,7 +22,6 @@ import { registerDeviceFingerprintAdminModuleRoutes } from '../modules/admin/dev
 import { registerImageAssetModuleRoutes } from '../modules/admin/image-asset/index.js';
 import { registerAdminMiningDistributionModuleRoutes } from '../modules/admin/mining-distribution/index.js';
 import { registerAdminMiningRuntimeSummaryModuleRoutes } from '../modules/admin/mining-runtime-summary/index.js';
-import { registerAdminMonetizationSettingsModuleRoutes } from '../modules/admin/monetization-settings/index.js';
 import { registerAdminPromoCodesModuleRoutes } from '../modules/admin/promo-codes/index.js';
 import { registerAdminRecallAllModuleRoutes } from '../modules/admin/recall-all/index.js';
 import { registerAdminRecallScanModuleRoutes } from '../modules/admin/recall-scan/index.js';
@@ -38,7 +36,6 @@ import { registerGuideModuleRoutes } from '../modules/guide/index.js';
 import { registerMergeModuleRoutes } from '../modules/merge/index.js';
 import { registerRoadmapModuleRoutes } from '../modules/roadmap/index.js';
 import { registerUpgradesModuleRoutes } from '../modules/upgrades/index.js';
-import { registerWheelModuleRoutes } from '../modules/wheel/index.js';
 
 /**
  * Registra admin (+ mixed leftover admin tabs). Player HTTP = genesis-api.
@@ -47,7 +44,6 @@ export function registerAllRoutes(app: Express, deps: AppDeps): void {
   const { authenticateToken, isAdmin, parseCookies, issueJwtAuthCookies } = deps;
 
   registerAdminBackupModuleRoutes(app, { isAdmin });
-  registerAdminDashboardModuleRoutes(app, { isAdmin });
   registerAdminCoinEconomyModuleRoutes(app, { isAdmin });
   registerAdminEconomyStatsModuleRoutes(app, { isAdmin });
   registerAdminEtherscanModuleRoutes(app, { isAdmin });
@@ -66,7 +62,6 @@ export function registerAllRoutes(app: Express, deps: AppDeps): void {
   });
   registerAdminMiningDistributionModuleRoutes(app, { isAdmin });
   registerAdminMiningRuntimeSummaryModuleRoutes(app, { isAdmin });
-  registerAdminMonetizationSettingsModuleRoutes(app, { isAdmin });
   registerAdminPromoCodesModuleRoutes(app, { isAdmin });
   registerAdminRecallAllModuleRoutes(app, { isAdmin });
   registerAdminRecallScanModuleRoutes(app, { isAdmin });
@@ -84,5 +79,4 @@ export function registerAllRoutes(app: Express, deps: AppDeps): void {
   registerMergeModuleRoutes(app, { isAdmin });
   registerRoadmapModuleRoutes(app, { isAdmin });
   registerUpgradesModuleRoutes(app, { isAdmin: deps.isAdmin });
-  registerWheelModuleRoutes(app, { isAdmin: deps.isAdmin });
 }

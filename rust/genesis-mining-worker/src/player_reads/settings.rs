@@ -141,6 +141,40 @@ pub async fn run_monetization_settings(pool: &Pool) -> Result<Value, PlayerReadE
     }))
 }
 
+/// Admin variant of [`run_monetization_settings`] — includes
+/// `applixirCallbackSecret` (Node `GET /api/admin/monetization-settings`).
+pub async fn run_monetization_settings_admin(pool: &Pool) -> Result<Value, PlayerReadError> {
+    let conn = pool.get().await?;
+    let kv = load_kv(
+        &conn,
+        &[
+            "applixir_enabled",
+            "applixir_site_id",
+            "applixir_zone_id",
+            "applixir_account_id",
+            "applixir_reward_message",
+            "applixir_callback_secret",
+            "ezoic_enabled",
+            "ezoic_publisher_id",
+            "ezoic_app_id",
+            "ezoic_placeholder_id",
+        ],
+    )
+    .await?;
+    Ok(json!({
+        "applixirEnabled": kv.get("applixir_enabled").map(|s| s.as_str()) == Some("1"),
+        "applixirSiteId": kv.get("applixir_site_id").cloned().unwrap_or_default(),
+        "applixirZoneId": kv.get("applixir_zone_id").cloned().unwrap_or_default(),
+        "applixirAccountId": kv.get("applixir_account_id").cloned().unwrap_or_default(),
+        "applixirRewardMessage": kv.get("applixir_reward_message").cloned().filter(|s| !s.is_empty()).unwrap_or_else(|| DEFAULT_APPLIXIR_REWARD_MESSAGE.into()),
+        "applixirCallbackSecret": kv.get("applixir_callback_secret").cloned().unwrap_or_default(),
+        "ezoicEnabled": kv.get("ezoic_enabled").map(|s| s.as_str()) == Some("1"),
+        "ezoicPublisherId": kv.get("ezoic_publisher_id").cloned().unwrap_or_default(),
+        "ezoicAppId": kv.get("ezoic_app_id").cloned().unwrap_or_default(),
+        "ezoicPlaceholderId": kv.get("ezoic_placeholder_id").cloned().unwrap_or_default(),
+    }))
+}
+
 pub async fn run_display_labels(pool: &Pool) -> Result<Value, PlayerReadError> {
     let conn = pool.get().await?;
     let rows = conn

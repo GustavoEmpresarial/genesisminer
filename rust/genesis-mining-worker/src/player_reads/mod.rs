@@ -24,6 +24,7 @@ pub const NAV_PATH: &str = "/v1/player-game/nav";
 pub const ECONOMY_SETTINGS_PATH: &str = "/v1/settings/economy";
 pub const EXCHANGE_SETTINGS_PATH: &str = "/v1/settings/exchange";
 pub const MONETIZATION_SETTINGS_PATH: &str = "/v1/settings/monetization";
+pub const MONETIZATION_SETTINGS_ADMIN_PATH: &str = "/v1/settings/monetization/read";
 pub const DISPLAY_LABELS_PATH: &str = "/v1/settings/display-labels";
 pub const PROFILE_STATE_PATH: &str = "/v1/profile/state";
 pub const GUIDE_PATH: &str = "/v1/guide";
