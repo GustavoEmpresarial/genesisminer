@@ -185,6 +185,12 @@ model mining_coins {
   target_daily_usd   Float?  @default(0)
   show_in_exchange   Int?    @default(1)
   nft_room_only      Int     @default(0)
+  /// `market` (default / live-price feed) or `manual` (an admin pinned it).
+  price_source       String  @default("market") @db.VarChar(16)
+  /// ms epoch of the last price write (manual edit or live sync).
+  price_updated_at   BigInt?
+  /// Optional spot exchange asset id used by the (future) live-price sync.
+  spot_asset_id      String? @db.VarChar(64)
 
   @@map("mining_coins")
 }

@@ -25,7 +25,9 @@ use crate::session::json_status;
 
 const ECONOMY_SETTINGS_PATH: &str = "/api/admin/economy-settings";
 const SYNC_LIVE_PRICES_PATH: &str = "/api/admin/mining-coins/sync-live-prices";
+const SET_ACTIVE_PATH: &str = "/api/mining-coins/set-active";
 const W_ECONOMY_SETTINGS: &str = "/v1/catalog/mining-coins/economy-settings";
+const W_SET_ACTIVE: &str = "/v1/catalog/mining-coins/set-active";
 
 const SYNC_NOT_IMPLEMENTED_MSG: &str = "Sincronização de preços ao vivo (CoinGecko) não está \
      disponível nesta build — enriquecimento cosmético não portado.";
@@ -41,6 +43,19 @@ async fn economy_settings(
     forward_hardware(&state, W_ECONOMY_SETTINGS, json!({ "payload": body })).await
 }
 
+/// Single-coin activate / deactivate — replaces the old client-side
+/// "load whole list, flip `is_active`, re-POST the list" pattern.
+async fn set_active(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
+    if let Err(e) = require_admin(&state, &headers, &Method::POST, SET_ACTIVE_PATH).await {
+        return e;
+    }
+    forward_hardware(&state, W_SET_ACTIVE, json!({ "payload": body })).await
+}
+
 async fn sync_live_prices(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if let Err(e) = require_admin(&state, &headers, &Method::POST, SYNC_LIVE_PRICES_PATH).await {
         return e;
@@ -54,5 +69,6 @@ async fn sync_live_prices(State(state): State<Arc<AppState>>, headers: HeaderMap
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route(ECONOMY_SETTINGS_PATH, post(economy_settings))
+        .route(SET_ACTIVE_PATH, post(set_active))
         .route(SYNC_LIVE_PRICES_PATH, post(sync_live_prices))
 }

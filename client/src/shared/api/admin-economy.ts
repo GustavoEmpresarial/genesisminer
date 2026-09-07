@@ -3,7 +3,6 @@
  * Extracted from admin-legacy (AdminEconomy / AdminReports / coin editor).
  */
 import { apiFetch } from './http';
-import { MINING_COINS_WRITE_PATH, inactivateMiningCoin } from '../../features/admin/lib/miningCoinWrite';
 
 const base = '/api';
 
@@ -96,7 +95,7 @@ export async function saveMiningCoin(coin: unknown): Promise<{ ok: boolean; id?:
         ? (coin as Record<string, unknown>)
         : ({} as Record<string, unknown>);
     const payload = normalizeMiningCoinPayload(rawCoin);
-    const res = await apiFetch(MINING_COINS_WRITE_PATH, {
+    const res = await apiFetch(`${base}/mining-coins`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -111,22 +110,27 @@ export async function saveMiningCoin(coin: unknown): Promise<{ ok: boolean; id?:
   } catch { return { ok: false, error: 'Network error' }; }
 }
 
-export async function deleteMiningCoin(id: string): Promise<{ ok: boolean; error?: string }> {
-  return inactivateMiningCoin(id, {
-    loadCoins: loadMiningCoinsForWrite,
-    saveCoin: (coin) => saveMiningCoin(coin)
-  });
+/** Ativa/desativa uma moeda — POST /api/mining-coins/set-active (server-side). */
+export async function setMiningCoinActive(id: string, active: boolean): Promise<{ ok: boolean; activeMiners?: number; error?: string }> {
+  const trimmed = String(id || '').trim();
+  if (!trimmed) return { ok: false, error: 'id da moeda é obrigatório.' };
+  try {
+    const res = await apiFetch(`${base}/mining-coins/set-active`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: trimmed, active })
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; activeMiners?: number; error?: string };
+    if (!res.ok) return { ok: false, error: data.error || `HTTP ${res.status}` };
+    return { ok: data.ok !== false, activeMiners: data.activeMiners, error: data.error };
+  } catch {
+    return { ok: false, error: 'Network error' };
+  }
 }
 
-async function loadMiningCoinsForWrite(): Promise<Array<{ id?: string } & Record<string, unknown>>> {
-  const res = await apiFetch(`${base}/mining-coins`);
-  if (!res.ok) throw new Error(`Erro de API (${res.status})`);
-  const raw = await res.json();
-  if (Array.isArray(raw)) return parseJsonArray(raw);
-  if (raw && typeof raw === 'object' && Array.isArray((raw as { coins?: unknown[] }).coins)) {
-    return parseJsonArray((raw as { coins: unknown[] }).coins);
-  }
-  throw new Error('Erro de API ao ler moedas.');
+/** Inativa uma moeda (o painel não tem hard-delete). */
+export async function deleteMiningCoin(id: string): Promise<{ ok: boolean; error?: string }> {
+  return setMiningCoinActive(id, false);
 }
 
 export async function getEconomyStats(): Promise<unknown[]> {

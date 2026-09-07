@@ -192,7 +192,7 @@ pub fn resolve_admin_route_requirement(method: &Method, raw_path: &str) -> Admin
     if p.starts_with("/api/admin/wheel/") || p == "/api/admin/reset-daily-boost" {
         return Tab(TAB_GAMES);
     }
-    if p == "/api/mining-coins" && is_post {
+    if (p == "/api/mining-coins" || p == "/api/mining-coins/set-active") && is_post {
         return Super;
     }
     if p.starts_with("/api/mining/coins") && !is_get {

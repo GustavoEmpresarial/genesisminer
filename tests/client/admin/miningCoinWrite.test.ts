@@ -1,57 +1,52 @@
-import { describe, expect, it, vi } from 'vitest';
-import {
-  MINING_COINS_WRITE_PATH,
-  inactivateMiningCoin
-} from '../../../client/src/features/admin/lib/miningCoinWrite.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const btc = { id: 'btc', name: 'Bitcoin', symbol: 'BTC', isActive: true, priceUSD: 1 };
+const apiFetch = vi.fn();
+vi.mock('../../../client/src/shared/api/http', () => ({ apiFetch }));
 
-describe('miningCoinWrite', () => {
-  it('path de escrita é POST /api/mining-coins', () => {
-    expect(MINING_COINS_WRITE_PATH).toBe('/api/mining-coins');
+async function load() {
+  return import('../../../client/src/shared/api/admin-economy.js');
+}
+
+function res(ok: boolean, body: unknown, status = ok ? 200 : 400) {
+  return { ok, status, json: async () => body } as unknown as Response;
+}
+
+afterEach(() => {
+  apiFetch.mockReset();
+  vi.resetModules();
+});
+
+describe('setMiningCoinActive / deleteMiningCoin', () => {
+  it('POSTa /api/mining-coins/set-active com { id, active }', async () => {
+    apiFetch.mockResolvedValue(res(true, { ok: true, activeMiners: 3 }));
+    const { setMiningCoinActive } = await load();
+    const out = await setMiningCoinActive('btc', false);
+    expect(out).toEqual({ ok: true, activeMiners: 3, error: undefined });
+    const [url, opts] = apiFetch.mock.calls[0];
+    expect(url).toBe('/api/mining-coins/set-active');
+    expect(opts.method).toBe('POST');
+    expect(JSON.parse(opts.body)).toEqual({ id: 'btc', active: false });
   });
 
-  it('inativar reenvia a moeda existente com isActive false no upsert', async () => {
-    const saveCoin = vi.fn().mockResolvedValue({ ok: true, id: 'btc' });
-    const res = await inactivateMiningCoin('btc', {
-      loadCoins: async () => [btc, { id: 'eth', name: 'Ethereum', isActive: true }],
-      saveCoin
-    });
-    expect(res.ok).toBe(true);
-    expect(saveCoin).toHaveBeenCalledTimes(1);
-    const payload = saveCoin.mock.calls[0][0] as typeof btc;
-    expect(payload.id).toBe('btc');
-    expect(payload.isActive).toBe(false);
-    expect(payload.name).toBe('Bitcoin');
+  it('id vazio não chama a API', async () => {
+    const { setMiningCoinActive } = await load();
+    const out = await setMiningCoinActive('   ', true);
+    expect(out).toEqual({ ok: false, error: 'id da moeda é obrigatório.' });
+    expect(apiFetch).not.toHaveBeenCalled();
   });
 
-  it('moeda inexistente não chama save', async () => {
-    const saveCoin = vi.fn();
-    const res = await inactivateMiningCoin('x', {
-      loadCoins: async () => [btc],
-      saveCoin
-    });
-    expect(res).toEqual({ ok: false, error: 'Moeda não encontrada.' });
-    expect(saveCoin).not.toHaveBeenCalled();
+  it('propaga o erro do servidor', async () => {
+    apiFetch.mockResolvedValue(res(false, { ok: false, error: 'Moeda não encontrada.' }, 400));
+    const { setMiningCoinActive } = await load();
+    const out = await setMiningCoinActive('x', false);
+    expect(out).toEqual({ ok: false, error: 'Moeda não encontrada.' });
   });
 
-  it('propaga erro do save', async () => {
-    const res = await inactivateMiningCoin('btc', {
-      loadCoins: async () => [btc],
-      saveCoin: async () => ({ ok: false, error: 'HTTP 403' })
-    });
-    expect(res).toEqual({ ok: false, error: 'HTTP 403' });
-  });
-
-  it('falha do GET não se apresenta como moeda inexistente', async () => {
-    const saveCoin = vi.fn();
-    const res = await inactivateMiningCoin('btc', {
-      loadCoins: async () => {
-        throw new Error('Erro de API (500)');
-      },
-      saveCoin
-    });
-    expect(res).toEqual({ ok: false, error: 'Erro de API (500)' });
-    expect(saveCoin).not.toHaveBeenCalled();
+  it('deleteMiningCoin = setMiningCoinActive(id, false)', async () => {
+    apiFetch.mockResolvedValue(res(true, { ok: true }));
+    const { deleteMiningCoin } = await load();
+    const out = await deleteMiningCoin('doge');
+    expect(out.ok).toBe(true);
+    expect(JSON.parse(apiFetch.mock.calls[0][1].body)).toEqual({ id: 'doge', active: false });
   });
 });

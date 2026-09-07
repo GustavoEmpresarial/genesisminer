@@ -1,5 +1,4 @@
 export * from './services/checkin-bonus-hash.js';
-export * from './services/mining-coins-cache.js';
 export * from './services/mining-numeric.js';
 export * from './services/player-game-header-snapshot.js';
 export * from './services/progress-computer.js';
