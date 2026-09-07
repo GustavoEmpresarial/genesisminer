@@ -326,7 +326,11 @@ pub async fn run_email_verify_complete(
     let uid = i64::from(user_id);
 
     if email_verified == 1 {
-        credit_referral_on_verified(cfg, http, uid).await?;
+        // Best-effort (Node parity): a referral-credit hiccup must not turn a
+        // successful confirmation into an error. Idempotent, retried on relog.
+        if let Err(e) = credit_referral_on_verified(cfg, http, uid).await {
+            tracing::warn!(err = %e.error_message(), user_id = uid, "referral credit on already-verified (non-fatal)");
+        }
         return Ok(EmailVerifyCompleteOk {
             already_verified: true,
             message: MSG_ALREADY.into(),
@@ -340,7 +344,10 @@ pub async fn run_email_verify_complete(
         }
     }
 
-    credit_referral_on_verified(cfg, http, uid).await?;
+    // Best-effort: never block confirmation on the referral-credit side effect.
+    if let Err(e) = credit_referral_on_verified(cfg, http, uid).await {
+        tracing::warn!(err = %e.error_message(), user_id = uid, "referral credit on email-verify (non-fatal)");
+    }
 
     let pg_uid = pg_user_id(uid).map_err(EmailVerifyCompleteError::transport)?;
     client

@@ -241,6 +241,8 @@ services:
       JWT_ACCESS_TTL_SEC: ${JWT_ACCESS_TTL_SEC:-900}
       JWT_REFRESH_TTL_SEC: ${JWT_REFRESH_TTL_SEC:-1209600}
       ACCOUNT_MANAGER_ENABLED: ${ACCOUNT_MANAGER_ENABLED:-0}
+      # Referral bonus credit on email-verify (best-effort; unset only skips the credit).
+      GENESIS_WALLET_URL: "http://wallet:8091"
       # Turnstile: ENABLED sync app↔auth; SECRET only on auth (siteverify). SITE_KEY on genesis-api for UI.
       CLOUDFLARE_TURNSTILE_ENABLED: ${CLOUDFLARE_TURNSTILE_ENABLED:-0}
       CLOUDFLARE_TURNSTILE_SECRET_KEY: ${CLOUDFLARE_TURNSTILE_SECRET_KEY:-}
