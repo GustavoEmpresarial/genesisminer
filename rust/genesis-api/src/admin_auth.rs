@@ -271,6 +271,9 @@ pub fn resolve_admin_route_requirement(method: &Method, raw_path: &str) -> Admin
     if p.starts_with("/api/admin/monetization-settings") {
         return Tab(TAB_SETTINGS_MONETIZATION);
     }
+    if p == "/api/admin/quests" {
+        return Tab(TAB_SETTINGS_MONETIZATION);
+    }
     if p == "/api/monetization-settings" && is_post {
         return Tab(TAB_SETTINGS_MONETIZATION);
     }

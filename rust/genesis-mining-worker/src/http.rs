@@ -91,6 +91,10 @@ use crate::partners::{
     PARTNERS_MY_SUBMISSIONS_PATH, PARTNERS_PROFILE_PATH, PARTNERS_STATE_PATH, PARTNERS_SUBMIT_PATH,
     PARTNERS_VIDEOS_PATH, PARTNERS_VIDEO_BY_ID_PATH,
 };
+use crate::quests_admin::{
+    run_quests_admin_list, run_quests_admin_save, QuestSaveRequest, QUESTS_ADMIN_LIST_PATH,
+    QUESTS_ADMIN_SAVE_PATH,
+};
 use crate::partners_admin::{
     run_admin_allowlist_add, run_admin_allowlist_remove, run_admin_application_approve,
     run_admin_application_reject, run_admin_applications_list, run_admin_creator_get,
@@ -321,6 +325,8 @@ pub fn router(state: AppState) -> Router {
         .route(CHECKIN_STATUS_PATH, post(post_checkin_status))
         .route(CHECKIN_PERFORM_PATH, post(post_checkin_perform))
         .route(QUESTS_STATE_PATH, post(post_quests_state))
+        .route(QUESTS_ADMIN_LIST_PATH, post(post_quests_admin_list))
+        .route(QUESTS_ADMIN_SAVE_PATH, post(post_quests_admin_save))
         .route(HEADER_PATH, post(post_player_header))
         .route(HEADER_HIGHLIGHT_PATH, post(post_player_header_highlight))
         .route(NAV_PATH, post(post_player_nav))
@@ -740,6 +746,25 @@ async fn post_quests_state(
 ) -> impl axum::response::IntoResponse {
     let now = body.now_ms.unwrap_or_else(now_ms);
     match run_quests_state(&state.pool, body.user_id, now).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_quests_admin_list(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match run_quests_admin_list(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_quests_admin_save(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<QuestSaveRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_quests_admin_save(&state.pool, body).await {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
     }

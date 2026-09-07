@@ -35,9 +35,7 @@ import { registerAdminUserAuditModuleRoutes } from '../modules/admin/user-audit/
 import { registerCheckinModuleRoutes } from '../modules/checkin/index.js';
 import { registerDisplayLabelsModuleRoutes } from '../modules/display-labels/index.js';
 import { registerGuideModuleRoutes } from '../modules/guide/index.js';
-import { registerAnnouncementsModuleRoutes } from '../modules/announcements/index.js';
 import { registerMergeModuleRoutes } from '../modules/merge/index.js';
-import { registerQuestsModuleRoutes } from '../modules/quests/index.js';
 import { registerRoadmapModuleRoutes } from '../modules/roadmap/index.js';
 import { registerUpgradesModuleRoutes } from '../modules/upgrades/index.js';
 import { registerWheelModuleRoutes } from '../modules/wheel/index.js';
@@ -83,9 +81,7 @@ export function registerAllRoutes(app: Express, deps: AppDeps): void {
   registerCheckinModuleRoutes(app, { isAdmin });
   registerDisplayLabelsModuleRoutes(app, { isAdmin });
   registerGuideModuleRoutes(app, { isAdmin });
-  registerAnnouncementsModuleRoutes(app, { isAdmin });
   registerMergeModuleRoutes(app, { isAdmin });
-  registerQuestsModuleRoutes(app, { isAdmin });
   registerRoadmapModuleRoutes(app, { isAdmin });
   registerUpgradesModuleRoutes(app, { isAdmin: deps.isAdmin });
   registerWheelModuleRoutes(app, { isAdmin: deps.isAdmin });

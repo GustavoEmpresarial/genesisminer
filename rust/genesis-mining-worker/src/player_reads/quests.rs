@@ -121,7 +121,7 @@ pub async fn run_quests_state(
     }))
 }
 
-async fn ensure_quest_schema<C: GenericClient>(
+pub(crate) async fn ensure_quest_schema<C: GenericClient>(
     client: &C,
     now_ms: i64,
 ) -> Result<(), PlayerReadError> {

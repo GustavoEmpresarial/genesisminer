@@ -42,6 +42,7 @@ mod partners_admin;
 mod player_reads;
 mod profile_writes;
 mod progress;
+mod quests_admin;
 mod ranking;
 mod redis_lock;
 mod room_ids;
