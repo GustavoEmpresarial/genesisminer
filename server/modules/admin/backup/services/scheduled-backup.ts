@@ -1,10 +1,7 @@
 /**
- * Um `pg_dump` automático por dia (hora local do processo).
- *
- * **Cron no-op:** o agendamento vive em `genesis-mining-worker`
- * (`run_backup_sql_loop`, Redis lock `genesis:lock:job:backup-sql`,
- * advisory PG, `pg_dump`). Mantido como export de bootstrap para não partir
- * `startBackgroundSchedulers`.
+ * Um `pg_dump` automático por dia — o agendamento vive em `genesis-mining-worker`
+ * (`run_backup_sql_loop`, Redis lock `genesis:lock:job:backup-sql`, advisory PG,
+ * `pg_dump`).
  *
  * `createScheduledSqlBackupOnce` / `msUntilNextLocalClockRun` continuam para
  * a UI HTTP admin de backup manual / testes.
@@ -12,7 +9,6 @@
  * Migrado de legacy/backend/controllers/backupController.ts (parte de agendamento).
  */
 import fs from 'node:fs';
-import { log } from '../../../../core/ops/logger.js';
 import { AUTO_SQL_BACKUP_PREFIX, ensureBackupDir, getBackupDir, pruneAutoSqlBackups, resolveSafeBackupPath, runPgDumpToFile } from './backup-files.js';
 
 const DEFAULT_BACKUP_SQL_KEEP = 14;
@@ -57,17 +53,4 @@ export function msUntilNextLocalClockRun(nowMs: number = Date.now()): number {
     target.setDate(target.getDate() + 1);
   }
   return Math.max(SCHEDULE_MIN_DELAY_MS, target.getTime() - now.getTime());
-}
-
-/**
- * Agenda desligada no Node — worker Rust owns o tick diário.
- * Devolve `stop()` no-op para compat com bootstrap.
- */
-export function startScheduledSqlBackups(): () => void {
-  log.info('auto SQL backup cron not scheduled', {
-    module: 'backup',
-    event: 'disabled',
-    reason: 'Rust mining-worker owns auto SQL backup tick'
-  });
-  return () => undefined;
 }

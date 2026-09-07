@@ -16,7 +16,10 @@ use crate::http::AppState;
 use crate::player_reads::{fail_read, ok_payload, PlayerReadBody};
 
 use super::access_levels::run_replace_access_levels;
-use super::loot_boxes::run_upsert_loot_boxes;
+use super::loot_boxes::{
+    run_admin_user_boxes, run_delete_loot_box, run_delete_user_box, run_loot_box_redemptions,
+    run_upsert_loot_boxes,
+};
 use super::mining_coins::run_upsert_mining_coins;
 use super::news::{
     run_news_delete, run_news_expire_days_persist, run_news_fee_persist, run_news_upsert,
@@ -87,6 +90,75 @@ pub async fn post_loot_boxes_upsert(
     Json(body): Json<LootBoxesUpsertRequest>,
 ) -> CatalogWriteResponse {
     match run_upsert_loot_boxes(&state.pool, &body.boxes, body.replace_catalog).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LootBoxDeleteRequest {
+    #[serde(default)]
+    pub box_id: String,
+    #[serde(default)]
+    pub broken_only: bool,
+}
+
+pub async fn post_loot_box_delete(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<LootBoxDeleteRequest>,
+) -> CatalogWriteResponse {
+    match run_delete_loot_box(&state.pool, &body.box_id, body.broken_only).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LootBoxRedemptionsRequest {
+    #[serde(default)]
+    pub box_id: String,
+}
+
+pub async fn post_loot_box_redemptions(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<LootBoxRedemptionsRequest>,
+) -> (StatusCode, Json<Value>) {
+    // Node returns a bare array — keep it un-wrapped (flatten can't spread an array).
+    match run_loot_box_redemptions(&state.pool, &body.box_id).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => (
+            StatusCode::from_u16(e.http_status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR),
+            Json(serde_json::json!({ "error": e.error, "code": e.code })),
+        ),
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminUserBoxesRequest {
+    #[serde(default)]
+    pub email: String,
+    #[serde(default)]
+    pub box_id: String,
+}
+
+pub async fn post_admin_user_boxes(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<AdminUserBoxesRequest>,
+) -> CatalogWriteResponse {
+    match run_admin_user_boxes(&state.pool, &body.email).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+pub async fn post_admin_delete_user_box(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<AdminUserBoxesRequest>,
+) -> CatalogWriteResponse {
+    match run_delete_user_box(&state.pool, &body.email, &body.box_id).await {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
     }

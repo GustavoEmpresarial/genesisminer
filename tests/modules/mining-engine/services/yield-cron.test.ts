@@ -72,13 +72,6 @@ describe('mining-engine services/yield-cron', () => {
     life.resetLifecycleForTests();
   });
 
-  it('updateMiningYields é sempre no-op (não adquire lock nem corre o tick)', async () => {
-    const { updateMiningYields } = await import('../../../../server/modules/mining-engine/services/yield-cron.js');
-    await updateMiningYields();
-    expect(lockMock.tryAcquireDistributedLock).not.toHaveBeenCalled();
-    expect(poolMock.default.connect).not.toHaveBeenCalled();
-  });
-
   it('caminho feliz: executeMiningYieldTick corre o job e liberta o client', async () => {
     const { executeMiningYieldTick } = await import('../../../../server/modules/mining-engine/services/yield-cron.js');
     await executeMiningYieldTick(yieldTickCtx());
@@ -116,19 +109,6 @@ describe('mining-engine services/yield-cron', () => {
     expect(client.release).toHaveBeenCalled();
   });
 
-  it('startMiningYieldCron é no-op (não agenda timers)', async () => {
-    const setTimeoutSpy = vi.spyOn(global, 'setTimeout');
-    const setIntervalSpy = vi.spyOn(global, 'setInterval');
-    const { startMiningYieldCron } = await import('../../../../server/modules/mining-engine/services/yield-cron.js');
-    const stop = startMiningYieldCron({ startupDelayMs: MS_PER_MINUTE, intervalMs: MS_PER_MINUTE * 2 });
-    expect(typeof stop).toBe('function');
-    expect(setIntervalSpy).not.toHaveBeenCalled();
-    stop();
-    expect(lockMock.tryAcquireDistributedLock).not.toHaveBeenCalled();
-    expect(poolMock.default.connect).not.toHaveBeenCalled();
-    setTimeoutSpy.mockRestore();
-    setIntervalSpy.mockRestore();
-  });
 });
 
 describe('mining-engine yield-cron — catch-up canónico (grelha ON)', () => {

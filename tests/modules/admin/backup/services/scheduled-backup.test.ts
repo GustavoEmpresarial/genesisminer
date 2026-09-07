@@ -79,15 +79,4 @@ describe('admin/backup services/scheduled-backup', () => {
     });
   });
 
-  describe('startScheduledSqlBackups', () => {
-    it('é no-op (não agenda setTimeout) — worker Rust owns o tick', async () => {
-      const setTimeoutSpy = vi.spyOn(global, 'setTimeout');
-      const { startScheduledSqlBackups } = await import('../../../../../server/modules/admin/backup/services/scheduled-backup.js');
-      const stop = startScheduledSqlBackups();
-      expect(setTimeoutSpy).not.toHaveBeenCalled();
-      expect(typeof stop).toBe('function');
-      stop();
-      setTimeoutSpy.mockRestore();
-    });
-  });
 });

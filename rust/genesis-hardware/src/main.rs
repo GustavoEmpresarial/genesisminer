@@ -37,6 +37,7 @@ mod pg_types;
 mod player_reads;
 mod post_apply;
 mod racks_power;
+mod partners_streamer;
 mod recall_all;
 mod rooms;
 mod shop;

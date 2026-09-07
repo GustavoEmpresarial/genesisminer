@@ -3,6 +3,12 @@
 mod admin_auth;
 mod admin_catalog;
 mod admin_tabs;
+mod admin_lucky_boxes;
+mod admin_market;
+mod admin_partners;
+mod admin_ranking;
+mod admin_support;
+mod admin_wallet_ops;
 mod admin_transparency;
 mod admin_users;
 mod admin_wallet_tabs;

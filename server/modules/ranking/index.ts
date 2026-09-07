@@ -5,9 +5,6 @@
  * Leituras HTTP ao `genesis-mining-worker`. O loop Node
  * (`startPublicMiningRankingRefreshLoop`) é sempre no-op — o worker owns o snapshot.
  */
-export { registerRankingModuleRoutes } from './controllers/ranking.controller.js';
-export type { RankingModuleDeps } from './controllers/ranking.controller.js';
-
 export {
   getAdminMiningRankingPayload,
   getMyGlobalMiningRank,

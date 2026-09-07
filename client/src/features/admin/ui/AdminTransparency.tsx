@@ -22,10 +22,10 @@ import {
 } from '../../transparency/lib/periodYm';
 
 const CATS: { id: TransparencyCategory; label: string }[] = [
-  { id: 'pool', label: 'Pool / tesouraria' },
-  { id: 'trade', label: 'Trade / marketplace' },
-  { id: 'expense', label: 'Gasto / saída' },
-  { id: 'investment', label: 'Investimento / entrada' },
+  { id: 'pool', label: 'Pool / tesouraria (entrada)' },
+  { id: 'trade', label: 'Trade / rendimento — lucro (entrada)' },
+  { id: 'expense', label: 'Gasto / prejuízo (saída)' },
+  { id: 'investment', label: 'Investimento (fora do cálculo)' },
   { id: 'other', label: 'Outras entradas (fora do cálculo)' }
 ];
 

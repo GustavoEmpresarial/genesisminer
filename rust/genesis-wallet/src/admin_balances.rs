@@ -21,11 +21,21 @@ const ERR_SAVE_EMPTY: &str = "No balance changes.";
 
 pub const ADMIN_SET_COIN_BALANCE_PATH: &str = "/v1/wallet/admin/coin-balance/set";
 pub const ADMIN_SAVE_GAME_BALANCES_PATH: &str = "/v1/wallet/admin/save-game-balances";
+pub const ADMIN_BULK_COIN_BALANCE_PATH: &str = "/v1/wallet/admin/coin-balance/bulk";
+
+const ERR_BULK_FIELDS: &str = "Campos ausentes: coinId, amount";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AdminBalancesOk {
     pub ok: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminBulkCoinBalanceOk {
+    pub ok: bool,
+    pub count: i64,
 }
 
 fn parse_user_id(raw: i64) -> Result<i32, WalletError> {
@@ -74,6 +84,90 @@ pub async fn run_admin_set_coin_balance(
         .map_err(WalletError::transport)?;
 
     Ok(AdminBalancesOk { ok: true })
+}
+
+/// Bulk increment (`±amount`, floored at 0) over active miners of the coin
+/// ∪ holders with balance > 0. Mirrors Node `runAdminBulkUpdateCoinBalance`.
+pub async fn run_admin_bulk_coin_balance(
+    pool: &Pool,
+    coin_id: &str,
+    amount: f64,
+) -> Result<AdminBulkCoinBalanceOk, WalletError> {
+    let coin_id = {
+        let id = coin_id.trim();
+        if id.is_empty() || id.len() > COIN_ID_MAX {
+            return Err(WalletError::bad(ERR_BULK_FIELDS));
+        }
+        id.to_string()
+    };
+    if !amount.is_finite() {
+        return Err(WalletError::bad(ERR_BULK_FIELDS));
+    }
+
+    let mut client = pool.get().await.map_err(WalletError::transport)?;
+    let tx = client.transaction().await.map_err(WalletError::transport)?;
+    let out = match run_bulk_coin_balance_inner(&tx, &coin_id, amount).await {
+        Ok(o) => {
+            tx.commit().await.map_err(WalletError::transport)?;
+            o
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            return Err(e);
+        }
+    };
+    Ok(out)
+}
+
+async fn run_bulk_coin_balance_inner<C: GenericClient>(
+    client: &C,
+    coin_id: &str,
+    amount: f64,
+) -> Result<AdminBulkCoinBalanceOk, WalletError> {
+    let user_rows = client
+        .query(
+            "SELECT DISTINCT user_id
+               FROM placed_racks
+              WHERE is_on = 1
+                AND wiring_id IS NOT NULL
+                AND battery_id IS NOT NULL
+                AND selected_coin_id = $1
+             UNION
+             SELECT user_id FROM coin_balances WHERE coin_id = $1 AND amount > 0",
+            &[&coin_id],
+        )
+        .await
+        .map_err(WalletError::transport)?;
+
+    let user_ids: Vec<i32> = user_rows
+        .iter()
+        .filter_map(|r| {
+            let id: i32 = r.get("user_id");
+            if id > 0 {
+                Some(id)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if !user_ids.is_empty() {
+        client
+            .execute(
+                "INSERT INTO coin_balances (user_id, coin_id, amount)
+                 SELECT u, $2, GREATEST(0, $3::double precision) FROM unnest($1::int[]) AS u
+                 ON CONFLICT (user_id, coin_id)
+                 DO UPDATE SET amount = GREATEST(0, coin_balances.amount + $3::double precision)",
+                &[&user_ids, &coin_id, &amount],
+            )
+            .await
+            .map_err(WalletError::transport)?;
+    }
+
+    Ok(AdminBulkCoinBalanceOk {
+        ok: true,
+        count: user_ids.len() as i64,
+    })
 }
 
 fn normalize_coin_balances(raw: &HashMap<String, f64>) -> Vec<(String, f64)> {

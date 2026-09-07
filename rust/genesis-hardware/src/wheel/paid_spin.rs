@@ -64,11 +64,14 @@ const SELECT_USDC_SQL: &str =
     "SELECT usdc::double precision AS usdc FROM game_states WHERE user_id = $1";
 const SELECT_USDC_FOR_UPDATE_SQL: &str =
     "SELECT usdc::double precision AS usdc FROM game_states WHERE user_id = $1 FOR UPDATE";
+// `$2` is a bound f64 — cast it `::float8::numeric` (concrete source type) so
+// tokio-postgres infers the param as float8, not numeric (which it can't
+// serialize an f64 into: "error serializing parameter 1").
 const PAY_USDC_SQL: &str = "UPDATE game_states
-    SET usdc = (COALESCE(usdc::numeric, 0) - $2::numeric)::double precision,
+    SET usdc = (COALESCE(usdc::numeric, 0) - $2::float8::numeric)::double precision,
         last_updated_at = $3,
         server_updated_at = $3
-    WHERE user_id = $1 AND (COALESCE(usdc::numeric, 0) >= $2::numeric)
+    WHERE user_id = $1 AND (COALESCE(usdc::numeric, 0) >= $2::float8::numeric)
     RETURNING usdc::double precision AS usdc";
 const SELECT_CONFIG_SQL: &str = "SELECT id,
             spin_price_usdc::double precision AS spin_price_usdc,
@@ -132,7 +135,7 @@ const UPSERT_UNOPENED_SQL: &str =
      ON CONFLICT (user_id, box_id) DO UPDATE SET qty = unopened_boxes.qty + 1";
 const INSERT_SPIN_SQL: &str = "INSERT INTO wheel_spins (
         id, user_id, kind, code, won_item_id, box_id, charged_usdc, status, idempotency_key, created_at
-     ) VALUES ($1, $2, 'paid', NULL, $3, $4, $5::numeric, 'completed', $6, $7)";
+     ) VALUES ($1, $2, 'paid', NULL, $3, $4, $5::float8::numeric, 'completed', $6, $7)";
 
 #[derive(Debug, Clone)]
 pub struct WheelPrizeDto {

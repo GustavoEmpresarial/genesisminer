@@ -381,7 +381,7 @@ fn youtube_embed_url(video_id: &str) -> String {
     format!("https://www.youtube.com/embed/{video_id}")
 }
 
-fn sanitize_channel_name(raw: &str) -> String {
+pub(crate) fn sanitize_channel_name(raw: &str) -> String {
     raw.trim()
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -391,14 +391,14 @@ fn sanitize_channel_name(raw: &str) -> String {
         .collect()
 }
 
-fn sanitize_channel_description(raw: &str) -> String {
+pub(crate) fn sanitize_channel_description(raw: &str) -> String {
     raw.trim()
         .chars()
         .take(CHANNEL_DESCRIPTION_MAX_LENGTH)
         .collect()
 }
 
-fn sanitize_channel_url(raw: &str) -> String {
+pub(crate) fn sanitize_channel_url(raw: &str) -> String {
     let t: String = raw.trim().chars().take(CHANNEL_URL_MAX_LENGTH).collect();
     if t.is_empty() {
         return String::new();
@@ -428,7 +428,7 @@ fn sanitize_channel_url(raw: &str) -> String {
     String::new()
 }
 
-fn sanitize_avatar_url(raw: &str) -> String {
+pub(crate) fn sanitize_avatar_url(raw: &str) -> String {
     let t: String = raw.trim().chars().take(AVATAR_URL_MAX_LENGTH).collect();
     if t.is_empty() {
         return String::new();
@@ -496,7 +496,7 @@ fn clamp_limit(raw: Option<&str>) -> i64 {
     n.clamp(1, MAX_LIMIT)
 }
 
-fn value_str(v: &Option<Value>) -> String {
+pub(crate) fn value_str(v: &Option<Value>) -> String {
     match v {
         Some(Value::String(s)) => s.clone(),
         Some(other) => other

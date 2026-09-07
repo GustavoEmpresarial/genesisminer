@@ -19,7 +19,8 @@ import { log } from './logger.js';
 
 export type GracefulShutdownDeps = {
   httpServer: Server;
-  stopSchedulers: () => void;
+  /** Legado: jobs de fundo migraram para o worker Rust; opcional e sem uso em produção. */
+  stopSchedulers?: () => void;
   /** Opcional: desliga producer/consumer Kafka. */
   stopKafkaFn?: () => Promise<void>;
   /** Opcional: force exit code (default 0; 1 for fatal). */
@@ -69,11 +70,13 @@ async function closeHttp(server: Server, timeoutMs: number): Promise<void> {
  * Executa shutdown uma única vez. Chamadas subsequentes reutilizam a mesma Promise.
  */
 async function runShutdownSteps(deps: GracefulShutdownDeps, signal: string, t0: number): Promise<void> {
-  try {
-    deps.stopSchedulers();
-    log.info('schedulers stopped', { module: 'shutdown', event: 'schedulers_stopped' });
-  } catch (err) {
-    log.error('stopSchedulers failed', { module: 'shutdown', err });
+  if (deps.stopSchedulers) {
+    try {
+      deps.stopSchedulers();
+      log.info('schedulers stopped', { module: 'shutdown', event: 'schedulers_stopped' });
+    } catch (err) {
+      log.error('stopSchedulers failed', { module: 'shutdown', err });
+    }
   }
 
   if (deps.stopKafkaFn) {

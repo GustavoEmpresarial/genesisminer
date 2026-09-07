@@ -230,7 +230,7 @@ async function insertYieldHistoryBoundary(
  * Um único scan de racks + upgrades + slots + multipliers: actualiza yields em BD,
  * stats em memória, ranking + app_cache (evita segundo job no bootstrap).
  *
- * O scheduler Node (`updateMiningYields` / `startMiningYieldCron`) é no-op —
+ * O scheduler Node foi removido —
  * o worker Rust owns o loop. `executeMiningYieldTick` permanece para testes.
  */
 /**
@@ -521,24 +521,3 @@ export async function executeMiningYieldTick(ctx: JobContext): Promise<void> {
   }
 }
 
-/** Tick público do scheduler Node: sempre no-op — o worker Rust owns o job. */
-export async function updateMiningYields(): Promise<void> {
-  return;
-}
-
-export type StartMiningYieldCronOptions = {
-  intervalMs?: number;
-  startupDelayMs?: number;
-};
-
-/**
- * Agenda o tick de yield no Node: sempre no-op — o worker Rust owns o loop.
- */
-export function startMiningYieldCron(_opts: StartMiningYieldCronOptions = {}): () => void {
-  log.info('mining yield cron not scheduled', {
-    module: 'mining_yield',
-    event: 'disabled',
-    reason: 'Rust worker owns yield tick'
-  });
-  return () => undefined;
-}

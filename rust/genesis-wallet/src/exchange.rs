@@ -4,6 +4,7 @@ use deadpool_postgres::{GenericClient, Pool};
 use genesis_core::wallet::{fraction_allowed, FRACTION_MODE_DESK_SHORTCUTS, FRACTION_MODE_LEGACY};
 use serde::Serialize;
 use serde_json::json;
+use sha1::{Digest, Sha1};
 use tokio_postgres::error::SqlState;
 
 use crate::config::{current_unix_ms, WALLET_LOCK_TIMEOUT_MS, WALLET_STATEMENT_TIMEOUT_MS};
@@ -145,6 +146,25 @@ pub async fn run_exchange_liquidation(
     }
     let server_now = server_now_ms.unwrap_or_else(current_unix_ms);
     let uid = pg_user_id(user_id).map_err(WalletError::transport)?;
+
+    // genesis-api binds `idempotencyKey` without a `requestFingerprint`; the
+    // legacy Node controller always sent one. Derive a stable fingerprint from
+    // the logical request so idempotent replay stays consistent (parity with
+    // `withdraw.rs`).
+    let has_idem = idempotency_key
+        .map(|k| !k.trim().is_empty())
+        .unwrap_or(false);
+    let derived_fp;
+    let request_fingerprint: Option<&str> = match request_fingerprint {
+        Some(s) if !s.trim().is_empty() => Some(s),
+        _ if has_idem => {
+            let mut hasher = Sha1::new();
+            hasher.update(format!("exchange|{coin_id}|{fraction:.12}|{mode}").as_bytes());
+            derived_fp = hex::encode(hasher.finalize());
+            Some(derived_fp.as_str())
+        }
+        _ => None,
+    };
 
     let mut client = pool.get().await.map_err(WalletError::transport)?;
     let tx = client.transaction().await.map_err(WalletError::transport)?;
@@ -321,9 +341,13 @@ async fn run_inner<C: GenericClient>(
         ));
     }
 
+    // `game_states.usdc` is float8 (Prisma `Float`) — plain float add, same as the
+    // `coin_balances` UPDATE above. The old `$1::numeric` cast made tokio-postgres
+    // infer `$1` as numeric and fail to serialize the bound f64 ("error serializing
+    // parameter 0"), so exchange-desk liquidation 500'd on every request.
     let upd_gs = client
         .execute(
-            "UPDATE game_states SET usdc = COALESCE(usdc::numeric, 0) + $1::numeric WHERE user_id = $2",
+            "UPDATE game_states SET usdc = COALESCE(usdc, 0) + $1 WHERE user_id = $2",
             &[&net_usdc, &uid],
         )
         .await
@@ -334,22 +358,24 @@ async fn run_inner<C: GenericClient>(
         ));
     }
 
-    let sold_s = sell_amount.to_string();
-    let gross_s = gross_usdc.to_string();
-    let fee_s = fee_amount.to_string();
-    let net_s = net_usdc.to_string();
+    // `wallet_ledger_entries.{sold_crypto,gross_usdc,fee_usdc,net_usdc}` are
+    // numeric(38,18). Bind f64 with an explicit `::float8` source cast so
+    // tokio-postgres infers the param as float8 (it serializes f64); PG then
+    // does the float8→numeric assignment cast into the column. A bare `$n` or
+    // `$n::numeric` makes PG infer the param as `numeric`, which f64/String
+    // cannot serialize ("error serializing parameter N").
     let ledger_res = if let Some(idem) = idempotency_key.filter(|s| !s.trim().is_empty()) {
         client
             .execute(
                 "INSERT INTO wallet_ledger_entries (user_id, entry_type, coin_id, sold_crypto, gross_usdc, fee_usdc, net_usdc, idempotency_key, created_at)
-                 VALUES ($1, 'exchange_liquidate', $2, $3::numeric, $4::numeric, $5::numeric, $6::numeric, $7, $8)",
+                 VALUES ($1, 'exchange_liquidate', $2, $3::float8, $4::float8, $5::float8, $6::float8, $7, $8)",
                 &[
                     &uid,
                     &coin_id,
-                    &sold_s,
-                    &gross_s,
-                    &fee_s,
-                    &net_s,
+                    &sell_amount,
+                    &gross_usdc,
+                    &fee_amount,
+                    &net_usdc,
                     &idem,
                     &server_now,
                 ],
@@ -359,8 +385,16 @@ async fn run_inner<C: GenericClient>(
         client
             .execute(
                 "INSERT INTO wallet_ledger_entries (user_id, entry_type, coin_id, sold_crypto, gross_usdc, fee_usdc, net_usdc, idempotency_key, created_at)
-                 VALUES ($1, 'exchange_liquidate', $2, $3::numeric, $4::numeric, $5::numeric, $6::numeric, NULL, $7)",
-                &[&uid, &coin_id, &sold_s, &gross_s, &fee_s, &net_s, &server_now],
+                 VALUES ($1, 'exchange_liquidate', $2, $3::float8, $4::float8, $5::float8, $6::float8, NULL, $7)",
+                &[
+                    &uid,
+                    &coin_id,
+                    &sell_amount,
+                    &gross_usdc,
+                    &fee_amount,
+                    &net_usdc,
+                    &server_now,
+                ],
             )
             .await
     };

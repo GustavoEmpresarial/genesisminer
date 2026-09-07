@@ -1,10 +1,11 @@
 //! Support ticket list / get / state / archive / reopen / admin reads.
 //!
-//! Mirrors Node `ticket-model.ts` + `buildSupportStatePayload` SQL. Mapping
-//! (email hint, player DTO, admin preview) stays on Node.
+//! Mirrors Node `ticket-model.ts` + `buildSupportStatePayload` — the full player
+//! `/api/support/state` payload (email hint, limits, ticket DTOs) is built here.
 
 use deadpool_postgres::{GenericClient, Pool};
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 use tokio_postgres::Row;
 
 use crate::support::TICKET_ID_MAX_LENGTH;
@@ -314,22 +315,6 @@ pub struct SupportGetResponse {
     pub ticket: Option<SupportTicketDetailRow>,
     pub admin_replies: Vec<SupportAdminReplyRow>,
     pub player_replies: Vec<SupportPlayerReplyRow>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SupportStateResponse {
-    pub ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub email: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub username: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub summaries: Option<Vec<SupportSummaryRow>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -756,12 +741,43 @@ pub async fn run_support_get(
     })
 }
 
+/// Node `SUPPORT_UPLOAD_MAX_BYTES` (12 MiB) / `_MAX_FILES` / subject / message caps.
+const SUPPORT_UPLOAD_MAX_BYTES: i64 = 12 * 1024 * 1024;
+const SUPPORT_UPLOAD_MAX_FILES: i64 = 5;
+const SUPPORT_SUBJECT_MAX_LENGTH: i64 = 180;
+const SUPPORT_MESSAGE_MAX_LENGTH: i64 = 8000;
+/// Node `SUPPORT_ALLOWED_EXT`, already sorted (`Array.from(...).sort()`).
+const SUPPORT_ALLOWED_EXT: [&str; 8] = [
+    ".gif", ".jpeg", ".jpg", ".mov", ".mp4", ".png", ".webm", ".webp",
+];
+const SUPPORT_STATE_NOTICE: &str = "Anexos: imagens e vídeo (png, jpeg, webp, gif, mp4, webm, mov). Validação final no servidor. Use idempotencyKey ao criar pedidos.";
+/// Node `DEFAULT_PAGE` / `MAX_PAGE` for the player ticket list.
+const SUPPORT_STATE_DEFAULT_PAGE: i64 = 20;
+const SUPPORT_STATE_MAX_PAGE: i64 = 50;
+
+fn mask_email_hint(email: &str) -> String {
+    let e = email.trim();
+    match e.find('@') {
+        Some(at) if at > 1 => format!("{}…{}", &e[..1], &e[at - 1..]),
+        _ => {
+            let take = e.chars().take(3).collect::<String>();
+            format!("{take}…")
+        }
+    }
+}
+
+/// Full `/api/support/state` payload for the player support page — was Node
+/// `buildSupportStatePayload` (`server/modules/support/services/state.ts`).
 pub async fn run_support_state(
     pool: &Pool,
     req: SupportStateRequest,
-) -> Result<SupportStateResponse, SupportReadError> {
+) -> Result<Value, SupportReadError> {
     let user_id = pg_user_id(req.user_id)?;
-    let limit = clamp_limit(req.limit, SUMMARIES_MAX_LIMIT, SUMMARIES_MAX_LIMIT);
+    let limit = clamp_limit(
+        req.limit,
+        SUPPORT_STATE_DEFAULT_PAGE,
+        SUPPORT_STATE_MAX_PAGE,
+    );
     let client = pool
         .get()
         .await
@@ -781,14 +797,67 @@ pub async fn run_support_state(
         None => (None, None),
     };
     let summaries = list_summaries(&client, user_id, limit, req.cursor_created_at).await?;
-    Ok(SupportStateResponse {
-        ok: true,
-        email,
-        username,
-        summaries: Some(summaries),
-        error: None,
-        code: None,
-    })
+
+    let mut tickets: Vec<Value> = Vec::with_capacity(summaries.len());
+    let mut unread_staff_reply_count = 0;
+    let last_created_at = summaries.last().map(|s| s.created_at);
+    for r in &summaries {
+        let created_at = r.created_at.max(0);
+        let last_admin = r.last_admin_at.max(0);
+        let last_player = r.last_player_at.max(0);
+        let last_activity_at = created_at.max(last_admin).max(last_player);
+        let admin_count = r.admin_reply_count.max(0);
+        let unread_staff = admin_count > 0
+            && last_admin > 0
+            && if last_player == 0 {
+                last_admin > created_at
+            } else {
+                last_admin > last_player
+            };
+        if unread_staff {
+            unread_staff_reply_count += 1;
+        }
+        let status_label = match r.status.as_str() {
+            "archived" => "Arquivado",
+            "open" => "Aberto",
+            other => other,
+        };
+        tickets.push(json!({
+            "publicId": r.id,
+            "subject": r.subject,
+            "status": r.status,
+            "statusLabel": status_label,
+            "createdAt": created_at,
+            "adminReplyCount": admin_count,
+            "lastActivityAt": last_activity_at,
+            "unreadStaffReply": unread_staff,
+        }));
+    }
+
+    let next_cursor = if summaries.len() as i64 == limit {
+        last_created_at.map(|c| c.max(0).to_string())
+    } else {
+        None
+    };
+
+    Ok(json!({
+        "ok": true,
+        "account": {
+            "emailHint": email.as_deref().map(mask_email_hint),
+            "username": username,
+        },
+        "limits": {
+            "maxAttachmentBytes": SUPPORT_UPLOAD_MAX_BYTES,
+            "maxAttachmentCount": SUPPORT_UPLOAD_MAX_FILES,
+            "maxSubjectLength": SUPPORT_SUBJECT_MAX_LENGTH,
+            "maxMessageLength": SUPPORT_MESSAGE_MAX_LENGTH,
+        },
+        "allowedExtensions": SUPPORT_ALLOWED_EXT,
+        "tickets": tickets,
+        "pagination": { "limit": limit, "nextCursor": next_cursor },
+        "unreadStaffReplyCount": unread_staff_reply_count,
+        "notice": SUPPORT_STATE_NOTICE,
+    }))
 }
 
 async fn update_status_for_user(
@@ -1148,19 +1217,6 @@ impl SupportGetResponse {
     }
 }
 
-impl SupportStateResponse {
-    pub fn from_err(e: SupportReadError) -> Self {
-        Self {
-            ok: false,
-            email: None,
-            username: None,
-            summaries: None,
-            error: Some(e.message),
-            code: Some(e.code.to_string()),
-        }
-    }
-}
-
 impl SupportStatusChangeResponse {
     pub fn from_err(e: SupportReadError) -> Self {
         Self {
@@ -1244,6 +1300,362 @@ impl SupportAttachmentReferencedResponse {
         }
     }
 }
+
+
+// ---------------------------------------------------------------------------
+// Admin support: full client payloads (was Node `admin.controller.ts` +
+// `ticket-model.ts` reshaping). genesis-api only forwards + gates.
+// ---------------------------------------------------------------------------
+
+pub const SUPPORT_ADMIN_TICKETS_PAYLOAD_PATH: &str = "/v1/support/admin/tickets-payload";
+pub const SUPPORT_ADMIN_TICKET_PAYLOAD_PATH: &str = "/v1/support/admin/ticket-payload";
+pub const SUPPORT_ADMIN_USER_HISTORY_PATH: &str = "/v1/support/admin/user-history-payload";
+pub const SUPPORT_ADMIN_STATUS_PATH: &str = "/v1/support/admin/status";
+
+const SUPPORT_PREVIEW_MAX: usize = 160;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportAdminTicketsPayloadRequest {
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportAdminTicketPayloadRequest {
+    pub ticket_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportAdminUserHistoryRequest {
+    pub email: String,
+    pub page: Option<i64>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportAdminStatusRequest {
+    pub id: String,
+    pub status: String,
+}
+
+fn json_array_or_empty(v: &Value) -> Value {
+    if v.is_array() {
+        v.clone()
+    } else {
+        json!([])
+    }
+}
+
+fn attachments_non_empty(v: &Value) -> bool {
+    v.as_array().map(|a| !a.is_empty()).unwrap_or(false)
+}
+
+fn preview_text(message: &str) -> String {
+    let collapsed = message.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.chars().count() <= SUPPORT_PREVIEW_MAX {
+        collapsed
+    } else {
+        let head: String = collapsed.chars().take(SUPPORT_PREVIEW_MAX - 1).collect();
+        format!("{head}…")
+    }
+}
+
+fn admin_reply_json(r: &SupportAdminReplyRow) -> Value {
+    json!({
+        "id": r.id,
+        "adminUserId": r.admin_user_id.unwrap_or(0),
+        "adminUsername": r.admin_username,
+        "message": r.message,
+        "attachments": json_array_or_empty(&r.attachments),
+        "createdAt": r.created_at.max(0),
+    })
+}
+
+fn player_reply_json(r: &SupportPlayerReplyRow) -> Value {
+    json!({
+        "id": r.id,
+        "message": r.message,
+        "attachments": json_array_or_empty(&r.attachments),
+        "createdAt": r.created_at.max(0),
+    })
+}
+
+fn admin_ticket_json(t: &SupportAdminTicketRow, replies: Vec<Value>, player: Vec<Value>) -> Value {
+    json!({
+        "id": t.id,
+        "userId": t.user_id,
+        "username": t.username,
+        "email": t.email,
+        "subject": t.subject,
+        "message": t.message,
+        "attachments": json_array_or_empty(&t.attachments),
+        "status": t.status,
+        "createdAt": t.created_at.max(0),
+        "replies": replies,
+        "playerReplies": player,
+    })
+}
+
+fn nest_admin_tickets(
+    tickets: &[SupportAdminTicketRow],
+    admin_replies: &[SupportAdminReplyRow],
+    player_replies: &[SupportPlayerReplyRow],
+) -> Vec<Value> {
+    let mut by_admin: std::collections::HashMap<&str, Vec<Value>> = std::collections::HashMap::new();
+    for r in admin_replies {
+        if let Some(tid) = r.ticket_id.as_deref() {
+            by_admin.entry(tid).or_default().push(admin_reply_json(r));
+        }
+    }
+    let mut by_player: std::collections::HashMap<&str, Vec<Value>> = std::collections::HashMap::new();
+    for r in player_replies {
+        if let Some(tid) = r.ticket_id.as_deref() {
+            by_player.entry(tid).or_default().push(player_reply_json(r));
+        }
+    }
+    tickets
+        .iter()
+        .map(|t| {
+            let a = by_admin.remove(t.id.as_str()).unwrap_or_default();
+            let p = by_player.remove(t.id.as_str()).unwrap_or_default();
+            admin_ticket_json(t, a, p)
+        })
+        .collect()
+}
+
+/// Node `GET /api/admin/support-tickets` — `{ tickets: [ …nested ] }`.
+pub async fn run_support_admin_tickets_payload(
+    pool: &Pool,
+    req: SupportAdminTicketsPayloadRequest,
+) -> Result<Value, SupportReadError> {
+    let limit = clamp_limit(req.limit, ADMIN_TICKETS_DEFAULT_LIMIT, ADMIN_TICKETS_MAX_LIMIT);
+    let client = pool
+        .get()
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+    let sql = format!("{ADMIN_TICKET_SELECT}\n    ORDER BY t.created_at DESC\n    LIMIT $1");
+    let rows = client
+        .query(&sql, &[&limit])
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+    let tickets: Vec<SupportAdminTicketRow> =
+        rows.iter().map(map_admin_ticket).collect::<Result<_, _>>()?;
+    let ids: Vec<String> = tickets.iter().map(|t| t.id.clone()).collect();
+    let admin_replies = list_admin_replies_for_ids(&client, &ids).await?;
+    let player_replies = list_player_replies_for_ids(&client, &ids).await?;
+    Ok(json!({ "tickets": nest_admin_tickets(&tickets, &admin_replies, &player_replies) }))
+}
+
+/// Node `GET /api/admin/support/tickets/:ticketId` — `{ ok, ticket }`.
+pub async fn run_support_admin_ticket_payload(
+    pool: &Pool,
+    req: SupportAdminTicketPayloadRequest,
+) -> Result<Value, SupportReadError> {
+    let ticket_id = trim_ticket_id(&req.ticket_id)?;
+    let client = pool
+        .get()
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+    let sql = format!("{ADMIN_TICKET_SELECT} WHERE t.id = $1 LIMIT 1");
+    let Some(row) = client
+        .query_opt(&sql, &[&ticket_id])
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?
+    else {
+        return Err(SupportReadError::not_found());
+    };
+    let ticket = map_admin_ticket(&row)?;
+    let admin_replies = list_admin_replies_for_ticket(&client, &ticket_id, true).await?;
+    let player_replies = list_player_replies_for_ticket(&client, &ticket_id, true).await?;
+    let nested = nest_admin_tickets(
+        std::slice::from_ref(&ticket),
+        &admin_replies,
+        &player_replies,
+    );
+    Ok(json!({ "ok": true, "ticket": nested.into_iter().next().unwrap_or(json!(null)) }))
+}
+
+/// Node `POST /api/admin/support-tickets/status` — toggle open/archived.
+pub async fn run_support_admin_status(
+    pool: &Pool,
+    req: SupportAdminStatusRequest,
+) -> Result<Value, SupportReadError> {
+    let id = trim_ticket_id(&req.id)?;
+    let status = if req.status.trim() == "archived" {
+        "archived"
+    } else {
+        "open"
+    };
+    let client = pool
+        .get()
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+    let n = client
+        .execute(
+            "UPDATE support_tickets SET status = $1 WHERE id = $2",
+            &[&status, &id],
+        )
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+    if n == 0 {
+        return Err(SupportReadError::not_found());
+    }
+    Ok(json!({ "ok": true }))
+}
+
+/// Node `GET /api/admin/support/user-history` — stats + summaries + account.
+pub async fn run_support_admin_user_history_payload(
+    pool: &Pool,
+    req: SupportAdminUserHistoryRequest,
+) -> Result<Value, SupportReadError> {
+    let email = req.email.trim().to_string();
+    if email.is_empty() {
+        return Err(SupportReadError::validation("Informe um email para buscar."));
+    }
+    let page = req.page.unwrap_or(1).max(1);
+    let limit = clamp_limit(req.limit, USER_HISTORY_DEFAULT_LIMIT, USER_HISTORY_MAX_LIMIT);
+    let offset = (page - 1) * limit;
+
+    let client = pool
+        .get()
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+
+    let Some(user_row) = client
+        .query_opt(
+            "SELECT id, email, username FROM users WHERE lower(email) = lower($1) ORDER BY id ASC LIMIT 1",
+            &[&email],
+        )
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?
+    else {
+        return Err(SupportReadError {
+            http_status: HTTP_NOT_FOUND,
+            code: "NOT_FOUND",
+            message: "Usuário não encontrado.".into(),
+        });
+    };
+    let user_id: i32 = user_row
+        .try_get("id")
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+    let user_email: String = user_row
+        .try_get::<_, Option<String>>("email")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| email.clone());
+    let user_username: String = user_row
+        .try_get::<_, Option<String>>("username")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+    let stats_row = client
+        .query_one(
+            "SELECT
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE t.status IS DISTINCT FROM 'archived')::int AS open_count,
+      COUNT(*) FILTER (WHERE t.status = 'archived')::int AS archived_count,
+      COALESCE(MAX(GREATEST(
+        t.created_at,
+        COALESCE((SELECT MAX(r.created_at) FROM support_ticket_replies r WHERE r.ticket_id = t.id), 0::bigint),
+        COALESCE((SELECT MAX(p.created_at) FROM support_ticket_player_replies p WHERE p.ticket_id = t.id), 0::bigint)
+      )), 0::bigint) AS last_ticket_at
+    FROM support_tickets t WHERE t.user_id = $1",
+            &[&user_id],
+        )
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+    let total = i32_col(&stats_row, "total")?;
+    let open_count = i32_col(&stats_row, "open_count")?;
+    let archived_count = i32_col(&stats_row, "archived_count")?;
+    let last_ticket_at = i64_col(&stats_row, "last_ticket_at")?;
+
+    let start_time: Option<i64> = client
+        .query_opt(
+            "SELECT start_time FROM game_states WHERE user_id = $1",
+            &[&user_id],
+        )
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?
+        .and_then(|r| r.try_get::<_, Option<i64>>("start_time").ok().flatten())
+        .filter(|n| *n > 0);
+
+    let sql = format!(
+        "{HISTORY_SELECT}\n    WHERE t.user_id = $1\n    ORDER BY last_message_at DESC, t.created_at DESC\n    LIMIT $2 OFFSET $3"
+    );
+    let rows = client
+        .query(&sql, &[&user_id, &limit, &offset])
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+    let summaries: Vec<SupportHistorySummaryRow> =
+        rows.iter().map(map_history).collect::<Result<_, _>>()?;
+
+    let ticket_ids: Vec<String> = summaries.iter().map(|s| s.id.clone()).collect();
+    let mut reply_attach_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    if !ticket_ids.is_empty() {
+        for r in list_admin_replies_for_ids(&client, &ticket_ids).await? {
+            if attachments_non_empty(&r.attachments) {
+                if let Some(tid) = r.ticket_id {
+                    reply_attach_ids.insert(tid);
+                }
+            }
+        }
+        for r in list_player_replies_for_ids(&client, &ticket_ids).await? {
+            if attachments_non_empty(&r.attachments) {
+                if let Some(tid) = r.ticket_id {
+                    reply_attach_ids.insert(tid);
+                }
+            }
+        }
+    }
+
+    let tickets: Vec<Value> = summaries
+        .iter()
+        .map(|r| {
+            let last = if r.last_message_at > 0 {
+                r.last_message_at
+            } else {
+                r.created_at.max(0)
+            };
+            json!({
+                "id": r.id,
+                "subject": r.subject,
+                "status": r.status,
+                "createdAt": r.created_at.max(0),
+                "updatedAt": last,
+                "lastMessageAt": last,
+                "messageCount": r.message_count.max(1),
+                "hasAttachments": attachments_non_empty(&r.attachments) || reply_attach_ids.contains(&r.id),
+                "assignedTo": r.last_admin_username,
+                "preview": preview_text(&r.message),
+            })
+        })
+        .collect();
+
+    let has_more = offset + (summaries.len() as i64) < i64::from(total);
+
+    Ok(json!({
+        "ok": true,
+        "user": {
+            "id": user_id,
+            "email": user_email,
+            "username": user_username,
+            "createdAt": start_time,
+        },
+        "summary": {
+            "total": total,
+            "open": open_count,
+            "archived": archived_count,
+            "lastTicketAt": last_ticket_at,
+        },
+        "pagination": { "page": page, "limit": limit, "hasMore": has_more },
+        "tickets": tickets,
+    }))
+}
+
 
 #[cfg(test)]
 mod tests {

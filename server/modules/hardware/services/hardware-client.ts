@@ -44,8 +44,6 @@ const MARKET_STATE_PATH = '/v1/market/state';
 const SHOP_CHECKOUT_PATH = '/v1/shop/checkout';
 const MERGE_EXECUTE_PATH = '/v1/merge/execute';
 const WHEEL_PAID_SPIN_PATH = '/v1/wheel/paid-spin';
-const LUCKY_BOX_BUY_PATH = '/v1/lucky-boxes/buy';
-const LUCKY_BOX_OPEN_PATH = '/v1/lucky-boxes/open';
 const ROOM_PURCHASE_SLOT_PATH = '/v1/rooms/purchase-slot';
 const UPGRADE_PACKAGE_PURCHASE_PATH = '/v1/upgrades/purchase';
 const CATALOG_UPGRADES_REPLACE_PATH = '/v1/catalog/upgrades/replace';
@@ -60,15 +58,8 @@ const SHOP_CART_CLEAR_PATH = '/v1/shop/cart/clear';
 const CATALOG_UPGRADES_PATH = '/v1/catalog/upgrades';
 const CATALOG_MINING_COINS_PATH = '/v1/catalog/mining-coins';
 const CATALOG_ACCESS_LEVELS_PATH = '/v1/catalog/access-levels';
-const CATALOG_LOOT_BOXES_PATH = '/v1/catalog/loot-boxes';
 const SERVERS_STATE_PATH = '/v1/servers/state';
 const GAME_STATE_ME_PATH = '/v1/game-state/me';
-const LUCKY_STATE_PATH = '/v1/lucky-boxes/state';
-const LUCKY_SHOP_PATH = '/v1/lucky-boxes/shop';
-const LUCKY_INVENTORY_PATH = '/v1/lucky-boxes/inventory';
-const LUCKY_HISTORY_PATH = '/v1/lucky-boxes/history';
-const LUCKY_OPENING_PATH = '/v1/lucky-boxes/opening';
-const LUCKY_DISCARD_PATH = '/v1/lucky-boxes/discard';
 const WHEEL_STATE_PATH = '/v1/wheel/state';
 const WHEEL_HISTORY_PATH = '/v1/wheel/history';
 const HTTP_OK = 200;
@@ -737,76 +728,6 @@ export async function callWheelPaidSpin(payload: {
   };
 }
 
-export type LuckyBoxBuyResult = {
-  ok: true;
-  newUsdc: number;
-  boxName: string;
-  trigger: string;
-  price: number;
-  qtyPurchased: number;
-  cached?: boolean;
-};
-
-/** Fail-closed lucky-box buy (USDC + unopened + idem one TX). */
-export async function callLuckyBoxBuy(payload: {
-  userId: number;
-  boxId: string;
-  qty?: number;
-  idempotencyKey: string;
-  idempotencyFingerprint?: string;
-}): Promise<LuckyBoxBuyResult> {
-  const { body } = await postMarketRaw(LUCKY_BOX_BUY_PATH, payload);
-  requireMarketOk(body, 'lucky-box buy');
-  return {
-    ok: true,
-    newUsdc: readRequiredNumber(body, 'newUsdc', 'lucky-box buy'),
-    boxName: typeof body.boxName === 'string' ? body.boxName : '',
-    trigger: typeof body.trigger === 'string' ? body.trigger : '',
-    price: typeof body.price === 'number' && Number.isFinite(body.price) ? body.price : 0,
-    qtyPurchased: readRequiredNumber(body, 'qtyPurchased', 'lucky-box buy'),
-    cached: body.cached === true
-  };
-}
-
-export type LuckyBoxOpenResult = {
-  ok: true;
-  rewards: Array<{ type: string; id: string; qty: number }>;
-  gainedUsdc: number;
-  boxName: string;
-  openingId: string;
-  cached?: boolean;
-};
-
-/** Fail-closed lucky-box open (consume + roll + credit + idem one TX). */
-export async function callLuckyBoxOpen(payload: {
-  userId: number;
-  boxId: string;
-  idempotencyKey: string;
-  idempotencyFingerprint?: string;
-}): Promise<LuckyBoxOpenResult> {
-  const { body } = await postMarketRaw(LUCKY_BOX_OPEN_PATH, payload);
-  requireMarketOk(body, 'lucky-box open');
-  const rawRewards = Array.isArray(body.rewards) ? body.rewards : [];
-  const rewards: Array<{ type: string; id: string; qty: number }> = [];
-  for (const r of rawRewards) {
-    if (!r || typeof r !== 'object' || Array.isArray(r)) continue;
-    const o = r as Record<string, unknown>;
-    const type = typeof o.type === 'string' ? o.type : '';
-    const id = typeof o.id === 'string' ? o.id : '';
-    const qty = typeof o.qty === 'number' && Number.isFinite(o.qty) ? o.qty : Number(o.qty);
-    if (!type || !id || !Number.isFinite(qty)) continue;
-    rewards.push({ type, id, qty });
-  }
-  return {
-    ok: true,
-    rewards,
-    gainedUsdc: typeof body.gainedUsdc === 'number' && Number.isFinite(body.gainedUsdc) ? body.gainedUsdc : 0,
-    boxName: typeof body.boxName === 'string' ? body.boxName : '',
-    openingId: typeof body.openingId === 'string' ? body.openingId : '',
-    cached: body.cached === true
-  };
-}
-
 export type RoomPurchaseSlotResult = {
   ok: true;
   roomId: string;
@@ -963,51 +884,12 @@ export async function callCatalogAccessLevels(): Promise<unknown[]> {
   return Array.isArray(body.items) ? body.items : [];
 }
 
-export async function callCatalogLootBoxes(): Promise<unknown[]> {
-  const body = await callHardwareRead(CATALOG_LOOT_BOXES_PATH, {}, 'catalog loot-boxes');
-  return Array.isArray(body.items) ? body.items : [];
-}
-
 export async function callServersState(payload: { userId: number }): Promise<Record<string, unknown>> {
   return callHardwareRead(SERVERS_STATE_PATH, payload, 'servers state');
 }
 
 export async function callGameStateMe(payload: { userId: number }): Promise<Record<string, unknown>> {
   return callHardwareRead(GAME_STATE_ME_PATH, payload, 'game-state me');
-}
-
-export async function callLuckyBoxesState(payload: { userId: number }): Promise<Record<string, unknown>> {
-  return callHardwareRead(LUCKY_STATE_PATH, payload, 'lucky state');
-}
-
-export async function callLuckyBoxesShop(payload: { userId: number }): Promise<Record<string, unknown>> {
-  return callHardwareRead(LUCKY_SHOP_PATH, payload, 'lucky shop');
-}
-
-export async function callLuckyBoxesInventory(payload: { userId: number }): Promise<Record<string, unknown>> {
-  return callHardwareRead(LUCKY_INVENTORY_PATH, payload, 'lucky inventory');
-}
-
-export async function callLuckyBoxesHistory(payload: {
-  userId: number;
-  cursor?: string;
-}): Promise<Record<string, unknown>> {
-  return callHardwareRead(LUCKY_HISTORY_PATH, payload, 'lucky history');
-}
-
-export async function callLuckyBoxesOpening(payload: {
-  userId: number;
-  openingId: string;
-}): Promise<Record<string, unknown>> {
-  return callHardwareRead(LUCKY_OPENING_PATH, payload, 'lucky opening');
-}
-
-export async function callLuckyBoxesDiscard(payload: {
-  userId: number;
-  boxId: string;
-  qty?: unknown;
-}): Promise<Record<string, unknown>> {
-  return callHardwareRead(LUCKY_DISCARD_PATH, payload, 'lucky discard');
 }
 
 export async function callWheelState(payload: { userId: number }): Promise<Record<string, unknown>> {

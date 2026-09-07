@@ -23,14 +23,16 @@ use tracing::{info, warn};
 
 use crate::adjust::{adjust_stock, AdjustLine};
 use crate::admin_catalog::http::{
-    post_access_levels_replace, post_loot_boxes_upsert, post_mining_coins_upsert, post_news_delete,
-    post_news_expire_days_persist, post_news_fee_persist, post_news_upsert, post_rig_rooms_upsert,
-    post_season_passes_replace,
+    post_access_levels_replace, post_admin_delete_user_box, post_admin_user_boxes,
+    post_loot_box_delete, post_loot_box_redemptions, post_loot_boxes_upsert,
+    post_mining_coins_upsert, post_news_delete, post_news_expire_days_persist, post_news_fee_persist,
+    post_news_upsert, post_rig_rooms_upsert, post_season_passes_replace,
 };
 use crate::admin_catalog::{
-    ACCESS_LEVELS_REPLACE_PATH, LOOT_BOXES_UPSERT_PATH, MINING_COINS_UPSERT_PATH, NEWS_DELETE_PATH,
-    NEWS_EXPIRE_DAYS_PERSIST_PATH, NEWS_FEE_PERSIST_PATH, NEWS_UPSERT_PATH, RIG_ROOMS_UPSERT_PATH,
-    SEASON_PASSES_REPLACE_PATH,
+    ACCESS_LEVELS_REPLACE_PATH, ADMIN_DELETE_USER_BOX_PATH, ADMIN_USER_BOXES_PATH,
+    LOOT_BOXES_DELETE_PATH, LOOT_BOXES_UPSERT_PATH, LOOT_BOX_REDEMPTIONS_PATH,
+    MINING_COINS_UPSERT_PATH, NEWS_DELETE_PATH, NEWS_EXPIRE_DAYS_PERSIST_PATH, NEWS_FEE_PERSIST_PATH,
+    NEWS_UPSERT_PATH, RIG_ROOMS_UPSERT_PATH, SEASON_PASSES_REPLACE_PATH,
 };
 use crate::catalog::http::post_upgrades_replace as post_catalog_upgrades_replace;
 use crate::catalog::CATALOG_UPGRADES_REPLACE_PATH;
@@ -52,14 +54,16 @@ use crate::lucky_boxes::http::{
 use crate::lucky_boxes::{LUCKY_BOX_BUY_PATH, LUCKY_BOX_OPEN_PATH, LUCKY_BOX_PROMO_REDEEM_PATH};
 use crate::market::http::{
     post_buy, post_buy_cached, post_cancel, post_cancel_reserve, post_claim_all, post_claim_item,
-    post_claim_proceeds, post_custody, post_history, post_listings, post_my_listings, post_reclaim,
+    post_admin_listings, post_claim_proceeds, post_custody, post_history, post_listings,
+    post_my_listings, post_reclaim,
     post_reserve, post_sell, post_sellable_stock, post_state,
 };
 use crate::market::{
     MARKET_BUY_CACHED_PATH, MARKET_BUY_PATH, MARKET_CANCEL_PATH, MARKET_CANCEL_RESERVE_PATH,
     MARKET_CLAIM_ALL_PATH, MARKET_CLAIM_ITEM_PATH, MARKET_CLAIM_PROCEEDS_PATH, MARKET_CUSTODY_PATH,
     MARKET_HISTORY_PATH, MARKET_LISTINGS_PATH, MARKET_MY_LISTINGS_PATH, MARKET_RECLAIM_PATH,
-    MARKET_RESERVE_PATH, MARKET_SELLABLE_STOCK_PATH, MARKET_SELL_PATH, MARKET_STATE_PATH,
+    MARKET_ADMIN_LISTINGS_PATH, MARKET_RESERVE_PATH, MARKET_SELLABLE_STOCK_PATH, MARKET_SELL_PATH,
+    MARKET_STATE_PATH,
 };
 use crate::merge::http::post_execute as post_merge_execute;
 use crate::merge::MERGE_EXECUTE_PATH;
@@ -86,6 +90,9 @@ use crate::wheel::http::{
 };
 use crate::wheel::{
     ROLETA_CLAIM_PATH, WHEEL_PAID_SPIN_PATH, WHEEL_REDEEM_CODE_PATH, WHEEL_ROLL_PATH,
+};
+use crate::partners_streamer::{
+    deactivate_streamer_room, STREAMER_ROOM_DEACTIVATE_PATH, STREAMER_ROOM_ID,
 };
 use crate::wipe_user::{wipe_user, WIPE_USER_PATH};
 
@@ -213,6 +220,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route(RECALL_ALL_PATH, post(post_recall_all))
         .route(WIPE_USER_PATH, post(post_wipe_user))
+        .route(
+            STREAMER_ROOM_DEACTIVATE_PATH,
+            post(post_streamer_room_deactivate),
+        )
         .route(P2P_INSTANCES_PATH, post(post_p2p_instances))
         .route(MARKET_SELL_PATH, post(post_sell))
         .route(MARKET_CANCEL_PATH, post(post_cancel))
@@ -230,6 +241,7 @@ pub fn router(state: AppState) -> Router {
         .route(MARKET_SELLABLE_STOCK_PATH, post(post_sellable_stock))
         .route(MARKET_HISTORY_PATH, post(post_history))
         .route(MARKET_STATE_PATH, post(post_state))
+        .route(MARKET_ADMIN_LISTINGS_PATH, post(post_admin_listings))
         .route(SHOP_CHECKOUT_PATH, post(post_shop_checkout))
         .route(MERGE_EXECUTE_PATH, post(post_merge_execute))
         .route(WHEEL_PAID_SPIN_PATH, post(post_wheel_paid_spin))
@@ -250,6 +262,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route(ACCESS_LEVELS_REPLACE_PATH, post(post_access_levels_replace))
         .route(LOOT_BOXES_UPSERT_PATH, post(post_loot_boxes_upsert))
+        .route(LOOT_BOXES_DELETE_PATH, post(post_loot_box_delete))
+        .route(LOOT_BOX_REDEMPTIONS_PATH, post(post_loot_box_redemptions))
+        .route(ADMIN_USER_BOXES_PATH, post(post_admin_user_boxes))
+        .route(ADMIN_DELETE_USER_BOX_PATH, post(post_admin_delete_user_box))
         .route(MINING_COINS_UPSERT_PATH, post(post_mining_coins_upsert))
         .route(NEWS_UPSERT_PATH, post(post_news_upsert))
         .route(NEWS_DELETE_PATH, post(post_news_delete))
@@ -746,6 +762,59 @@ async fn post_wipe_user(
             warn!(err = %e, "hardware wipe-user failed");
             let _ = tx.rollback().await;
             fail_body(StatusCode::UNPROCESSABLE_ENTITY, &e.to_string())
+        }
+    }
+}
+
+async fn post_streamer_room_deactivate(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<WipeUserRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let mut conn = match state.pool.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            warn!(err = %e, "partners streamer-room deactivate pool");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "ok": false, "error": "pool" })),
+            );
+        }
+    };
+    let tx = match conn.transaction().await {
+        Ok(t) => t,
+        Err(e) => {
+            warn!(err = %e, "partners streamer-room deactivate begin");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "ok": false, "error": "begin" })),
+            );
+        }
+    };
+    match deactivate_streamer_room(&tx, body.user_id).await {
+        Ok(removed) => {
+            if let Err(e) = tx.commit().await {
+                warn!(err = %e, "partners streamer-room deactivate commit");
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "ok": false, "error": "commit" })),
+                );
+            }
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({
+                    "ok": true,
+                    "roomId": STREAMER_ROOM_ID,
+                    "removedRackCount": removed,
+                })),
+            )
+        }
+        Err(e) => {
+            warn!(err = %e, "partners streamer-room deactivate failed");
+            let _ = tx.rollback().await;
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+            )
         }
     }
 }

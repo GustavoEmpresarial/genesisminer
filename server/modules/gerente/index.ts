@@ -10,7 +10,7 @@
  * chamada por `modules/mining-engine/services/progress-computer.ts`, na
  * mesma transação do crédito de mineração ao dono (e pelo worker Rust).
  *
- * `services/payout-cron.ts` é no-op — o poll horário vive no mining-worker.
+ * O poll horário do payout do gerente vive no `genesis-mining-worker` (Rust).
  */
 export { ACCOUNT_MANAGER_FIRE_LOCK_DAYS, ACCOUNT_MANAGER_SHARE, ACCOUNT_MANAGER_STATUS } from './services/constants.js';
 export type { AccountManagerStatus } from './services/constants.js';
@@ -20,7 +20,6 @@ export { accrueManagerMiningShare } from './services/accrual.js';
 export type { MiningGainEntry } from './services/accrual.js';
 export { payClosedManagerWeeks } from './services/payout.js';
 export type { PayClosedManagerWeeksResult } from './services/payout.js';
-export { startGerentePayoutCron } from './services/payout-cron.js';
 export {
   acceptContract,
   applyAsManager,

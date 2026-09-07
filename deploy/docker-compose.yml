@@ -116,6 +116,9 @@ services:
       MINING_WORKER_AUTH_TOKEN: ${MINING_WORKER_AUTH_TOKEN:?set MINING_WORKER_AUTH_TOKEN in deploy/.env}
       # gerente/enter|leave flip the session manager-mode flag via genesis-auth.
       GENESIS_AUTH_URL: "http://auth:8091"
+      # Calculator "Analisar com IA" — unset ⇒ endpoint returns AI_NOT_CONFIGURED.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CALCULATOR_AI_MODEL: ${CALCULATOR_AI_MODEL:-claude-sonnet-5}
       SCHEDULER_ENABLED: "1"
       MINING_YIELD_CRON_ENABLED: "1"
       MINING_YIELD_SCHEDULER_ENABLED: "1"

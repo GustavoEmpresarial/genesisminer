@@ -15,14 +15,17 @@ use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 use crate::admin_balances::{
-    run_admin_save_game_balances, run_admin_set_coin_balance, ADMIN_SAVE_GAME_BALANCES_PATH,
-    ADMIN_SET_COIN_BALANCE_PATH,
+    run_admin_bulk_coin_balance, run_admin_save_game_balances, run_admin_set_coin_balance,
+    ADMIN_BULK_COIN_BALANCE_PATH, ADMIN_SAVE_GAME_BALANCES_PATH, ADMIN_SET_COIN_BALANCE_PATH,
 };
 use crate::admin_web3::{
     post_wallet_labels_list, post_wallet_labels_upsert, post_web3_settings_persist,
     WALLET_LABELS_LIST_PATH, WALLET_LABELS_UPSERT_PATH, WEB3_SETTINGS_PERSIST_PATH,
 };
-use crate::admin_withdrawal_status::{run_admin_withdrawal_status, ADMIN_WITHDRAWAL_STATUS_PATH};
+use crate::admin_withdrawal_status::{
+    run_admin_withdrawal_status, run_admin_withdrawals_list, ADMIN_WITHDRAWALS_LIST_PATH,
+    ADMIN_WITHDRAWAL_STATUS_PATH,
+};
 use crate::config::{WorkerConfig, MINING_WORKER_AUTH_HEADER};
 use crate::deposit::{run_deposit_credit, DEPOSIT_CREDIT_PATH};
 use crate::deposit_receipt::{
@@ -220,6 +223,13 @@ pub struct AdminSetCoinBalanceRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AdminBulkCoinBalanceRequest {
+    pub coin_id: String,
+    pub amount: f64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AdminSaveGameBalancesRequest {
     pub user_id: i64,
     pub usdc: Option<f64>,
@@ -294,6 +304,11 @@ fn router(state: AppState) -> Router {
             ADMIN_SET_COIN_BALANCE_PATH,
             post(post_admin_set_coin_balance),
         )
+        .route(
+            ADMIN_BULK_COIN_BALANCE_PATH,
+            post(post_admin_bulk_coin_balance),
+        )
+        .route(ADMIN_WITHDRAWALS_LIST_PATH, post(post_admin_withdrawals_list))
         .route(
             ADMIN_SAVE_GAME_BALANCES_PATH,
             post(post_admin_save_game_balances),
@@ -725,6 +740,34 @@ async fn post_admin_set_coin_balance(
             }),
         ),
         Err(e) => wallet_fail(e),
+    }
+}
+
+async fn post_admin_bulk_coin_balance(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<AdminBulkCoinBalanceRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    match run_admin_bulk_coin_balance(&state.pool, &body.coin_id, body.amount).await {
+        Ok(out) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "ok": true, "count": out.count })),
+        ),
+        Err(e) => {
+            let (sc, body) = wallet_fail(e);
+            (sc, Json(serde_json::to_value(&body.0).unwrap_or_else(|_| serde_json::json!({ "ok": false }))))
+        }
+    }
+}
+
+async fn post_admin_withdrawals_list(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    match run_admin_withdrawals_list(&state.pool).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => {
+            let (sc, body) = wallet_fail(e);
+            (sc, Json(serde_json::to_value(&body.0).unwrap_or_else(|_| serde_json::json!({ "ok": false }))))
+        }
     }
 }
 

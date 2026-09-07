@@ -81,6 +81,7 @@ pub const MARKET_CUSTODY_PATH: &str = "/v1/market/custody";
 pub const MARKET_SELLABLE_STOCK_PATH: &str = "/v1/market/sellable-stock";
 pub const MARKET_HISTORY_PATH: &str = "/v1/market/history";
 pub const MARKET_STATE_PATH: &str = "/v1/market/state";
+pub const MARKET_ADMIN_LISTINGS_PATH: &str = "/v1/market/admin/listings";
 
 const ASSERT_ACTIVE_SQL: &str = "SELECT is_blocked FROM users WHERE id = $1 FOR UPDATE";
 const LOCK_GAME_STATE_SQL: &str = "SELECT 1 FROM game_states WHERE user_id = $1 FOR UPDATE";

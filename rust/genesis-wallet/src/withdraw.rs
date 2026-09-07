@@ -22,6 +22,9 @@ const FEE_PERCENT_MAX: f64 = 100.0;
 const PERCENT_BASE: f64 = 100.0;
 /// Node balance / min compare epsilon (`1e-9`).
 const BALANCE_EPSILON: f64 = 1e-9;
+/// Max overshoot tolerated on a "withdraw all" request (UI `toFixed(8)` rounds up).
+/// Clamped down to the exact balance; negligible for any crypto amount.
+const WITHDRAW_MAX_ROUNDING: f64 = 1e-6;
 /// Node `COIN_ID_RE` length bound.
 const COIN_ID_MAX_LEN: usize = 80;
 const NATIVE_TOKEN_NAMES: &[&str] = &["POL", "POLYGON", "BNB", "ETH", "WETH"];
@@ -127,6 +130,32 @@ fn parse_withdraw_tokens(raw: Option<&str>) -> Vec<Value> {
     }
 }
 
+/// Read the admin withdraw-token list from `settings.web3_withdraw_tokens`.
+/// Best-effort: any failure yields an empty list (caller reports "not configured").
+async fn load_withdraw_tokens_from_settings(pool: &Pool) -> Vec<Value> {
+    let Ok(client) = pool.get().await else {
+        return Vec::new();
+    };
+    let rows = match client
+        .query(
+            "SELECT value FROM settings WHERE key = 'web3_withdraw_tokens'",
+            &[],
+        )
+        .await
+    {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    let Some(row) = rows.first() else {
+        return Vec::new();
+    };
+    let raw: String = row.get(0);
+    match serde_json::from_str::<Value>(&raw) {
+        Ok(Value::Array(a)) => a,
+        _ => Vec::new(),
+    }
+}
+
 fn json_num(v: Option<&Value>) -> f64 {
     match v {
         Some(Value::Number(n)) => n.as_f64().unwrap_or(0.0),
@@ -189,7 +218,13 @@ pub async fn run_withdraw_request(
     }
     let server_now = server_now_ms.unwrap_or_else(current_unix_ms);
     let uid = pg_user_id(user_id).map_err(WalletError::transport)?;
-    let tokens = parse_withdraw_tokens(withdraw_tokens_raw);
+    // genesis-api / the client don't forward the admin withdraw-token config, so
+    // load it straight from `settings.web3_withdraw_tokens` when absent — without
+    // this every coin reports "não está configurado para saque".
+    let mut tokens = parse_withdraw_tokens(withdraw_tokens_raw);
+    if tokens.is_empty() {
+        tokens = load_withdraw_tokens_from_settings(pool).await;
+    }
 
     // genesis-api forwards the raw client body without a fingerprint; derive a
     // deterministic one from the request params so an idempotency-key replay with
@@ -354,9 +389,10 @@ async fn run_inner<C: GenericClient>(
     }
 
     let fee_percent = json_num(token_cfg.get("feePercent")).clamp(FEE_PERCENT_MIN, FEE_PERCENT_MAX);
-    let fee_amount = amount * (fee_percent / PERCENT_BASE);
-    let net_amount = (amount - fee_amount).max(0.0);
-    let amount_usdc = amount * usdc_rate;
+    let mut amount = amount;
+    let mut fee_amount = amount * (fee_percent / PERCENT_BASE);
+    let mut net_amount = (amount - fee_amount).max(0.0);
+    let mut amount_usdc = amount * usdc_rate;
     let min_amount_raw = json_num(token_cfg.get("minAmount"));
     let min_by_coin = if min_amount_raw.is_finite() && min_amount_raw > 0.0 {
         min_amount_raw
@@ -400,10 +436,21 @@ async fn run_inner<C: GenericClient>(
         .first()
         .map(|r| r.get::<_, Option<f64>>("amount").unwrap_or(0.0))
         .unwrap_or(0.0);
-    if balance + BALANCE_EPSILON < amount {
-        return Err(WalletError::bad(format!(
-            "Saldo insuficiente. Tens {balance} {sym} disponível; este saque requer {sym} em valor bruto."
-        )));
+    // The "Máx" button in the UI fills the amount via `Number.toFixed(8)`, which
+    // *rounds* — so it can send a hair more than the real float8 balance and trip
+    // the check. Absorb a small rounding window: clamp the request down to the
+    // exact balance instead of failing. Anything meaningfully above still fails.
+    if amount > balance {
+        if amount - balance <= WITHDRAW_MAX_ROUNDING {
+            amount = balance;
+            fee_amount = amount * (fee_percent / PERCENT_BASE);
+            net_amount = (amount - fee_amount).max(0.0);
+            amount_usdc = amount * usdc_rate;
+        } else {
+            return Err(WalletError::bad(format!(
+                "Saldo insuficiente. Tens {balance} {sym} disponível; este saque requer {sym} em valor bruto."
+            )));
+        }
     }
 
     let upd = client

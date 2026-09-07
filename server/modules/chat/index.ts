@@ -59,4 +59,3 @@ export {
 export type { ChatAmPeerDto, ChatMentionDto, ChatMessageDto, ChatMessageKind } from './services/chat.js';
 
 export { registerChatSocketHandlers } from './services/socket.js';
-export { startChatTtlCron, type ChatTtlCronDeps } from './services/ttl-cron.js';

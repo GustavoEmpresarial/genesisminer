@@ -42,6 +42,9 @@ use crate::calculator::{
     run_calculator_snapshot, warn_if_server_error, CalculatorSnapshotErrorBody,
     CalculatorSnapshotRequest, CALCULATOR_SNAPSHOT_PATH,
 };
+use crate::calculator_ai::{
+    run_calculator_ai_analyze, CalculatorAiAnalyzeRequest, CALCULATOR_AI_ANALYZE_PATH,
+};
 use crate::chat_presence::{
     run_chat_presence, run_chat_rate_limit, ChatPresenceRequest, ChatPresenceResponse,
     ChatRateLimitRequest, ChatRateLimitResponse, CHAT_PRESENCE_PATH, CHAT_RATE_LIMIT_PATH,
@@ -88,6 +91,20 @@ use crate::partners::{
     PARTNERS_MY_SUBMISSIONS_PATH, PARTNERS_PROFILE_PATH, PARTNERS_STATE_PATH, PARTNERS_SUBMIT_PATH,
     PARTNERS_VIDEOS_PATH, PARTNERS_VIDEO_BY_ID_PATH,
 };
+use crate::partners_admin::{
+    run_admin_allowlist_add, run_admin_allowlist_remove, run_admin_application_approve,
+    run_admin_application_reject, run_admin_applications_list, run_admin_creator_get,
+    run_admin_creator_put, run_admin_partners_list, run_admin_streamer_room_users,
+    run_admin_submission_delete, run_admin_submission_reject, run_admin_submissions_list,
+    PartnersAdminAllowlistAddRequest, PartnersAdminCreatorPutRequest, PartnersAdminIdActionRequest,
+    PartnersAdminIdRequest, PartnersAdminListRequest, PartnersAdminUserIdRequest,
+    PARTNERS_ADMIN_ALLOWLIST_ADD_PATH, PARTNERS_ADMIN_ALLOWLIST_REMOVE_PATH,
+    PARTNERS_ADMIN_APPLICATION_APPROVE_PATH, PARTNERS_ADMIN_APPLICATION_REJECT_PATH,
+    PARTNERS_ADMIN_APPLICATIONS_LIST_PATH, PARTNERS_ADMIN_CREATOR_GET_PATH,
+    PARTNERS_ADMIN_CREATOR_PUT_PATH, PARTNERS_ADMIN_PARTNERS_LIST_PATH,
+    PARTNERS_ADMIN_STREAMER_USERS_PATH, PARTNERS_ADMIN_SUBMISSION_DELETE_PATH,
+    PARTNERS_ADMIN_SUBMISSION_REJECT_PATH, PARTNERS_ADMIN_SUBMISSIONS_LIST_PATH,
+};
 use crate::player_reads::checkin::{run_checkin_perform, run_checkin_status, CheckinUserRequest};
 use crate::player_reads::guide::run_guide;
 use crate::player_reads::header::{
@@ -133,16 +150,22 @@ use crate::support::{
 };
 use crate::support_reads::{
     run_support_admin_get, run_support_admin_history, run_support_admin_list,
+    run_support_admin_status, run_support_admin_ticket_payload, run_support_admin_tickets_payload,
+    run_support_admin_user_history_payload,
     run_support_admin_stats, run_support_archive, run_support_attachment_referenced,
     run_support_get, run_support_list_mine, run_support_reopen, run_support_state,
     run_support_ticket_for_player, SupportAdminGetRequest, SupportAdminGetResponse,
     SupportAdminHistoryRequest, SupportAdminHistoryResponse, SupportAdminListRequest,
     SupportAdminListResponse, SupportAdminStatsRequest, SupportAdminStatsResponse,
+    SupportAdminStatusRequest, SupportAdminTicketPayloadRequest, SupportAdminTicketsPayloadRequest,
+    SupportAdminUserHistoryRequest,
     SupportAttachmentReferencedRequest, SupportAttachmentReferencedResponse, SupportGetRequest,
     SupportGetResponse, SupportListMineRequest, SupportListMineResponse, SupportStateRequest,
-    SupportStateResponse, SupportStatusChangeRequest, SupportStatusChangeResponse,
+    SupportStatusChangeRequest, SupportStatusChangeResponse,
     SupportTicketForPlayerRequest, SupportTicketForPlayerResponse, SUPPORT_ADMIN_GET_PATH,
     SUPPORT_ADMIN_HISTORY_PATH, SUPPORT_ADMIN_LIST_PATH, SUPPORT_ADMIN_STATS_PATH,
+    SUPPORT_ADMIN_STATUS_PATH, SUPPORT_ADMIN_TICKETS_PAYLOAD_PATH, SUPPORT_ADMIN_TICKET_PAYLOAD_PATH,
+    SUPPORT_ADMIN_USER_HISTORY_PATH,
     SUPPORT_ARCHIVE_PATH, SUPPORT_ATTACHMENT_REFERENCED_PATH, SUPPORT_GET_PATH,
     SUPPORT_LIST_MINE_PATH, SUPPORT_REOPEN_PATH, SUPPORT_STATE_PATH,
     SUPPORT_TICKET_FOR_PLAYER_PATH,
@@ -273,6 +296,10 @@ pub fn router(state: AppState) -> Router {
         .route(SUPPORT_ADMIN_GET_PATH, post(post_support_admin_get))
         .route(SUPPORT_ADMIN_HISTORY_PATH, post(post_support_admin_history))
         .route(SUPPORT_ADMIN_STATS_PATH, post(post_support_admin_stats))
+        .route(SUPPORT_ADMIN_TICKETS_PAYLOAD_PATH, post(post_support_admin_tickets_payload))
+        .route(SUPPORT_ADMIN_TICKET_PAYLOAD_PATH, post(post_support_admin_ticket_payload))
+        .route(SUPPORT_ADMIN_USER_HISTORY_PATH, post(post_support_admin_user_history))
+        .route(SUPPORT_ADMIN_STATUS_PATH, post(post_support_admin_status_toggle))
         .route(ANNOUNCEMENTS_CREATE_PATH, post(post_announcement_create))
         .route(ANNOUNCEMENTS_UPDATE_PATH, post(post_announcement_update))
         .route(ANNOUNCEMENTS_DELETE_PATH, post(post_announcement_delete))
@@ -290,6 +317,7 @@ pub fn router(state: AppState) -> Router {
             post(post_announcement_admin_list),
         )
         .route(CALCULATOR_SNAPSHOT_PATH, post(post_calculator_snapshot))
+        .route(CALCULATOR_AI_ANALYZE_PATH, post(post_calculator_ai_analyze))
         .route(CHECKIN_STATUS_PATH, post(post_checkin_status))
         .route(CHECKIN_PERFORM_PATH, post(post_checkin_perform))
         .route(QUESTS_STATE_PATH, post(post_quests_state))
@@ -356,6 +384,54 @@ pub fn router(state: AppState) -> Router {
         .route(PARTNERS_SUBMIT_PATH, post(post_partners_submit))
         .route(PARTNERS_APPLY_PATH, post(post_partners_apply))
         .route(PARTNERS_PROFILE_PATH, post(post_partners_profile))
+        .route(
+            PARTNERS_ADMIN_APPLICATIONS_LIST_PATH,
+            post(post_partners_admin_applications_list),
+        )
+        .route(
+            PARTNERS_ADMIN_APPLICATION_APPROVE_PATH,
+            post(post_partners_admin_application_approve),
+        )
+        .route(
+            PARTNERS_ADMIN_APPLICATION_REJECT_PATH,
+            post(post_partners_admin_application_reject),
+        )
+        .route(
+            PARTNERS_ADMIN_PARTNERS_LIST_PATH,
+            post(post_partners_admin_partners_list),
+        )
+        .route(
+            PARTNERS_ADMIN_STREAMER_USERS_PATH,
+            post(post_partners_admin_streamer_users),
+        )
+        .route(
+            PARTNERS_ADMIN_ALLOWLIST_ADD_PATH,
+            post(post_partners_admin_allowlist_add),
+        )
+        .route(
+            PARTNERS_ADMIN_ALLOWLIST_REMOVE_PATH,
+            post(post_partners_admin_allowlist_remove),
+        )
+        .route(
+            PARTNERS_ADMIN_SUBMISSIONS_LIST_PATH,
+            post(post_partners_admin_submissions_list),
+        )
+        .route(
+            PARTNERS_ADMIN_SUBMISSION_REJECT_PATH,
+            post(post_partners_admin_submission_reject),
+        )
+        .route(
+            PARTNERS_ADMIN_SUBMISSION_DELETE_PATH,
+            post(post_partners_admin_submission_delete),
+        )
+        .route(
+            PARTNERS_ADMIN_CREATOR_GET_PATH,
+            post(post_partners_admin_creator_get),
+        )
+        .route(
+            PARTNERS_ADMIN_CREATOR_PUT_PATH,
+            post(post_partners_admin_creator_put),
+        )
         .route(GUIDE_PATH, post(post_guide))
         .route(ROADMAP_PATH, post(post_roadmap))
         .route(TRANSPARENCY_PATH, post(post_transparency))
@@ -481,6 +557,89 @@ async fn post_partners_profile(
     Json(body): Json<PartnersProfileRequest>,
 ) -> impl axum::response::IntoResponse {
     match run_profile_update(&state.pool, body).await {
+        Ok((status, v)) => (partners_status(status), Json(v)).into_response(),
+        Err(e) => (partners_status(e.http_status), Json(e.body)).into_response(),
+    }
+}
+
+macro_rules! partners_admin_handler {
+    ($name:ident, $req:ty, $run:ident) => {
+        async fn $name(
+            State(state): State<Arc<AppState>>,
+            Json(body): Json<$req>,
+        ) -> impl axum::response::IntoResponse {
+            match $run(&state.pool, body).await {
+                Ok((status, v)) => (partners_status(status), Json(v)).into_response(),
+                Err(e) => (partners_status(e.http_status), Json(e.body)).into_response(),
+            }
+        }
+    };
+}
+
+partners_admin_handler!(
+    post_partners_admin_applications_list,
+    PartnersAdminListRequest,
+    run_admin_applications_list
+);
+partners_admin_handler!(
+    post_partners_admin_application_approve,
+    PartnersAdminIdActionRequest,
+    run_admin_application_approve
+);
+partners_admin_handler!(
+    post_partners_admin_application_reject,
+    PartnersAdminIdActionRequest,
+    run_admin_application_reject
+);
+partners_admin_handler!(
+    post_partners_admin_allowlist_add,
+    PartnersAdminAllowlistAddRequest,
+    run_admin_allowlist_add
+);
+partners_admin_handler!(
+    post_partners_admin_allowlist_remove,
+    PartnersAdminUserIdRequest,
+    run_admin_allowlist_remove
+);
+partners_admin_handler!(
+    post_partners_admin_submissions_list,
+    PartnersAdminListRequest,
+    run_admin_submissions_list
+);
+partners_admin_handler!(
+    post_partners_admin_submission_reject,
+    PartnersAdminIdActionRequest,
+    run_admin_submission_reject
+);
+partners_admin_handler!(
+    post_partners_admin_submission_delete,
+    PartnersAdminIdRequest,
+    run_admin_submission_delete
+);
+partners_admin_handler!(
+    post_partners_admin_creator_get,
+    PartnersAdminUserIdRequest,
+    run_admin_creator_get
+);
+partners_admin_handler!(
+    post_partners_admin_creator_put,
+    PartnersAdminCreatorPutRequest,
+    run_admin_creator_put
+);
+
+async fn post_partners_admin_partners_list(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match run_admin_partners_list(&state.pool).await {
+        Ok((status, v)) => (partners_status(status), Json(v)).into_response(),
+        Err(e) => (partners_status(e.http_status), Json(e.body)).into_response(),
+    }
+}
+
+async fn post_partners_admin_streamer_users(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match run_admin_streamer_room_users(&state.pool).await {
         Ok((status, v)) => (partners_status(status), Json(v)).into_response(),
         Err(e) => (partners_status(e.http_status), Json(e.body)).into_response(),
     }
@@ -1227,6 +1386,59 @@ async fn post_support_reply(
     }
 }
 
+async fn post_support_admin_tickets_payload(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SupportAdminTicketsPayloadRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    match run_support_admin_tickets_payload(&state.pool, body).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => support_read_err_json(e),
+    }
+}
+
+async fn post_support_admin_ticket_payload(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SupportAdminTicketPayloadRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    match run_support_admin_ticket_payload(&state.pool, body).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => support_read_err_json(e),
+    }
+}
+
+async fn post_support_admin_user_history(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SupportAdminUserHistoryRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    match run_support_admin_user_history_payload(&state.pool, body).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => support_read_err_json(e),
+    }
+}
+
+async fn post_support_admin_status_toggle(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SupportAdminStatusRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    match run_support_admin_status(&state.pool, body).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => support_read_err_json(e),
+    }
+}
+
+fn support_read_err_json(
+    e: crate::support_reads::SupportReadError,
+) -> (StatusCode, Json<serde_json::Value>) {
+    let status = status_from_u16(e.http_status);
+    if status.is_server_error() {
+        warn!(err = %e.message, "support admin payload failed");
+    }
+    (
+        status,
+        Json(serde_json::json!({ "ok": false, "error": e.message, "code": e.code })),
+    )
+}
+
 async fn post_support_admin_reply(
     State(state): State<Arc<AppState>>,
     Json(body): Json<SupportAdminReplyRequest>,
@@ -1278,15 +1490,22 @@ async fn post_support_get(
 async fn post_support_state(
     State(state): State<Arc<AppState>>,
     Json(body): Json<SupportStateRequest>,
-) -> (StatusCode, Json<SupportStateResponse>) {
+) -> (StatusCode, Json<serde_json::Value>) {
     match run_support_state(&state.pool, body).await {
-        Ok(out) => (StatusCode::OK, Json(out)),
+        Ok(v) => (StatusCode::OK, Json(v)),
         Err(e) => {
             let status = status_from_u16(e.http_status);
             if status.is_server_error() {
                 warn!(err = %e.message, "support state failed");
             }
-            (status, Json(SupportStateResponse::from_err(e)))
+            (
+                status,
+                Json(serde_json::json!({
+                    "ok": false,
+                    "error": e.message,
+                    "code": e.code,
+                })),
+            )
         }
     }
 }
@@ -1866,6 +2085,24 @@ async fn post_calculator_snapshot(
                 ),
             )
         }
+    }
+}
+
+async fn post_calculator_ai_analyze(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<CalculatorAiAnalyzeRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    match run_calculator_ai_analyze(
+        &state.pool,
+        &state.http,
+        &state.cfg,
+        body.user_id,
+        body.scope.as_deref(),
+    )
+    .await
+    {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => (status_from_u16(e.http_status), Json(e.to_body())),
     }
 }
 

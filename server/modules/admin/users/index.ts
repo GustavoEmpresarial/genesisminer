@@ -2,9 +2,9 @@ export {
   registerAdminUsersModuleRoutes,
   type AdminUsersModuleDeps
 } from './controllers/users.controller.js';
-export { listAdminUsers, type AdminUsersListPayload, type AdminListedUser } from './services/list.js';
-export { updateAdminUser, type AdminUserUpdateResult, type UpdateAdminUserInput } from './services/update.js';
-export { deleteAdminUserByEmail, parseAdminUserPathEmail } from './services/delete.js';
+// list / update / delete of `/api/users`, `PUT /api/user`, `DELETE /api/user/:email`
+// are served by genesis-api → mining-worker `/v1/users/admin-*`; the Node services
+// were reference-only and have been removed.
 export {
   loadAdminUserWalletHistory,
   parseAdminWalletHistoryUserId,

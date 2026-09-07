@@ -294,6 +294,224 @@ pub async fn run_upsert_loot_boxes(
     Ok(json!({ "warnings": warnings }))
 }
 
+const EMAIL_MAX: usize = 254;
+
+/// Node `deleteLootBoxAdmin` — delete a box + all known references (cascade).
+/// `broken_only` → refuse (409) unless the box has no item with probability > 0.
+pub async fn run_delete_loot_box(
+    pool: &Pool,
+    box_id: &str,
+    broken_only: bool,
+) -> Result<Value, PlayerReadError> {
+    let box_id = box_id.trim().to_string();
+    if box_id.is_empty() {
+        return Err(PlayerReadError::bad("ID da caixa inválido."));
+    }
+
+    let mut client = pool.get().await?;
+    let tx = client.transaction().await?;
+    set_tx_timeout(&tx).await?;
+
+    let exists = tx
+        .query("SELECT name FROM loot_boxes WHERE id = $1", &[&box_id])
+        .await?;
+    if exists.is_empty() {
+        return Err(PlayerReadError::not_found("Caixa não encontrada."));
+    }
+
+    if broken_only {
+        let br = tx
+            .query_one(
+                "SELECT COUNT(*)::int8 AS n,
+                        COALESCE(SUM(GREATEST(0, probability::double precision)), 0)::float8 AS w
+                   FROM loot_box_items WHERE box_id = $1",
+                &[&box_id],
+            )
+            .await?;
+        let n: i64 = br.get("n");
+        let w: f64 = br.get("w");
+        if !(n == 0 || w <= 0.0) {
+            return Err(PlayerReadError::conflict(
+                "A caixa ainda tem itens com probabilidade > 0. Remova brokenOnly=1 para apagar à força, ou zere as probabilidades no editor.",
+            ));
+        }
+    }
+
+    let loot_box_items_removed = tx
+        .execute("DELETE FROM loot_box_items WHERE box_id = $1", &[&box_id])
+        .await?;
+    let unopened_boxes_rows = tx
+        .execute("DELETE FROM unopened_boxes WHERE box_id = $1", &[&box_id])
+        .await?;
+    let player_claimed_rows = tx
+        .execute(
+            "DELETE FROM player_claimed_boxes WHERE box_id = $1",
+            &[&box_id],
+        )
+        .await?;
+    let admin_upgrade_boxes_rows = tx
+        .execute(
+            "DELETE FROM admin_upgrade_boxes WHERE box_id = $1",
+            &[&box_id],
+        )
+        .await?;
+    let promo_codes_cleared = tx
+        .execute(
+            "UPDATE promo_codes SET loot_box_id = NULL WHERE loot_box_id = $1",
+            &[&box_id],
+        )
+        .await?;
+    let referral_models_sender_cleared = tx
+        .execute(
+            "UPDATE referral_models SET sender_loot_box_id = NULL WHERE sender_loot_box_id = $1",
+            &[&box_id],
+        )
+        .await?;
+    let referral_models_receiver_cleared = tx
+        .execute(
+            "UPDATE referral_models SET receiver_loot_box_id = NULL WHERE receiver_loot_box_id = $1",
+            &[&box_id],
+        )
+        .await?;
+    let loot_boxes_removed = tx
+        .execute("DELETE FROM loot_boxes WHERE id = $1", &[&box_id])
+        .await?;
+
+    tx.commit().await?;
+
+    Ok(json!({
+        "ok": true,
+        "summary": {
+            "lootBoxItemsRemoved": loot_box_items_removed,
+            "unopenedBoxesRows": unopened_boxes_rows,
+            "playerClaimedRows": player_claimed_rows,
+            "adminUpgradeBoxesRows": admin_upgrade_boxes_rows,
+            "promoCodesCleared": promo_codes_cleared,
+            "referralModelsSenderCleared": referral_models_sender_cleared,
+            "referralModelsReceiverCleared": referral_models_receiver_cleared,
+            "lootBoxesRemoved": loot_boxes_removed,
+        }
+    }))
+}
+
+/// Node `listLootBoxRedemptions` — promo-code redemptions bound to a box, newest first.
+pub async fn run_loot_box_redemptions(
+    pool: &Pool,
+    box_id: &str,
+) -> Result<Value, PlayerReadError> {
+    let box_id = box_id.trim().to_string();
+    if box_id.is_empty() {
+        return Err(PlayerReadError::bad("ID da caixa inválido."));
+    }
+    let client = pool.get().await?;
+    let rows = client
+        .query(
+            "SELECT r.code,
+                    pc.type AS ptype,
+                    COALESCE(NULLIF(TRIM(u.username), ''), NULLIF(TRIM(u.email), ''),
+                             'user_' || r.user_id::text) AS username,
+                    r.redeemed_at
+               FROM promo_code_redemptions r
+               JOIN promo_codes pc ON pc.code = r.code
+               LEFT JOIN users u ON u.id = r.user_id
+              WHERE pc.loot_box_id = $1
+              ORDER BY r.redeemed_at DESC",
+            &[&box_id],
+        )
+        .await?;
+    let out: Vec<Value> = rows
+        .iter()
+        .map(|r| {
+            json!({
+                "code": r.get::<_, String>("code"),
+                "type": r.get::<_, Option<String>>("ptype").unwrap_or_default(),
+                "username": r.get::<_, String>("username"),
+                "redeemedAt": r.get::<_, Option<i64>>("redeemed_at").unwrap_or(0),
+            })
+        })
+        .collect();
+    Ok(json!(out))
+}
+
+async fn user_id_by_email_ci<C: deadpool_postgres::GenericClient>(
+    client: &C,
+    email: &str,
+) -> Result<i32, PlayerReadError> {
+    let rows = client
+        .query(
+            "SELECT id FROM users WHERE lower(email) = lower($1) ORDER BY id ASC LIMIT 1",
+            &[&email],
+        )
+        .await?;
+    match rows.first() {
+        Some(r) => Ok(r.get::<_, i32>("id")),
+        None => Err(PlayerReadError::not_found("User not found")),
+    }
+}
+
+/// Node `listUserUnopenedBoxes` — `{ boxes: [{ box_id, qty }] }` for the email's owner.
+pub async fn run_admin_user_boxes(pool: &Pool, email: &str) -> Result<Value, PlayerReadError> {
+    let email = email.trim();
+    if email.is_empty() || email.len() > EMAIL_MAX {
+        return Err(PlayerReadError::bad("Email required"));
+    }
+    let client = pool.get().await?;
+    let uid = user_id_by_email_ci(&client, email).await?;
+    let rows = client
+        .query(
+            "SELECT box_id, qty FROM unopened_boxes WHERE user_id = $1 ORDER BY qty DESC",
+            &[&uid],
+        )
+        .await?;
+    let boxes: Vec<Value> = rows
+        .iter()
+        .map(|r| {
+            json!({
+                "box_id": r.get::<_, String>("box_id"),
+                "qty": r.get::<_, Option<i32>>("qty").unwrap_or(0),
+            })
+        })
+        .collect();
+    Ok(json!({ "boxes": boxes }))
+}
+
+/// Node `deleteUserUnopenedBox` — drop one `unopened_boxes` row, return removed qty.
+pub async fn run_delete_user_box(
+    pool: &Pool,
+    email: &str,
+    box_id: &str,
+) -> Result<Value, PlayerReadError> {
+    let email = email.trim();
+    let box_id = box_id.trim();
+    if email.is_empty() || email.len() > EMAIL_MAX || box_id.is_empty() {
+        return Err(PlayerReadError::bad("Email and boxId required"));
+    }
+    let mut client = pool.get().await?;
+    let tx = client.transaction().await?;
+    let uid = user_id_by_email_ci(&tx, email).await?;
+    let existing = tx
+        .query(
+            "SELECT qty FROM unopened_boxes WHERE user_id = $1 AND box_id = $2",
+            &[&uid, &box_id],
+        )
+        .await?;
+    let Some(row) = existing.first() else {
+        return Err(PlayerReadError::not_found("Box not found in user inventory"));
+    };
+    let deleted_qty: i32 = row.get::<_, Option<i32>>("qty").unwrap_or(0);
+    tx.execute(
+        "DELETE FROM unopened_boxes WHERE user_id = $1 AND box_id = $2",
+        &[&uid, &box_id],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(json!({
+        "ok": true,
+        "message": format!("Deleted {deleted_qty}x box {box_id} from {email}"),
+        "deletedQty": deleted_qty,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

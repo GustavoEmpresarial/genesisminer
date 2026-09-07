@@ -1,20 +1,16 @@
 /**
- * Entrypoint do processo: HTTP server + Express (`app.ts`) +
- * jobs de fundo no mesmo processo (yield, backup SQL, TTL de chat, ranking).
+ * Entrypoint do processo: HTTP server + Express (`app.ts`).
  *
  * Socket.IO vive em genesis-api (Rust / socketioxide). Este processo Express
- * serve admin (+ leftovers) e schedulers.
- *
- * Um único contentor `app` serve API e scheduler. Duplicação entre réplicas
- * é evitada por locks Redis por job (`core/redis/lock.ts` + `core/ops/job-runner.ts`).
- * Kill-switch: `SCHEDULER_ENABLED=0`.
+ * serve apenas admin HTTP. Todos os jobs de fundo (yield, backup SQL, TTL de
+ * chat, ranking, expurgo de idempotência, payout de gerente) são propriedade
+ * do `genesis-mining-worker` (Rust). Kafka mantém-se (`core/kafka`).
  */
 import './env.js';
 import { createServer } from 'node:http';
 import { buildApp } from './app.js';
 import { connectRedis } from '../core/redis/client.js';
 import { connectPrisma } from '../core/database/prisma.js';
-import { startBackgroundSchedulers, type StopSchedulers } from './schedulers.js';
 import { startKafkaIfEnabled, stopKafka } from '../core/kafka/index.js';
 import {
   installProcessErrorHandlers,
@@ -37,15 +33,13 @@ export async function startServer(): Promise<ReturnType<typeof createServer>> {
   await connectPrisma();
   await connectRedis();
 
-  const { app, deps } = buildApp();
+  const { app } = buildApp();
   const httpServer = createServer(app);
 
-  const stopSchedulers: StopSchedulers = startBackgroundSchedulers({ uploadsDir: deps.uploadsDir });
   await startKafkaIfEnabled();
 
   const shutdownDeps = {
     httpServer,
-    stopSchedulers,
     stopKafkaFn: stopKafka
   };
   installSignalHandlers(shutdownDeps);

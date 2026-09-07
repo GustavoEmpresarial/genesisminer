@@ -68,7 +68,7 @@ const UPSERT_COIN_SQL: &str =
      ON CONFLICT (user_id, coin_id) DO UPDATE SET amount = coin_balances.amount + EXCLUDED.amount";
 const INSERT_OPENING_SQL: &str = "INSERT INTO lucky_box_openings
      (id, user_id, box_id, rewards_json, gained_usdc, created_at, idempotency_key)
-     VALUES ($1, $2, $3, $4::jsonb, $5::numeric, $6, $7)
+     VALUES ($1, $2, $3, $4, $5::float8::numeric, $6, $7)
      RETURNING id";
 
 #[derive(Debug, Clone)]
@@ -506,7 +506,6 @@ async fn open_on_tx<C: GenericClient>(
     let opening_uuid = Uuid::new_v4();
     let opening_id = opening_uuid.to_string();
     let rewards_json = rewards_to_json(&rewards);
-    let rewards_str = serde_json::to_string(&rewards_json).map_err(LuckyBoxError::transport)?;
     let gained = if rolled.gained_usdc.is_finite() {
         rolled.gained_usdc
     } else {
@@ -519,7 +518,7 @@ async fn open_on_tx<C: GenericClient>(
                 &opening_uuid,
                 &uid_pg,
                 &box_id,
-                &rewards_str,
+                &rewards_json,
                 &gained,
                 &now,
                 &idem_key,

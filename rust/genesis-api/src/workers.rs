@@ -78,6 +78,30 @@ pub async fn post_mining(
     .await
 }
 
+/// Like [`post_mining`] but with a caller-supplied HTTP budget — for slow
+/// upstreams such as the calculator LLM analysis.
+pub async fn post_mining_slow(
+    cfg: &ApiConfig,
+    http: &reqwest::Client,
+    path: &str,
+    body: &Value,
+    timeout_ms: u64,
+) -> Result<WorkerJson, WorkerCallError> {
+    let base = cfg
+        .mining_worker_url
+        .as_deref()
+        .ok_or(WorkerCallError::Unset(MINING_WORKER_UNSET))?;
+    post_worker_timeout(
+        http,
+        base,
+        path,
+        body,
+        cfg.mining_worker_auth_token.as_deref(),
+        timeout_ms,
+    )
+    .await
+}
+
 pub async fn post_hardware(
     cfg: &ApiConfig,
     http: &reqwest::Client,
@@ -205,12 +229,29 @@ async fn post_worker(
     body: &Value,
     token: Option<&str>,
 ) -> Result<WorkerJson, WorkerCallError> {
+    post_worker_timeout(
+        http,
+        base,
+        path,
+        body,
+        token,
+        MINING_WORKER_PROGRESS_TIMEOUT_MS,
+    )
+    .await
+}
+
+async fn post_worker_timeout(
+    http: &reqwest::Client,
+    base: &str,
+    path: &str,
+    body: &Value,
+    token: Option<&str>,
+    timeout_ms: u64,
+) -> Result<WorkerJson, WorkerCallError> {
     let url = format!("{base}{path}");
     let mut req = http
         .post(&url)
-        .timeout(std::time::Duration::from_millis(
-            MINING_WORKER_PROGRESS_TIMEOUT_MS,
-        ))
+        .timeout(std::time::Duration::from_millis(timeout_ms))
         .header("content-type", "application/json")
         .header("accept", "application/json")
         .json(body);

@@ -20,10 +20,7 @@ export * from './services/asic-lease.js';
 export * from './services/global-stats-store.js';
 export * from './services/nft-room-mining.js';
 export {
-  startMiningYieldCron,
-  updateMiningYields,
   resetMiningYieldCronStateForTests,
   MINING_YIELD_HISTORY_INSERT_SQL
 } from './services/yield-cron.js';
-export type { StartMiningYieldCronOptions } from './services/yield-cron.js';
 export { invalidatePlayerGameHeaderCache } from './services/player-game-header-cache.js';

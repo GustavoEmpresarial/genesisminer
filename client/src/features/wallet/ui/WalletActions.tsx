@@ -209,7 +209,10 @@ export const WalletActions: React.FC<WalletActionsProps> = ({
       });
       return;
     }
-    setCoinAmount(bal.toFixed(8).replace(/0+$/, '').replace(/\.$/, ''));
+    // Floor to 8 decimals — `toFixed` rounds, which can exceed the real balance
+    // and make the backend reject the "withdraw all" as insufficient.
+    const floored = Math.floor(bal * 1e8) / 1e8;
+    setCoinAmount(floored.toFixed(8).replace(/0+$/, '').replace(/\.$/, ''));
   };
 
   /** Passo 1: abrir modal de confirmação (não chama backend ainda). */

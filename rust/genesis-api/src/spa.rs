@@ -137,6 +137,16 @@ pub async fn serve_spa(
     if path == "/" || path == "/index.html" {
         return send_index(&state).await;
     }
+    // Static files from `client/public/` land at the dist root without the
+    // `/assets/` prefix (`/transparency-art/*.png`, `/genesis-miner-logo.png`,
+    // `/landing/*`, `/favicon.ico`, …). Serve the real file when it exists;
+    // otherwise fall through to the SPA shell for client-side routes.
+    if let Some(rel) = safe_rel(path) {
+        let root = PathBuf::from(&state.cfg.client_dist);
+        if let Some(file) = file_under(&root, &rel).await {
+            return send_file(&file, Some("public, max-age=3600")).await;
+        }
+    }
     // Client routes: index.html if the build exists; hashed miss already 404 above.
     send_index(&state).await
 }

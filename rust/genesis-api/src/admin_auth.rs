@@ -199,7 +199,10 @@ pub fn resolve_admin_route_requirement(method: &Method, raw_path: &str) -> Admin
         return Super;
     }
 
-    if p.starts_with("/api/admin/partner-youtube") || p.starts_with("/api/admin/partner-videos") {
+    if p.starts_with("/api/admin/partner-youtube")
+        || p.starts_with("/api/admin/partner-videos")
+        || p.starts_with("/api/admin/streamer-room-users")
+    {
         return Tab(TAB_PARTNERS);
     }
     if p == "/api/admin/upload-ad" {

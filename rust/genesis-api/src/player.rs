@@ -21,8 +21,9 @@ use crate::facade::{
 };
 use crate::owned::GAME_STATE_ME_PATH;
 use crate::rate_limit::{
-    enforce, profile_rate_key, PROFILE_IDENTITY_LIMIT_MAX, PROFILE_PASSWORD_LIMIT_MAX,
-    PROFILE_RATE_LIMIT_WINDOW_MS, SCOPE_PROFILE_IDENTITY, SCOPE_PROFILE_PASSWORD,
+    enforce, profile_rate_key, scoped_actor_key, PARTNER_GAMES_WINDOW_MS,
+    PROFILE_IDENTITY_LIMIT_MAX, PROFILE_PASSWORD_LIMIT_MAX, PROFILE_RATE_LIMIT_WINDOW_MS,
+    SCOPE_PROFILE_IDENTITY, SCOPE_PROFILE_PASSWORD,
 };
 use crate::session::{json_status, require_player};
 use crate::workers::{get_mining, post_hardware, post_mining_multipart, WorkerJson};
@@ -52,6 +53,11 @@ const ANNOUNCEMENTS_PENDING_PATH: &str = "/v1/announcements/pending";
 const ANNOUNCEMENTS_MINI_BLOG_PATH: &str = "/v1/announcements/mini-blog";
 const ANNOUNCEMENTS_MARK_READ_PATH: &str = "/v1/announcements/mark-read";
 const CALCULATOR_SNAPSHOT_PATH: &str = "/v1/calculator/snapshot";
+const CALCULATOR_AI_ANALYZE_PATH: &str = "/v1/calculator/ai-analyze";
+/// Calculator AI analysis: per-user fixed window (LLM calls are expensive).
+const CALCULATOR_AI_RATE_MAX: u64 = 6;
+const CALCULATOR_AI_RATE_SCOPE: &str = "calculator_ai";
+const CALCULATOR_AI_RATE_MSG: &str = "Demasiados pedidos de IA. Aguarda um minuto.";
 const RANKING_PUBLIC_PATH: &str = "/v1/ranking/public";
 const RANKING_ME_PATH: &str = "/v1/ranking/me";
 const MARKET_STATE_PATH: &str = "/v1/market/state";
@@ -117,7 +123,7 @@ const ORIGINAL_NAME_MAX_LEN: usize = 200;
 const MIME_MAX_LEN: usize = 120;
 /// Multipart envelope slack — same formula as mining-worker `UPLOAD_HTTP_BODY_LIMIT_BYTES`.
 const UPLOAD_HTTP_BODY_LIMIT_BYTES: usize = SUPPORT_UPLOAD_MAX_BYTES + CHAT_AUDIO_MAX_BYTES;
-const SUPPORT_MULTIPART_BODY_LIMIT_BYTES: usize =
+pub(crate) const SUPPORT_MULTIPART_BODY_LIMIT_BYTES: usize =
     SUPPORT_UPLOAD_MAX_FILES * SUPPORT_UPLOAD_MAX_BYTES + CHAT_AUDIO_MAX_BYTES;
 /// Node `MIN_DEFAULT` / `FEE_DEFAULT` for exchange GET.
 const EXCHANGE_MIN_DEFAULT: f64 = 0.1;
@@ -448,6 +454,7 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/api/ranking/public", get(ranking_public))
         .route("/api/ranking/me", get(ranking_me))
         .route("/api/calculator/me", get(calculator_me))
+        .route("/api/calculator/ai-analyze", post(calculator_ai_analyze))
         .route("/api/black-market/state", get(bm_state))
         .route("/api/black-market/listings", get(bm_listings))
         .route("/api/black-market/my-listings", get(bm_my_listings))
@@ -1914,7 +1921,7 @@ async fn chat_delete(
     .await
 }
 
-fn is_multipart(headers: &HeaderMap) -> bool {
+pub(crate) fn is_multipart(headers: &HeaderMap) -> bool {
     headers
         .get(axum::http::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
@@ -2286,15 +2293,16 @@ async fn upload_support_file(
     }))
 }
 
-async fn parse_support_multipart(
+pub(crate) async fn parse_support_multipart(
     state: &AppState,
     uid: i64,
     name_prefix: &str,
     mut multipart: Multipart,
-) -> Result<(String, String, Option<String>, Vec<Value>), axum::response::Response> {
+) -> Result<(String, String, Option<String>, Option<String>, Vec<Value>), axum::response::Response> {
     let mut subject = String::new();
     let mut message = String::new();
     let mut idempotency_key: Option<String> = None;
+    let mut ticket_id: Option<String> = None;
     let mut files: Vec<SupportFilePart> = Vec::new();
     while let Some(field) = match multipart.next_field().await {
         Ok(f) => f,
@@ -2348,6 +2356,14 @@ async fn parse_support_multipart(
                     }
                 }
             }
+            "ticketId" => {
+                if let Ok(t) = field.text().await {
+                    let t = t.trim().to_string();
+                    if !t.is_empty() {
+                        ticket_id = Some(t);
+                    }
+                }
+            }
             _ => {
                 let _ = field.bytes().await;
             }
@@ -2357,7 +2373,7 @@ async fn parse_support_multipart(
     for file in files {
         attachments.push(upload_support_file(state, uid, name_prefix, file).await?);
     }
-    Ok((subject, message, idempotency_key, attachments))
+    Ok((subject, message, idempotency_key, ticket_id, attachments))
 }
 
 async fn support_submit(
@@ -2376,7 +2392,7 @@ async fn support_submit(
                 return json_status(400, json!({ "error": e.to_string(), "code": "UPLOAD" }));
             }
         };
-        let (subject, message, idem, attachments) =
+        let (subject, message, idem, _ticket_id, attachments) =
             match parse_support_multipart(&state, uid, "support", multipart).await {
                 Ok(v) => v,
                 Err(e) => return e,
@@ -2427,7 +2443,7 @@ async fn support_reply(
                 return json_status(400, json!({ "error": e.to_string(), "code": "UPLOAD" }));
             }
         };
-        let (_subject, message, idem, attachments) =
+        let (_subject, message, idem, _ticket_id, attachments) =
             match parse_support_multipart(&state, uid, "support-reply", multipart).await {
                 Ok(v) => v,
                 Err(e) => return e,
@@ -2632,6 +2648,57 @@ async fn calculator_me(
         body["scope"] = json!(scope);
     }
     forward_mining(&state, CALCULATOR_SNAPSHOT_PATH, body).await
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct AiAnalyzeBody {
+    #[serde(default)]
+    scope: Option<String>,
+}
+
+async fn calculator_ai_analyze(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Option<Json<AiAnalyzeBody>>,
+) -> axum::response::Response {
+    let uid = match require_player(&state, &headers).await {
+        Ok(u) => u,
+        Err(e) => return e,
+    };
+    let ip = get_client_ip(&state.cfg, &headers, None);
+    let key = scoped_actor_key(CALCULATOR_AI_RATE_SCOPE, Some(uid), &ip);
+    if let Some(resp) = enforce(
+        &state,
+        &key,
+        CALCULATOR_AI_RATE_MAX,
+        PARTNER_GAMES_WINDOW_MS,
+        CALCULATOR_AI_RATE_MSG,
+    )
+    .await
+    {
+        return resp;
+    }
+    let mut fwd = json!({ "userId": uid });
+    if let Some(Json(b)) = body {
+        if let Some(scope) = b.scope.filter(|s| !s.trim().is_empty()) {
+            fwd["scope"] = json!(scope);
+        }
+    }
+    match crate::workers::post_mining_slow(
+        &state.cfg,
+        &state.http,
+        CALCULATOR_AI_ANALYZE_PATH,
+        &fwd,
+        crate::config::CALCULATOR_AI_TIMEOUT_MS,
+    )
+    .await
+    {
+        Ok(r) => worker_to_response(r),
+        Err(e) => json_status(
+            crate::workers::worker_infra_status(&e),
+            crate::workers::worker_unavailable_body(&e),
+        ),
+    }
 }
 
 async fn bm_state(

@@ -20,6 +20,10 @@ pub mod season_passes;
 
 pub const ACCESS_LEVELS_REPLACE_PATH: &str = "/v1/catalog/access-levels/replace";
 pub const LOOT_BOXES_UPSERT_PATH: &str = "/v1/catalog/loot-boxes/upsert";
+pub const LOOT_BOXES_DELETE_PATH: &str = "/v1/catalog/loot-boxes/delete";
+pub const LOOT_BOX_REDEMPTIONS_PATH: &str = "/v1/lucky-boxes/admin/redemptions";
+pub const ADMIN_USER_BOXES_PATH: &str = "/v1/lucky-boxes/admin/user-boxes";
+pub const ADMIN_DELETE_USER_BOX_PATH: &str = "/v1/lucky-boxes/admin/delete-user-box";
 pub const MINING_COINS_UPSERT_PATH: &str = "/v1/catalog/mining-coins/upsert";
 pub const NEWS_UPSERT_PATH: &str = "/v1/catalog/news/upsert";
 pub const NEWS_DELETE_PATH: &str = "/v1/catalog/news/delete";

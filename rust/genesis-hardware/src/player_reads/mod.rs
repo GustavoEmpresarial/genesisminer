@@ -65,6 +65,8 @@ pub const HTTP_FORBIDDEN: u16 = 403;
 pub const HTTP_NOT_FOUND: u16 = 404;
 /// Node `HTTP_UNPROCESSABLE`.
 pub const HTTP_UNPROCESSABLE: u16 = 422;
+/// Node `HTTP_CONFLICT`.
+pub const HTTP_CONFLICT: u16 = 409;
 const HTTP_INTERNAL: u16 = 500;
 
 const _: () = assert!(HTTP_BAD_REQUEST == 400);
@@ -106,6 +108,13 @@ impl PlayerReadError {
             http_status: HTTP_UNPROCESSABLE,
             error: error.into(),
             code: None,
+        }
+    }
+    pub fn conflict(error: impl Into<String>) -> Self {
+        Self {
+            http_status: HTTP_CONFLICT,
+            error: error.into(),
+            code: Some("CONFLICT".into()),
         }
     }
     pub fn internal(error: impl Into<String>) -> Self {

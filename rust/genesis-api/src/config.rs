@@ -23,6 +23,10 @@ const _: () = assert!(SUPPORT_LOCK_TIMEOUT_MS == 45_000);
 /// Express reverse-proxy / websocket handshake — 60s named (`MS_PER_MINUTE`).
 pub const EXPRESS_PROXY_TIMEOUT_MS: u64 = MS_PER_MINUTE;
 
+/// Calculator "Analisar com IA" — genesis-api → worker budget must exceed the
+/// worker's own LLM call timeout (55s) plus snapshot build.
+pub const CALCULATOR_AI_TIMEOUT_MS: u64 = 90 * MS_PER_SECOND;
+
 /// Node `READINESS_DEFAULT_MS` — short probe.
 pub const READINESS_DEFAULT_MS: u64 = 2 * MS_PER_SECOND;
 

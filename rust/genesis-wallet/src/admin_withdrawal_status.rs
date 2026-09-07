@@ -5,6 +5,7 @@
 
 use deadpool_postgres::{GenericClient, Pool};
 use serde::Serialize;
+use serde_json::{json, Value};
 
 use crate::config::current_unix_ms;
 use crate::errors::WalletError;
@@ -24,6 +25,67 @@ const ERR_NOT_FOUND: &str = "Solicitação não encontrada";
 const ERR_ALREADY: &str = "Esta solicitação já foi processada";
 
 pub const ADMIN_WITHDRAWAL_STATUS_PATH: &str = "/v1/wallet/admin/withdrawals/status";
+pub const ADMIN_WITHDRAWALS_LIST_PATH: &str = "/v1/wallet/admin/withdrawals/list";
+
+/// Admin list — every `withdrawal_requests` row + username/email/coin symbol.
+/// Mirrors Node `listAdminWithdrawals` + `mapWithdrawalRequestRow` (newest first).
+pub async fn run_admin_withdrawals_list(pool: &Pool) -> Result<Value, WalletError> {
+    let client = pool.get().await.map_err(WalletError::transport)?;
+    let rows = client
+        .query(
+            "SELECT w.id::text AS id, w.user_id,
+                    COALESCE(u.username, '') AS username,
+                    COALESCE(u.email, '') AS email,
+                    w.coin_id, COALESCE(c.symbol, '') AS coin_symbol,
+                    w.amount_crypto::double precision AS amount_crypto,
+                    w.amount_usdc::double precision AS amount_usdc,
+                    COALESCE(w.fee_amount, 0)::double precision AS fee_amount,
+                    w.net_amount::double precision AS net_amount,
+                    COALESCE(w.wallet_address, '') AS wallet_address,
+                    COALESCE(w.status, '') AS status,
+                    w.tx_hash,
+                    w.created_at, w.processed_at
+               FROM withdrawal_requests w
+               JOIN users u ON w.user_id = u.id
+               JOIN mining_coins c ON w.coin_id = c.id
+              ORDER BY w.created_at DESC",
+            &[],
+        )
+        .await
+        .map_err(WalletError::transport)?;
+
+    let items: Vec<Value> = rows
+        .iter()
+        .map(|r| {
+            let amount_crypto: f64 = r.get::<_, Option<f64>>("amount_crypto").unwrap_or(0.0);
+            let fee: f64 = r.get::<_, Option<f64>>("fee_amount").unwrap_or(0.0);
+            let net_raw: f64 = r.get::<_, Option<f64>>("net_amount").unwrap_or(0.0);
+            let amount_usdc: f64 = r.get::<_, Option<f64>>("amount_usdc").unwrap_or(0.0);
+            let tx_hash: Option<String> = r.get("tx_hash");
+            let tx_hash = tx_hash
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            json!({
+                "id": r.get::<_, String>("id"),
+                "userId": r.get::<_, i32>("user_id"),
+                "username": r.get::<_, String>("username"),
+                "email": r.get::<_, String>("email"),
+                "coinId": r.get::<_, String>("coin_id"),
+                "coinSymbol": r.get::<_, String>("coin_symbol"),
+                "amountCrypto": amount_crypto,
+                "amountUsdc": amount_usdc,
+                "feeAmount": fee,
+                "netAmount": if net_raw > 0.0 { net_raw } else { amount_crypto - fee },
+                "walletAddress": r.get::<_, String>("wallet_address"),
+                "status": r.get::<_, String>("status"),
+                "txHash": tx_hash,
+                "createdAt": r.get::<_, Option<i64>>("created_at").unwrap_or(0),
+                "processedAt": r.get::<_, Option<i64>>("processed_at"),
+            })
+        })
+        .collect();
+    Ok(json!(items))
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

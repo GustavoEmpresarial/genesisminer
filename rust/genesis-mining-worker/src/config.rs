@@ -254,6 +254,10 @@ pub struct WorkerConfig {
     pub genesis_auth_url: Option<String>,
     /// Node `PARTNER_GAMES_MAINTENANCE` — `1`/`true` = hub in maintenance.
     pub partner_games_maintenance: bool,
+    /// `ANTHROPIC_API_KEY` — calculator "Analisar com IA". `None` = `AI_NOT_CONFIGURED`.
+    pub anthropic_api_key: Option<String>,
+    /// `CALCULATOR_AI_MODEL` — Anthropic model id for the calculator analysis.
+    pub calculator_ai_model: String,
 }
 
 impl WorkerConfig {
@@ -401,6 +405,15 @@ impl WorkerConfig {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
             partner_games_maintenance: partner_games_maintenance_from_env(),
+            anthropic_api_key: std::env::var("ANTHROPIC_API_KEY")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
+            calculator_ai_model: std::env::var("CALCULATOR_AI_MODEL")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "claude-sonnet-5".to_string()),
         })
     }
 

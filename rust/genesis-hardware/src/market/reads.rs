@@ -712,6 +712,51 @@ pub async fn state(pool: &Pool, user_id: i64) -> Result<StateDto, MarketError> {
     })
 }
 
+/// Node `listAdminMarketListings` — every `player_listings` row + seller name,
+/// ordered `status ASC, item_id ASC`. Bare array (no client-side filter).
+pub async fn admin_market_listings(pool: &Pool) -> Result<serde_json::Value, MarketError> {
+    let client = pool.get().await.map_err(MarketError::transport)?;
+    let rows = client
+        .query(
+            "SELECT l.id, l.user_id, l.item_id,
+                    l.price::float8 AS price,
+                    COALESCE(l.qty, 1) AS qty,
+                    l.status, l.expires_at, l.reserved_by, l.reserved_until,
+                    COALESCE(NULLIF(TRIM(u.username), ''), u.email::text, '') AS seller_name
+               FROM player_listings l
+               LEFT JOIN users u ON u.id = l.user_id
+              ORDER BY l.status ASC, l.item_id ASC",
+            &[],
+        )
+        .await
+        .map_err(MarketError::transport)?;
+
+    let out: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| {
+            let unit: f64 = r.get::<_, Option<f64>>("price").unwrap_or(0.0);
+            let qty: i32 = r.get::<_, Option<i32>>("qty").unwrap_or(1).max(1);
+            let mut dto = serde_json::json!({
+                "id": r.get::<_, String>("id"),
+                "sellerId": r.get::<_, i32>("user_id"),
+                "sellerName": r.get::<_, String>("seller_name"),
+                "itemId": r.get::<_, String>("item_id"),
+                "price": unit,
+                "qty": qty,
+                "lineTotal": unit * f64::from(qty),
+                "status": r.get::<_, Option<String>>("status"),
+                "expiresAt": r.get::<_, Option<i64>>("expires_at").unwrap_or(0),
+                "reservedBy": r.get::<_, Option<i32>>("reserved_by"),
+            });
+            if let Some(ru) = r.get::<_, Option<i64>>("reserved_until") {
+                dto["reservedUntil"] = serde_json::json!(ru);
+            }
+            dto
+        })
+        .collect();
+    Ok(serde_json::json!(out))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

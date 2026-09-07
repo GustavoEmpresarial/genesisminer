@@ -15,7 +15,8 @@ use super::cancel::cancel;
 use super::claim::{claim_all, claim_item, claim_proceeds};
 use super::errors::MarketError;
 use super::reads::{
-    custody, history, listings_page, my_listings, sellable_stock, state, ListingsQuery,
+    admin_market_listings, custody, history, listings_page, my_listings, sellable_stock, state,
+    ListingsQuery,
 };
 use super::reclaim::{reclaim_expired, ReclaimOpts};
 use super::reserve::{cancel_reserve, reserve};
@@ -210,6 +211,25 @@ pub fn market_paths() -> [&'static str; 16] {
         MARKET_HISTORY_PATH,
         MARKET_STATE_PATH,
     ]
+}
+
+/// `GET`-equivalent admin read — returns a bare array (matches Node `res.json(rows)`).
+pub async fn post_admin_listings(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    match admin_market_listings(&state.pool).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => {
+            let (sc, body) = market_fail(e);
+            (
+                sc,
+                Json(
+                    serde_json::to_value(&body.0)
+                        .unwrap_or_else(|_| serde_json::json!({ "ok": false })),
+                ),
+            )
+        }
+    }
 }
 
 pub async fn post_sell(

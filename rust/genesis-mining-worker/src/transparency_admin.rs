@@ -18,12 +18,38 @@ pub const TRANSPARENCY_ADMIN_DELETE_PATH: &str = "/v1/transparency/admin/delete"
 const TITLE_MAX: usize = 300;
 const BODY_MAX: usize = 8000;
 const LINK_MAX: usize = 2048;
-/// Node `TRANSPARENCY_CATEGORIES`.
-const CATEGORIES: [&str; 4] = ["pool", "expense", "investment", "other"];
+/// Node `TRANSPARENCY_CATEGORIES` — `trade` is the income/"lucro" side of the
+/// portal ledger (counts like `pool`); `expense` is the outflow/"prejuízo" side.
+const CATEGORIES: [&str; 5] = ["pool", "trade", "expense", "investment", "other"];
 
 const RETURNING: &str = "id, category, title, body,
         amount_usdc::double precision AS amount_usdc,
-        link_url, sort_order, created_at, updated_at";
+        link_url, period_ym, sort_order, created_at, updated_at";
+
+/// Month-ledger key `YYYY-MM` (01-12), else `NULL` (standing / "Geral").
+fn parse_period_ym(v: Option<&Value>) -> Option<String> {
+    let s = match v {
+        Some(Value::String(s)) => s.trim().to_string(),
+        _ => return None,
+    };
+    if s.is_empty() || s == "geral" || s == "standing" {
+        return None;
+    }
+    let b = s.as_bytes();
+    if b.len() == 7
+        && b[4] == b'-'
+        && b[..4].iter().all(u8::is_ascii_digit)
+        && b[5].is_ascii_digit()
+        && b[6].is_ascii_digit()
+    {
+        if let Ok(mm) = s[5..7].parse::<u32>() {
+            if (1..=12).contains(&mm) {
+                return Some(s);
+            }
+        }
+    }
+    None
+}
 
 fn bad(msg: &str) -> PlayerReadError {
     PlayerReadError::bad(msg)
@@ -91,6 +117,7 @@ struct WritePlan {
     body: Option<String>,
     amount_usdc: Option<f64>,
     link_url: Option<String>,
+    period_ym: Option<String>,
     sort_order: i32,
 }
 
@@ -135,6 +162,7 @@ fn plan_create(body: &Value) -> Result<WritePlan, PlayerReadError> {
         body: (!desc.is_empty()).then_some(desc),
         amount_usdc,
         link_url: (!link.is_empty()).then_some(link),
+        period_ym: parse_period_ym(b.get("periodYm")),
         sort_order: parse_sort_order(b.get("sortOrder")),
     })
 }
@@ -145,6 +173,7 @@ struct Existing {
     body: Option<String>,
     amount_usdc: Option<f64>,
     link_url: Option<String>,
+    period_ym: Option<String>,
     sort_order: i32,
 }
 
@@ -205,6 +234,12 @@ fn plan_update(body: &Value, existing: &Existing) -> Result<WritePlan, PlayerRea
         }
     };
 
+    let period_val = match b.get("periodYm") {
+        None => existing.period_ym.clone(),
+        Some(Value::Null) => None,
+        some => parse_period_ym(some),
+    };
+
     let sort_order = match b.get("sortOrder") {
         None => existing.sort_order,
         some => parse_sort_order(some),
@@ -216,6 +251,7 @@ fn plan_update(body: &Value, existing: &Existing) -> Result<WritePlan, PlayerRea
         body: body_val,
         amount_usdc: amount_val,
         link_url: link_val,
+        period_ym: period_val,
         sort_order,
     })
 }
@@ -231,8 +267,8 @@ pub async fn run_transparency_create(
         .query_one(
             &format!(
                 "INSERT INTO transparency_entries
-                    (category, title, body, amount_usdc, link_url, sort_order, created_at, updated_at)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+                    (category, title, body, amount_usdc, link_url, period_ym, sort_order, created_at, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
                  RETURNING {RETURNING}"
             ),
             &[
@@ -241,6 +277,7 @@ pub async fn run_transparency_create(
                 &plan.body,
                 &plan.amount_usdc,
                 &plan.link_url,
+                &plan.period_ym,
                 &plan.sort_order,
                 &now_ms,
             ],
@@ -263,7 +300,7 @@ pub async fn run_transparency_update(
         .query_opt(
             "SELECT category, title, body,
                     amount_usdc::double precision AS amount_usdc,
-                    link_url, sort_order
+                    link_url, period_ym, sort_order
                FROM transparency_entries WHERE id = $1",
             &[&id],
         )
@@ -275,6 +312,7 @@ pub async fn run_transparency_update(
         body: existing_row.get::<_, Option<String>>("body"),
         amount_usdc: existing_row.get::<_, Option<f64>>("amount_usdc"),
         link_url: existing_row.get::<_, Option<String>>("link_url"),
+        period_ym: existing_row.get::<_, Option<String>>("period_ym"),
         sort_order: existing_row.get::<_, i32>("sort_order"),
     };
     let plan = plan_update(body, &existing)?;
@@ -283,7 +321,7 @@ pub async fn run_transparency_update(
             &format!(
                 "UPDATE transparency_entries
                     SET category = $2, title = $3, body = $4, amount_usdc = $5,
-                        link_url = $6, sort_order = $7, updated_at = $8
+                        link_url = $6, period_ym = $7, sort_order = $8, updated_at = $9
                   WHERE id = $1
                   RETURNING {RETURNING}"
             ),
@@ -294,6 +332,7 @@ pub async fn run_transparency_update(
                 &plan.body,
                 &plan.amount_usdc,
                 &plan.link_url,
+                &plan.period_ym,
                 &plan.sort_order,
                 &now_ms,
             ],
@@ -339,6 +378,7 @@ mod tests {
             body: Some("b".into()),
             amount_usdc: Some(1.0),
             link_url: None,
+            period_ym: None,
             sort_order: 3,
         };
         let p = plan_update(&json!({ "title": "New" }), &existing).unwrap();
