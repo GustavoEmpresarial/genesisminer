@@ -46,17 +46,9 @@ export {
   getConflictingUserIdByUsername
 } from './services/signup-validation.js';
 export { validatePasswordStrengthPolicy, validateProfileNewPasswordStrength } from './services/password-policy.js';
-export {
-  getEmailVerificationFlags,
-  userRequiresEmailVerification,
-  buildSignedEmailVerificationToken,
-  parseSignedEmailVerificationToken,
-  markUserPendingEmailVerificationTx,
-  sendSignupVerificationEmail,
-  resendVerificationEmailIfPending,
-  verifyEmailTokenAndActivate
-} from './services/email-verification.js';
-export type { EmailVerificationFlags } from './services/email-verification.js';
+// Email verification + password reset + referral-on-verify are 100% Rust now
+// (genesis-auth: register.rs / email_verify.rs / password_reset.rs / mail.rs;
+// referral credit via genesis-wallet). The Node services were dead re-exports.
 export { sanitizeDeviceFingerprint, insertDeviceFingerprintLog } from './services/device-fingerprint.js';
 export { getUserIdByEmail, EmailPolicyError, IpLimitError } from './services/user-creation.js';
 export { createIsAdminMiddleware, loadAdminGateContext, isIpFromUser } from './services/admin-guard.js';
