@@ -20,7 +20,7 @@ use super::loot_boxes::{
     run_admin_user_boxes, run_delete_loot_box, run_delete_user_box, run_loot_box_redemptions,
     run_upsert_loot_boxes,
 };
-use super::mining_coins::run_upsert_mining_coins;
+use super::mining_coins::{run_economy_settings_coin, run_upsert_mining_coins};
 use super::news::{
     run_news_delete, run_news_expire_days_persist, run_news_fee_persist, run_news_upsert,
 };
@@ -169,6 +169,16 @@ pub async fn post_mining_coins_upsert(
     Json(body): Json<RawPayloadRequest>,
 ) -> CatalogWriteResponse {
     match run_upsert_mining_coins(&state.pool, &body.payload).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+pub async fn post_mining_coins_economy_settings(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<RawPayloadRequest>,
+) -> CatalogWriteResponse {
+    match run_economy_settings_coin(&state.pool, &body.payload).await {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
     }

@@ -203,8 +203,8 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
   if (p.startsWith('/api/admin/mining-runtime-summary')) return { kind: 'tab', tab: 'reports' };
   if (p.startsWith('/api/admin/etherscan/')) return { kind: 'tab', tab: 'reports' };
   if (p.startsWith('/api/admin/withdrawals')) return { kind: 'super' };
-  if (p === '/api/admin/economy-settings' && method.toUpperCase() === 'POST') return { kind: 'super' };
-  if (p === '/api/admin/mining-coins/sync-live-prices' && method.toUpperCase() === 'POST') return { kind: 'super' };
+  // /api/admin/economy-settings + /api/admin/mining-coins/sync-live-prices are
+  // 100% Rust (genesis-api admin_economy.rs); unmapped /api/admin/* → super anyway.
   if (p === '/api/economy-settings' && method.toUpperCase() === 'POST') return { kind: 'tab', tab: 'reports' };
 
   // /api/admin/{dashboard-stats,metrics,ranking-exclusion,users/map} are 100% Rust

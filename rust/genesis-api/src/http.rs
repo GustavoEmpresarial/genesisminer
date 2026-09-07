@@ -88,6 +88,7 @@ fn router_arc(state: Arc<AppState>) -> Router {
         .merge(crate::admin_lucky_boxes::router())
         .merge(crate::admin_announcements::router())
         .merge(crate::admin_dashboard::router())
+        .merge(crate::admin_economy::router())
         .merge(crate::admin_market::router())
         .merge(crate::admin_partners::router())
         .merge(crate::admin_quests::router())

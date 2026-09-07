@@ -6,6 +6,7 @@ mod admin_tabs;
 mod admin_lucky_boxes;
 mod admin_announcements;
 mod admin_dashboard;
+mod admin_economy;
 mod admin_market;
 mod admin_partners;
 mod admin_quests;

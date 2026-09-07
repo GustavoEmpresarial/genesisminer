@@ -13,7 +13,6 @@ import type { AppDeps } from './deps.js';
 
 import { registerAdminBackupModuleRoutes } from '../modules/admin/backup/index.js';
 import {
-  registerAdminCoinEconomyModuleRoutes,
   registerAdminEconomyStatsModuleRoutes
 } from '../modules/admin/economy-stats/index.js';
 import { registerAdminEtherscanModuleRoutes } from '../modules/admin/etherscan/index.js';
@@ -44,7 +43,6 @@ export function registerAllRoutes(app: Express, deps: AppDeps): void {
   const { authenticateToken, isAdmin, parseCookies, issueJwtAuthCookies } = deps;
 
   registerAdminBackupModuleRoutes(app, { isAdmin });
-  registerAdminCoinEconomyModuleRoutes(app, { isAdmin });
   registerAdminEconomyStatsModuleRoutes(app, { isAdmin });
   registerAdminEtherscanModuleRoutes(app, { isAdmin });
   registerAdminUsersModuleRoutes(app, {

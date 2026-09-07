@@ -25,6 +25,7 @@ pub const LOOT_BOX_REDEMPTIONS_PATH: &str = "/v1/lucky-boxes/admin/redemptions";
 pub const ADMIN_USER_BOXES_PATH: &str = "/v1/lucky-boxes/admin/user-boxes";
 pub const ADMIN_DELETE_USER_BOX_PATH: &str = "/v1/lucky-boxes/admin/delete-user-box";
 pub const MINING_COINS_UPSERT_PATH: &str = "/v1/catalog/mining-coins/upsert";
+pub const MINING_COINS_ECONOMY_SETTINGS_PATH: &str = "/v1/catalog/mining-coins/economy-settings";
 pub const NEWS_UPSERT_PATH: &str = "/v1/catalog/news/upsert";
 pub const NEWS_DELETE_PATH: &str = "/v1/catalog/news/delete";
 pub const NEWS_FEE_PERSIST_PATH: &str = "/v1/settings/news-fee/persist";

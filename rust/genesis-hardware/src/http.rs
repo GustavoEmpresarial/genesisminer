@@ -25,13 +25,13 @@ use crate::adjust::{adjust_stock, AdjustLine};
 use crate::admin_catalog::http::{
     post_access_levels_replace, post_admin_delete_user_box, post_admin_user_boxes,
     post_loot_box_delete, post_loot_box_redemptions, post_loot_boxes_upsert,
-    post_mining_coins_upsert, post_news_delete, post_news_expire_days_persist, post_news_fee_persist,
+    post_mining_coins_economy_settings, post_mining_coins_upsert, post_news_delete, post_news_expire_days_persist, post_news_fee_persist,
     post_news_upsert, post_rig_rooms_upsert, post_season_passes_replace,
 };
 use crate::admin_catalog::{
     ACCESS_LEVELS_REPLACE_PATH, ADMIN_DELETE_USER_BOX_PATH, ADMIN_USER_BOXES_PATH,
     LOOT_BOXES_DELETE_PATH, LOOT_BOXES_UPSERT_PATH, LOOT_BOX_REDEMPTIONS_PATH,
-    MINING_COINS_UPSERT_PATH, NEWS_DELETE_PATH, NEWS_EXPIRE_DAYS_PERSIST_PATH, NEWS_FEE_PERSIST_PATH,
+    MINING_COINS_ECONOMY_SETTINGS_PATH, MINING_COINS_UPSERT_PATH, NEWS_DELETE_PATH, NEWS_EXPIRE_DAYS_PERSIST_PATH, NEWS_FEE_PERSIST_PATH,
     NEWS_UPSERT_PATH, RIG_ROOMS_UPSERT_PATH, SEASON_PASSES_REPLACE_PATH,
 };
 use crate::catalog::http::post_upgrades_replace as post_catalog_upgrades_replace;
@@ -290,6 +290,7 @@ pub fn router(state: AppState) -> Router {
         .route(ADMIN_USER_BOXES_PATH, post(post_admin_user_boxes))
         .route(ADMIN_DELETE_USER_BOX_PATH, post(post_admin_delete_user_box))
         .route(MINING_COINS_UPSERT_PATH, post(post_mining_coins_upsert))
+        .route(MINING_COINS_ECONOMY_SETTINGS_PATH, post(post_mining_coins_economy_settings))
         .route(NEWS_UPSERT_PATH, post(post_news_upsert))
         .route(NEWS_DELETE_PATH, post(post_news_delete))
         .route(NEWS_FEE_PERSIST_PATH, post(post_news_fee_persist))

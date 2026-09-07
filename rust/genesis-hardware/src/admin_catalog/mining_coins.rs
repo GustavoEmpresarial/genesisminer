@@ -38,7 +38,7 @@ const UPSERT_SQL: &str = "INSERT INTO mining_coins
        (id, name, symbol, description, color, algorithm, network_hashrate, block_reward,
         block_time, price_usd, difficulty, multiplier, min_proportion, usdc_rate,
         is_active, target_daily_usd, show_in_exchange, nft_room_only)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::int4::int2,$18)
      ON CONFLICT (id) DO UPDATE SET
        name = EXCLUDED.name,
        symbol = EXCLUDED.symbol,
@@ -204,6 +204,63 @@ pub async fn run_upsert_mining_coins(
         conn.execute(UPSERT_SQL, &params).await?;
     }
     Ok(json!({}))
+}
+
+// ---------------------------------------------------------------------------
+// `POST /api/admin/economy-settings` twin — per-coin hashrate/reward update.
+// Ports `server/modules/admin/economy-stats/controllers/coin-economy.controller.ts`.
+// ---------------------------------------------------------------------------
+
+fn coin_id_ok(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 80
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+}
+
+pub async fn run_economy_settings_coin(
+    pool: &Pool,
+    payload: &Value,
+) -> Result<Value, PlayerReadError> {
+    let obj = payload.as_object();
+    let field = |k: &str| obj.and_then(|m| m.get(k));
+
+    let coin_id = field("coinId")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if !coin_id_ok(&coin_id) {
+        return Err(PlayerReadError::bad("Invalid coinId."));
+    }
+    let net = js::parse_float_field(field("networkHashrate"));
+    if !net.is_finite() || net <= 0.0 {
+        return Err(PlayerReadError::bad("Invalid networkHashrate."));
+    }
+    let reward = js::parse_float_field(field("blockReward"));
+    if !reward.is_finite() || reward < 0.0 {
+        return Err(PlayerReadError::bad("Invalid blockReward."));
+    }
+    let network_hashrate = js::round8(net).max(MIN_NETWORK_HASHRATE);
+    let block_reward = js::round8(reward);
+
+    let conn = pool.get().await?;
+    let n = conn
+        .execute(
+            "UPDATE mining_coins SET network_hashrate = $2, block_reward = $3 WHERE id = $1",
+            &[&coin_id, &network_hashrate, &block_reward],
+        )
+        .await?;
+    if n == 0 {
+        return Err(PlayerReadError::bad("Coin not found."));
+    }
+    Ok(json!({
+        "ok": true,
+        "coinId": coin_id,
+        "networkHashrate": network_hashrate,
+        "blockReward": block_reward,
+    }))
 }
 
 #[cfg(test)]
