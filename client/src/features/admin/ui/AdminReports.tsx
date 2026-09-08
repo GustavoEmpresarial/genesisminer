@@ -923,23 +923,42 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                             ) : distPreview ? (
                                                                 (() => {
                                                                     const sym = distPreview.symbol || editingCoin.symbol || '';
-                                                                    const fmtC = (n: number) => {
-                                                                        const v = Number(n) || 0;
-                                                                        if (v === 0) return '0';
-                                                                        if (v >= 0.0001) return v.toLocaleString('pt-BR', { maximumFractionDigits: 8 });
-                                                                        return v.toExponential(3);
-                                                                    };
-                                                                    const fmtU = (n: number) => {
-                                                                        const v = Number(n) || 0;
-                                                                        return v >= 0.01 || v === 0 ? `$${v.toFixed(2)}` : `$${v.toExponential(2)}`;
+                                                                    const c8 = (n: number) => (Number(n) || 0).toFixed(8);
+                                                                    const u8 = (n: number) => '$' + (Number(n) || 0).toFixed(8);
+                                                                    // mês -> dia (÷30) -> bloco de 10 min (÷4320)
+                                                                    const row = (label: string, coinsMonth: number, usdMonth: number, strong?: boolean) => {
+                                                                        const cm = Number(coinsMonth) || 0;
+                                                                        const um = Number(usdMonth) || 0;
+                                                                        return (
+                                                                            <tr className={strong ? 'text-emerald-300' : ''}>
+                                                                                <td className="py-0.5 pr-3 text-slate-400">{label}</td>
+                                                                                <td className="py-0.5 pr-3 text-right">{c8(cm / 4320)} <span className="text-slate-600">/ {u8(um / 4320)}</span></td>
+                                                                                <td className="py-0.5 pr-3 text-right">{c8(cm / 30)} <span className="text-slate-600">/ {u8(um / 30)}</span></td>
+                                                                                <td className="py-0.5 text-right">{c8(cm)} <span className="text-slate-600">/ {u8(um)}</span></td>
+                                                                            </tr>
+                                                                        );
                                                                     };
                                                                     return (
-                                                                <div className="space-y-1 font-mono">
+                                                                <div className="space-y-2 font-mono">
                                                                     <div>Hashrate ativo: {Number(distPreview.activeHashrate).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} H/s · {distPreview.activeMiners} mineradores</div>
-                                                                    <div>Preço {sym}: ${Number(distPreview.priceUsd).toLocaleString('pt-BR', { maximumFractionDigits: 6 })}</div>
-                                                                    <div>Emissão total: <span className="text-emerald-400">{fmtC(distPreview.totalCoinsMonth)} {sym}/mês</span> ({fmtU(distPreview.totalUsdMonth)})</div>
-                                                                    <div>Máquina 10 H/s ganha: <span className="text-emerald-300">{fmtC(distPreview.representativeUnitCoinsMonth)} {sym}/mês</span> ({fmtU(distPreview.representativeUnitUsdMonth)})</div>
-                                                                    <div className="text-slate-500">por H/s: {fmtC(distPreview.perHashCoinsMonth)} {sym}/mês</div>
+                                                                    <div>Preço {sym}: ${Number(distPreview.priceUsd).toLocaleString('pt-BR', { maximumFractionDigits: 8 })}</div>
+                                                                    <div className="overflow-x-auto">
+                                                                        <table className="w-full text-[11px]">
+                                                                            <thead>
+                                                                                <tr className="text-slate-500">
+                                                                                    <th className="py-0.5 pr-3 text-left font-semibold">{sym} (moeda / USD)</th>
+                                                                                    <th className="py-0.5 pr-3 text-right font-semibold">por bloco (10 min)</th>
+                                                                                    <th className="py-0.5 pr-3 text-right font-semibold">por dia</th>
+                                                                                    <th className="py-0.5 text-right font-semibold">por mês</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                {row('Emissão total', distPreview.totalCoinsMonth, distPreview.totalUsdMonth, true)}
+                                                                                {row('Máquina 10 H/s', distPreview.representativeUnitCoinsMonth, distPreview.representativeUnitUsdMonth)}
+                                                                                {row('Por 1 H/s', distPreview.perHashCoinsMonth, distPreview.perHashUsdMonth)}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
                                                                     {Array.isArray(distPreview.warnings) && distPreview.warnings.map((w: string, i: number) => (
                                                                         <div key={i} className="text-amber-400">⚠ {w}</div>
                                                                     ))}
