@@ -940,16 +940,6 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                                     <div>Emissão total: <span className="text-emerald-400">{fmtC(distPreview.totalCoinsMonth)} {sym}/mês</span> ({fmtU(distPreview.totalUsdMonth)})</div>
                                                                     <div>Máquina 10 H/s ganha: <span className="text-emerald-300">{fmtC(distPreview.representativeUnitCoinsMonth)} {sym}/mês</span> ({fmtU(distPreview.representativeUnitUsdMonth)})</div>
                                                                     <div className="text-slate-500">por H/s: {fmtC(distPreview.perHashCoinsMonth)} {sym}/mês</div>
-                                                                    {Array.isArray(distPreview.topMiners) && distPreview.topMiners.length > 0 && (
-                                                                        <div className="pt-1">
-                                                                            <div className="text-slate-500">Quanto cada minerador recebe (por mês):</div>
-                                                                            {distPreview.topMiners.slice(0, 8).map((t: any) => (
-                                                                                <div key={t.userId}>
-                                                                                    #{t.userId} · {Number(t.hashrate).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} H/s ({Number(t.sharePct).toFixed(1)}%): <span className="text-white">{fmtC(t.coinsMonth)} {sym}</span> ({fmtU(t.usdMonth)})
-                                                                                </div>
-                                                                            ))}
-                                                                        </div>
-                                                                    )}
                                                                     {Array.isArray(distPreview.warnings) && distPreview.warnings.map((w: string, i: number) => (
                                                                         <div key={i} className="text-amber-400">⚠ {w}</div>
                                                                     ))}
