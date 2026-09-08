@@ -102,6 +102,7 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
   const applyFileRef = useRef<HTMLInputElement>(null);
 
   const [editName, setEditName] = useState(profile?.channelName || '');
+  const [editUrl, setEditUrl] = useState(profile?.channelUrl || '');
   const [editAvatar, setEditAvatar] = useState(profile?.avatarUrl || '');
   const [editPreview, setEditPreview] = useState(previewAssetUrl(profile?.avatarUrl));
   const [profileBusy, setProfileBusy] = useState(false);
@@ -120,8 +121,9 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
       setEditName(profile.channelName || '');
       setEditAvatar(profile.avatarUrl || '');
       setEditPreview(previewAssetUrl(profile.avatarUrl));
+      if (profile.channelUrl) setEditUrl(profile.channelUrl);
     }
-  }, [profile?.channelName, profile?.avatarUrl]);
+  }, [profile?.channelName, profile?.avatarUrl, profile?.channelUrl]);
 
   const handleAvatarPick = useCallback(
     async (file: File | undefined, mode: 'apply' | 'edit') => {
@@ -180,7 +182,11 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
     setProfileErr(null);
     setProfileBusy(true);
     try {
-      const r = await updatePartnerYoutubeMyProfile({ channelName: editName, avatarUrl: editAvatar });
+      const r = await updatePartnerYoutubeMyProfile({
+        channelName: editName,
+        avatarUrl: editAvatar,
+        ...(profile?.channelUrl ? {} : { channelUrl: editUrl.trim() })
+      });
       if (!r.ok) {
         setProfileErr(partnerApiError(r.error, t, 'partners.profileFailed'));
         return;
@@ -464,12 +470,21 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
                 {t('partners.studioChannelUrlReadonly')}
               </label>
-              <input
-                value={profile?.channelUrl || ''}
-                readOnly
-                disabled
-                className="w-full rounded-xl bg-slate-900/50 border border-slate-800 px-3 py-2.5 text-sm text-slate-500 cursor-not-allowed"
-              />
+              {profile?.channelUrl ? (
+                <input
+                  value={profile.channelUrl}
+                  readOnly
+                  disabled
+                  className="w-full rounded-xl bg-slate-900/50 border border-slate-800 px-3 py-2.5 text-sm text-slate-500 cursor-not-allowed"
+                />
+              ) : (
+                <input
+                  value={editUrl}
+                  onChange={(e) => setEditUrl(e.target.value)}
+                  placeholder="https://www.youtube.com/@teucanal"
+                  className="w-full rounded-xl bg-slate-950 border border-slate-700 px-3 py-2.5 text-sm"
+                />
+              )}
             </div>
             {profileErr && <p className="text-sm text-red-400">{profileErr}</p>}
             <button

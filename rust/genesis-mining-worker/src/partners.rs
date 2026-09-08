@@ -180,6 +180,10 @@ pub struct PartnersProfileRequest {
     pub user_id: i64,
     pub channel_name: Option<Value>,
     pub avatar_url: Option<Value>,
+    /// Only honoured while the stored `channel_url` is still empty (first set by
+    /// a self-serve partner); admin review owns it afterwards.
+    #[serde(default)]
+    pub channel_url: Option<Value>,
 }
 
 fn is_youtube_video_id(id: &str) -> bool {
@@ -1141,19 +1145,6 @@ pub async fn run_profile_update(
             json!({ "error": "Only YouTube partners can edit the profile.", "code": "NOT_PARTNER" }),
         ));
     }
-    let conn = pool.get().await?;
-    let existing = conn
-        .query_opt(
-            "SELECT channel_url FROM partner_youtube_creator_profiles WHERE user_id = $1",
-            &[&uid],
-        )
-        .await?;
-    let Some(ex) = existing else {
-        return Ok((
-            HTTP_NOT_FOUND,
-            json!({ "error": "Partner profile not found.", "code": "NOT_FOUND" }),
-        ));
-    };
     let channel_name = sanitize_channel_name(&value_str(&req.channel_name));
     if channel_name.len() < CHANNEL_NAME_MIN_LENGTH {
         return Ok((
@@ -1168,21 +1159,54 @@ pub async fn run_profile_update(
             json!({ "error": "Invalid cover/photo.", "code": "AVATAR_REQUIRED" }),
         ));
     }
+    // `channel_url` is only honoured while the stored value is still empty — a
+    // self-serve partner sets it once here; admin review owns it after that.
+    let raw_channel_url = value_str(&req.channel_url);
+    let channel_url = if raw_channel_url.trim().is_empty() {
+        String::new()
+    } else {
+        let clean = sanitize_channel_url(&raw_channel_url);
+        if clean.is_empty() {
+            return Ok((
+                HTTP_BAD_REQUEST,
+                json!({ "error": "Link do canal inválido (use https:// no YouTube).", "code": "VALIDATION" }),
+            ));
+        }
+        clean
+    };
     let updated = now_ms();
-    conn.execute(
-        "UPDATE partner_youtube_creator_profiles
-            SET channel_name = $2, avatar_url = $3, updated_at = $4, updated_by = $1
-          WHERE user_id = $1",
-        &[&uid, &channel_name, &avatar_url, &updated],
-    )
-    .await?;
+    let conn = pool.get().await?;
+    // Upsert: a partner (access level or manual allowlist) editing their channel
+    // for the first time has no `partner_youtube_creator_profiles` row yet — the
+    // row was previously only created by admin action, which left self-serve
+    // partners stuck on "Partner profile not found." A fresh row takes the
+    // supplied `channel_url`; on an existing row it is only filled if still empty.
+    let row = conn
+        .query_one(
+            "INSERT INTO partner_youtube_creator_profiles
+                (user_id, channel_name, channel_url, avatar_url, description, updated_at, updated_by)
+             VALUES ($1, $2, $5, $3, '', $4, $1)
+             ON CONFLICT (user_id) DO UPDATE SET
+                channel_name = EXCLUDED.channel_name,
+                avatar_url   = EXCLUDED.avatar_url,
+                channel_url  = CASE
+                    WHEN COALESCE(NULLIF(btrim(partner_youtube_creator_profiles.channel_url), ''), '') = ''
+                    THEN EXCLUDED.channel_url
+                    ELSE partner_youtube_creator_profiles.channel_url
+                END,
+                updated_at   = EXCLUDED.updated_at,
+                updated_by   = EXCLUDED.updated_by
+             RETURNING channel_url",
+            &[&uid, &channel_name, &avatar_url, &updated, &channel_url],
+        )
+        .await?;
     Ok((
         HTTP_OK,
         json!({
             "ok": true,
             "channelName": channel_name,
             "avatarUrl": avatar_url,
-            "channelUrl": string_cell(&ex, "channel_url"),
+            "channelUrl": string_cell(&row, "channel_url"),
         }),
     ))
 }

@@ -190,6 +190,8 @@ export async function submitPartnerYoutubeApplication(payload: {
 export async function updatePartnerYoutubeMyProfile(payload: {
   channelName: string;
   avatarUrl: string;
+  /** Only honoured while the stored channel URL is still empty (first set). */
+  channelUrl?: string;
 }): Promise<{
   ok: boolean;
   error?: string;
