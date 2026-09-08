@@ -1,29 +1,32 @@
 /**
- * Downscale/re-encode an image File in the browser so avatar uploads stay well
- * under the proxy's body limit (nginx default 1 MB on the partner avatar route).
- * A raw phone photo is 2–5 MB → 413 before it reaches the app; after this it is
- * a ~1024px JPEG in the low hundreds of KB.
+ * Re-encode an image File to WebP in the browser before upload (and downscale
+ * very large dimensions so transfer stays fast). The server also finalizes
+ * avatars to WebP, but doing it here keeps a 15 MB phone photo from crawling
+ * over a slow link and gives instant feedback.
  *
- * Non-images and anything that fails to decode are returned unchanged.
+ * Non-images, GIFs, tiny WebPs, and anything that fails to decode are returned
+ * unchanged.
  */
 export type ResizeOptions = {
   maxDimension?: number;
   quality?: number;
-  /** Skip resizing if the file is already at or below this size. */
+  mimeType?: 'image/webp' | 'image/jpeg';
+  /** Skip work if already this small AND already the target type. */
   passthroughBytes?: number;
 };
 
 const DEFAULTS: Required<ResizeOptions> = {
-  maxDimension: 1024,
-  quality: 0.82,
-  passthroughBytes: 400 * 1024
+  maxDimension: 1600,
+  quality: 0.85,
+  mimeType: 'image/webp',
+  passthroughBytes: 200 * 1024
 };
 
 export async function resizeImageFile(file: File, opts: ResizeOptions = {}): Promise<File> {
-  const { maxDimension, quality, passthroughBytes } = { ...DEFAULTS, ...opts };
+  const { maxDimension, quality, mimeType, passthroughBytes } = { ...DEFAULTS, ...opts };
 
   if (!file.type.startsWith('image/') || file.type === 'image/gif') return file;
-  if (file.size <= passthroughBytes) return file;
+  if (file.type === mimeType && file.size <= passthroughBytes) return file;
   if (typeof document === 'undefined') return file;
 
   try {
@@ -40,16 +43,23 @@ export async function resizeImageFile(file: File, opts: ResizeOptions = {}): Pro
     ctx.drawImage(bitmap, 0, 0, w, h);
     if ('close' in bitmap && typeof bitmap.close === 'function') bitmap.close();
 
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/jpeg', quality)
-    );
-    if (!blob || blob.size >= file.size) return file;
+    let blob = await encode(canvas, mimeType, quality);
+    // Some browsers silently fall back to PNG for toBlob('image/webp').
+    if (!blob || (mimeType === 'image/webp' && blob.type !== 'image/webp')) {
+      blob = await encode(canvas, 'image/jpeg', quality);
+    }
+    if (!blob) return file;
 
-    const name = file.name.replace(/\.[^.]+$/, '') + '.jpg';
-    return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() });
+    const ext = blob.type === 'image/webp' ? '.webp' : '.jpg';
+    const name = file.name.replace(/\.[^.]+$/, '') + ext;
+    return new File([blob], name, { type: blob.type, lastModified: Date.now() });
   } catch {
     return file;
   }
+}
+
+function encode(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
 }
 
 async function loadBitmap(file: File): Promise<ImageBitmap | HTMLImageElement> {

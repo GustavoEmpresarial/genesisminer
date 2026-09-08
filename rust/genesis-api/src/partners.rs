@@ -39,15 +39,15 @@ const PARTNERS_APPLY_PATH: &str = "/v1/partners/youtube/apply";
 const PARTNERS_PROFILE_PATH: &str = "/v1/partners/youtube/my-profile";
 const UPLOAD_PARTNER_AVATAR_PATH: &str = "/v1/uploads/partner-avatar";
 
-/// Node `AVATAR_UPLOAD_MAX_MB` × KB × B + envelope slack (same order as chat audio facade).
-const AVATAR_UPLOAD_MAX_MB: usize = 5;
+/// Partner avatar / cover upload cap (raw file; the worker re-encodes to WebP).
+const AVATAR_UPLOAD_MAX_MB: usize = 15;
 const BYTES_PER_KB: usize = 1024;
 const AVATAR_UPLOAD_MAX_BYTES: usize = AVATAR_UPLOAD_MAX_MB * BYTES_PER_KB * BYTES_PER_KB;
-/// Multipart envelope — mirror mining-worker support+chat slack formula with avatar file max.
+/// Multipart envelope — avatar file max + chat-audio slack.
 const CHAT_AUDIO_MAX_BYTES: usize = 1_500_000;
 const UPLOAD_HTTP_BODY_LIMIT_BYTES: usize = AVATAR_UPLOAD_MAX_BYTES + CHAT_AUDIO_MAX_BYTES;
 
-const _: () = assert!(AVATAR_UPLOAD_MAX_BYTES == 5_242_880);
+const _: () = assert!(AVATAR_UPLOAD_MAX_BYTES == 15_728_640);
 const _: () =
     assert!(UPLOAD_HTTP_BODY_LIMIT_BYTES == AVATAR_UPLOAD_MAX_BYTES + CHAT_AUDIO_MAX_BYTES);
 

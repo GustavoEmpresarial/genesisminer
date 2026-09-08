@@ -28,15 +28,15 @@ const SUPPORT_UPLOAD_MAX_MB: usize = 12;
 const BYTES_PER_KB: usize = 1024;
 const KB_PER_MB: usize = 1024;
 const SUPPORT_UPLOAD_MAX_BYTES: usize = SUPPORT_UPLOAD_MAX_MB * KB_PER_MB * BYTES_PER_KB;
-/// Node `AVATAR_UPLOAD_MAX_MB`.
-const AVATAR_UPLOAD_MAX_MB: usize = 5;
+/// Partner avatar / cover upload cap (raw file; server re-encodes to WebP).
+const AVATAR_UPLOAD_MAX_MB: usize = 15;
 const AVATAR_UPLOAD_MAX_BYTES: usize = AVATAR_UPLOAD_MAX_MB * BYTES_PER_KB * BYTES_PER_KB;
-/// Multipart envelope slack = largest file max + chat audio max (both named).
-pub const UPLOAD_HTTP_BODY_LIMIT_BYTES: usize = SUPPORT_UPLOAD_MAX_BYTES + CHAT_AUDIO_MAX_BYTES;
+/// Multipart envelope slack = largest single file max + chat audio max.
+pub const UPLOAD_HTTP_BODY_LIMIT_BYTES: usize = AVATAR_UPLOAD_MAX_BYTES + CHAT_AUDIO_MAX_BYTES;
 
 const _: () = assert!(CHAT_AUDIO_MAX_BYTES == 1_500_000);
 const _: () = assert!(SUPPORT_UPLOAD_MAX_BYTES == 12_582_912);
-const _: () = assert!(AVATAR_UPLOAD_MAX_BYTES == 5_242_880);
+const _: () = assert!(AVATAR_UPLOAD_MAX_BYTES == 15_728_640);
 
 /// Node `CHAT_AUDIO_PUBLIC_PREFIX`.
 const CHAT_AUDIO_PUBLIC_PREFIX: &str = "/img/chat-audio/";
@@ -464,10 +464,15 @@ pub async fn run_upload_partner_avatar(
     );
     let stored = build_stored_upload_filename(&safe_base, &ext);
     write_file(&cfg.partner_avatar_dir, &stored, &incoming.bytes).await?;
+    // Always serve WebP (same as the admin image path). Falls back to the raw
+    // file if conversion is unavailable.
+    let raw_public = format!("{PARTNER_AVATAR_PUBLIC_PREFIX}{stored}");
+    let (stored, public_url) =
+        finalize_upload_as_webp(&cfg.partner_avatar_dir, stored, raw_public).await;
     Ok(UploadWriteResponse {
         ok: true,
-        stored_name: Some(stored.clone()),
-        public_url: Some(format!("{PARTNER_AVATAR_PUBLIC_PREFIX}{stored}")),
+        stored_name: Some(stored),
+        public_url: Some(public_url),
         error: None,
         code: None,
     })
