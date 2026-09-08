@@ -16,37 +16,42 @@ use crate::player_reads::PlayerReadError;
 pub const BACKUP_CREATE_PATH: &str = "/v1/admin/backups/create";
 pub const BACKUP_VERIFY_PATH: &str = "/v1/admin/backups/verify";
 
+/// A full `pg_dump` of a production DB runs for minutes — longer than any sane
+/// HTTP / proxy budget — so the manual backup is fired in the background and the
+/// admin polls the list (each file carries its verified integrity). The
+/// scheduled loop does the same work on its own task.
 pub async fn run_backup_create(cfg: &WorkerConfig, body: Value) -> Result<Value, PlayerReadError> {
     let raw = body
         .get("name")
         .and_then(Value::as_str)
         .unwrap_or("manual_backup");
-    let base = sanitize_base_name(raw, "manual_backup");
-    let base = format!("{base}_");
+    let base = format!("{}_", sanitize_base_name(raw, "manual_backup"));
 
-    let artifact = create_verified_backup(&cfg.backup_dir, &cfg.database_url, &base)
-        .await
-        .map_err(PlayerReadError::bad)?;
-
-    let mut gdrive = json!(false);
-    if cfg.gdrive_active() {
-        match crate::gdrive_backup::mirror_backup(cfg, &artifact).await {
-            Ok(()) => gdrive = json!(true),
-            Err(e) => {
-                tracing::warn!(err = %e, file = %artifact.filename, "manual backup: gdrive mirror failed");
-                gdrive = json!({ "ok": false, "error": e });
+    let cfg = cfg.clone();
+    tokio::spawn(async move {
+        match create_verified_backup(&cfg.backup_dir, &cfg.database_url, &base).await {
+            Ok(a) => {
+                tracing::info!(
+                    event = "manual_backup_done",
+                    filename = %a.filename,
+                    bytes = a.bytes,
+                    sha256 = %a.sha256,
+                    "manual backup created + verified"
+                );
+                if cfg.gdrive_active() {
+                    if let Err(e) = crate::gdrive_backup::mirror_backup(&cfg, &a).await {
+                        tracing::warn!(err = %e, file = %a.filename, "manual backup: gdrive mirror failed");
+                    }
+                }
             }
+            Err(e) => tracing::warn!(err = %e, "manual backup failed"),
         }
-    }
+    });
 
     Ok(json!({
         "ok": true,
-        "filename": artifact.filename,
-        "bytes": artifact.bytes,
-        "sha256": artifact.sha256,
-        "integrity": "ok",
-        "format": "custom",
-        "gdrive": gdrive,
+        "queued": true,
+        "message": "Backup iniciado em segundo plano. Atualize a lista em ~1–3 minutos.",
     }))
 }
 

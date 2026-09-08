@@ -52,6 +52,15 @@ export const AdminBackup: React.FC = () => {
             if (resp.ok) {
                 try {
                     const j = await resp.json();
+                    if (j.queued) {
+                        setMessage({
+                            text: typeof j.message === 'string' ? j.message : 'Backup iniciado em segundo plano. Atualize a lista em ~1–3 minutos.',
+                            type: 'success'
+                        });
+                        setBackupName('');
+                        setTimeout(loadBackups, 90_000);
+                        return;
+                    }
                     const fn = typeof j.filename === 'string' ? j.filename : '';
                     const lower = fn.toLowerCase();
                     if (fn && !lower.endsWith('.dump') && !lower.endsWith('.sql')) {
