@@ -121,15 +121,6 @@ pub const DEFAULT_JOB_TIMEOUT_PRICE_SYNC_MS: u64 = MS_PER_MINUTE;
 /// CoinGecko `simple/price` endpoint (legacy `COINGECKO_SIMPLE`).
 pub const COINGECKO_SIMPLE_URL: &str = "https://api.coingecko.com/api/v3/simple/price";
 
-/// Redis lock for the daily partner-inactivity Telegram report.
-pub const REDIS_LOCK_JOB_PARTNER_REPORT: &str = "genesis:lock:job:partner-report";
-/// Lock TTL — one report run's worth of headroom.
-pub const REDIS_LOCK_TTL_PARTNER_REPORT_SEC: u64 = 5 * (MS_PER_MINUTE / MS_PER_SECOND);
-/// Per-run timeout (DB scan + a few Telegram POSTs).
-pub const DEFAULT_JOB_TIMEOUT_PARTNER_REPORT_MS: u64 = 2 * MS_PER_MINUTE;
-/// Telegram Bot API base (token appended: `{base}/bot{token}/sendMessage`).
-pub const TELEGRAM_API_BASE: &str = "https://api.telegram.org";
-
 /// Redis lock — mirror `REDIS_LOCK_KEYS.jobBackupSql`.
 pub const REDIS_LOCK_JOB_BACKUP_SQL: &str = "genesis:lock:job:backup-sql";
 /// Lock TTL seconds — mirror `REDIS_LOCK_TTL_SECONDS.backupSql` (1800).
@@ -260,13 +251,6 @@ pub struct WorkerConfig {
     pub job_timeout_price_sync_ms: u64,
     /// Legacy `MINING_COINGECKO_IDS_JSON` — `{ "<mining_coins.id>": "<coingecko-id>" }`.
     pub price_sync_coingecko_ids_json: Option<String>,
-    /// Daily 00:00 UTC Telegram report of partners whose Streamer room is active
-    /// but who are overdue on approved videos. Idles unless the bot token +
-    /// chat id are set.
-    pub partner_report_loop_enabled: bool,
-    pub job_timeout_partner_report_ms: u64,
-    pub telegram_bot_token: Option<String>,
-    pub telegram_partner_report_chat_id: Option<String>,
     /// Auto SQL backup loop (owns Node `startScheduledSqlBackups`).
     pub backup_sql_loop_enabled: bool,
     pub backup_disable_auto: bool,
@@ -425,21 +409,6 @@ impl WorkerConfig {
                 .ok()
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
-            partner_report_loop_enabled: env_flag_default_on("PARTNER_REPORT_LOOP_ENABLED"),
-            job_timeout_partner_report_ms: env_u64_clamped(
-                "JOB_TIMEOUT_PARTNER_REPORT_MS",
-                DEFAULT_JOB_TIMEOUT_PARTNER_REPORT_MS,
-                MS_PER_SECOND,
-                10 * MS_PER_MINUTE,
-            ),
-            telegram_bot_token: std::env::var("TELEGRAM_BOT_TOKEN")
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty()),
-            telegram_partner_report_chat_id: std::env::var("TELEGRAM_PARTNER_REPORT_CHAT_ID")
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty()),
             backup_sql_loop_enabled: env_flag_default_on("BACKUP_SQL_LOOP_ENABLED"),
             backup_disable_auto: backup_disable_auto_from_env(),
             backup_auto_local_hour: env_u32_clamped(
@@ -508,13 +477,6 @@ impl WorkerConfig {
 
     pub fn price_sync_loop_active(&self) -> bool {
         self.scheduler_enabled && self.price_sync_loop_enabled
-    }
-
-    pub fn partner_report_loop_active(&self) -> bool {
-        self.scheduler_enabled
-            && self.partner_report_loop_enabled
-            && self.telegram_bot_token.is_some()
-            && self.telegram_partner_report_chat_id.is_some()
     }
 
     pub fn backup_sql_loop_active(&self) -> bool {
