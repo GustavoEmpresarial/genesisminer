@@ -1082,12 +1082,22 @@ pub async fn run_apply(
             json!({ "error": "Invalid channel name (min. 2 characters).", "code": "VALIDATION" }),
         ));
     }
-    let channel_url = sanitize_channel_url(&value_str(&req.channel_url));
+    let raw_url = value_str(&req.channel_url);
+    if raw_url.trim().is_empty() {
+        return Ok((
+            HTTP_UNPROCESSABLE,
+            json!({
+                "error": "Informe a URL do teu canal no YouTube (ex.: https://www.youtube.com/@seucanal).",
+                "code": "CHANNEL_URL_REQUIRED"
+            }),
+        ));
+    }
+    let channel_url = sanitize_channel_url(&raw_url);
     if channel_url.is_empty() {
         return Ok((
             HTTP_UNPROCESSABLE,
             json!({
-                "error": "Invalid channel URL. Use an https:// YouTube link (e.g. /@yourchannel or /channel/...).",
+                "error": "Link do canal inválido — use o endereço https:// do teu canal no YouTube (/@canal ou /channel/...), não um link de vídeo.",
                 "code": "INVALID_CHANNEL_URL"
             }),
         ));
