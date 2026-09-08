@@ -26,8 +26,16 @@ RUN cargo build --release -p genesis-node -p genesis-mining-worker -p genesis-ha
 # Binário 100% Rust — yield cron + progress HTTP (Compose target: mining-worker).
 # Port default: MINING_WORKER_DEFAULT_PORT (8091) — ver mining-worker-client.ts / config.rs.
 FROM debian:bookworm-slim AS mining-worker
+# postgresql-client-16 (matches the prod Postgres 16 server) → pg_dump / pg_restore
+# for the DB backup loop + admin endpoint. Debian ships v15, so add the PGDG repo.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates curl libssl3 zlib1g \
+  && apt-get install -y --no-install-recommends ca-certificates curl gnupg libssl3 zlib1g \
+  && install -d /usr/share/postgresql-common/pgdg \
+  && curl -fsSo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+  && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends postgresql-client-16 \
+  && apt-get purge -y --auto-remove gnupg \
   && rm -rf /var/lib/apt/lists/*
 COPY --from=rust-builder /build/target/release/genesis-mining-worker /usr/local/bin/genesis-mining-worker
 ENV GENESIS_MINING_WORKER=1
