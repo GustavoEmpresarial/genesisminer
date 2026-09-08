@@ -201,6 +201,9 @@ model mining_coins {
   /// `usdc_interno`); 0 = moeda externa. Rótulo administrativo — não altera a
   /// mecânica de mineração.
   is_internal        Int     @default(0)
+  /// Logo custom da moeda (URL de `/api/admin/upload-image`). Se null, o front
+  /// resolve pelo CDN cryptocurrency-icons via símbolo, com fallback letra.
+  icon_url           String? @db.VarChar(2048)
 
   @@map("mining_coins")
 }

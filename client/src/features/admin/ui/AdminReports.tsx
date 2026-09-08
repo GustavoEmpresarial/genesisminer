@@ -41,6 +41,8 @@ import {
 } from '../../../shared/api/admin-legacy';
 
 import { getDistributionPreview } from '../../../shared/api/admin-economy';
+import { apiFetch } from '../../../shared/api/http';
+import { MiningCoinGlyph } from '../../../shared/ui/MiningCoinGlyph';
 
 import { AdminManualWithdrawals } from './AdminManualWithdrawals';
 import { AdminReferral } from './AdminReferral';
@@ -155,6 +157,35 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
     const [isSavingCoin, setIsSavingCoin] = useState(false);
     const [distPreview, setDistPreview] = useState<any>(null);
     const [distPreviewLoading, setDistPreviewLoading] = useState(false);
+    const [coinLogoUploading, setCoinLogoUploading] = useState(false);
+
+    const handleCoinLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const input = e.target;
+        const file = input.files?.[0];
+        if (!file) return;
+        if (!['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif', 'image/svg+xml'].includes(file.type)) {
+            alert('Formato inválido. Use PNG, JPG, WEBP, GIF ou SVG.');
+            input.value = '';
+            return;
+        }
+        const fd = new FormData();
+        fd.append('image', file, file.name);
+        fd.append('assetFolder', 'coin-logos');
+        setCoinLogoUploading(true);
+        try {
+            const res = await apiFetch('/api/admin/upload-image', { method: 'POST', credentials: 'include', body: fd });
+            const payload = (await res.json().catch(() => null)) as { path?: string; url?: string; error?: string } | null;
+            const url = payload?.path || payload?.url;
+            if (!res.ok || !url) {
+                alert(payload?.error || 'Falha no upload da logo.');
+                return;
+            }
+            setEditingCoin((prev) => ({ ...prev, iconUrl: url }));
+        } finally {
+            setCoinLogoUploading(false);
+            input.value = '';
+        }
+    };
 
     // Debounced live preview for usd_month distribution.
     useEffect(() => {
@@ -789,6 +820,36 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                 </div>
 
                                                 <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold uppercase text-slate-500">Logo da moeda</label>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-700 bg-slate-900">
+                                                            {editingCoin.iconUrl ? (
+                                                                <img src={editingCoin.iconUrl} alt="" className="h-full w-full object-cover" />
+                                                            ) : (
+                                                                <MiningCoinGlyph coin={editingCoin as any} size={36} />
+                                                            )}
+                                                        </span>
+                                                        <input
+                                                            type="file"
+                                                            accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+                                                            onChange={handleCoinLogoUpload}
+                                                            className="text-xs text-slate-400 file:mr-2 file:rounded file:border-0 file:bg-slate-700 file:px-2 file:py-1 file:text-xs file:text-white"
+                                                        />
+                                                        {coinLogoUploading && <span className="text-[10px] text-slate-500">enviando…</span>}
+                                                        {editingCoin.iconUrl && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setEditingCoin((prev) => ({ ...prev, iconUrl: null }))}
+                                                                className="text-[10px] text-rose-400 hover:underline"
+                                                            >
+                                                                remover
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <p className="text-[10px] text-slate-500">Sem logo custom → resolve pelo símbolo (CDN) com fallback letra.</p>
+                                                </div>
+
+                                                <div className="space-y-1">
                                                     <label className="text-[10px] font-bold uppercase text-slate-500">Preço USD</label>
                                                     <input
                                                         type="number"
@@ -1109,15 +1170,13 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                     <tr key={coin.id} className="group hover:bg-slate-800/35">
                                                         <td className="px-3 py-3">
                                                             <div className="flex items-center gap-2">
-                                                                <div
-                                                                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-700 text-[11px] font-bold"
-                                                                    style={{
-                                                                        backgroundColor: `${coin.color || '#fff'}22`,
-                                                                        color: coin.color || '#fff'
-                                                                    }}
-                                                                >
-                                                                    {(coin.symbol && coin.symbol[0]) || '?'}
-                                                                </div>
+                                                                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-700">
+                                                                    {coin.iconUrl ? (
+                                                                        <img src={coin.iconUrl} alt="" className="h-full w-full object-cover" />
+                                                                    ) : (
+                                                                        <MiningCoinGlyph coin={coin as any} size={30} />
+                                                                    )}
+                                                                </span>
                                                                 <span className="font-semibold text-white">{coin.name}</span>
                                                                 <span
                                                                     className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${

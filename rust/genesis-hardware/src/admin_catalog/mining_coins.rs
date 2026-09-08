@@ -72,8 +72,8 @@ const UPSERT_SQL: &str = "INSERT INTO mining_coins
        (id, name, symbol, description, color, algorithm, network_hashrate, block_reward,
         block_time, price_usd, difficulty, multiplier, min_proportion, usdc_rate,
         is_active, target_daily_usd, show_in_exchange, nft_room_only,
-        price_source, price_updated_at, distribution_mode, distribution_usd_month, is_internal)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::int4::int2,$18,$19,$20,$21,$22,$23)
+        price_source, price_updated_at, distribution_mode, distribution_usd_month, is_internal, icon_url)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::int4::int2,$18,$19,$20,$21,$22,$23,$24)
      ON CONFLICT (id) DO UPDATE SET
        name = EXCLUDED.name,
        symbol = EXCLUDED.symbol,
@@ -96,7 +96,8 @@ const UPSERT_SQL: &str = "INSERT INTO mining_coins
        price_updated_at = EXCLUDED.price_updated_at,
        distribution_mode = EXCLUDED.distribution_mode,
        distribution_usd_month = EXCLUDED.distribution_usd_month,
-       is_internal = EXCLUDED.is_internal";
+       is_internal = EXCLUDED.is_internal,
+       icon_url = EXCLUDED.icon_url";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MiningCoinRow {
@@ -127,6 +128,8 @@ pub struct MiningCoinRow {
     pub distribution_usd_month: f64,
     /// 1 = moeda interna do jogo (não sacável). Rótulo admin — sem efeito na mecânica.
     pub is_internal: i32,
+    /// Logo custom (URL). `None` → front resolve pelo símbolo.
+    pub icon_url: Option<String>,
 }
 
 const PRICE_SOURCE_MANUAL: &str = "manual";
@@ -210,6 +213,11 @@ pub fn plan_mining_coin_row(coin: &Value, generated_id: &str) -> MiningCoinRow {
             or_zero(parse_num(field("distributionUsdMonth"))).max(NON_NEGATIVE_FLOOR),
         ),
         is_internal: i32::from(js::truthy(field("isInternal"))),
+        icon_url: field("iconUrl")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && s.len() <= 2048)
+            .map(str::to_string),
     }
 }
 
@@ -271,7 +279,7 @@ pub async fn run_upsert_mining_coins(
             }
         }
 
-        let params: [&(dyn ToSql + Sync); 23] = [
+        let params: [&(dyn ToSql + Sync); 24] = [
             &row.id,
             &row.name,
             &row.symbol,
@@ -295,6 +303,7 @@ pub async fn run_upsert_mining_coins(
             &row.distribution_mode,
             &row.distribution_usd_month,
             &row.is_internal,
+            &row.icon_url,
         ];
         tx.execute(UPSERT_SQL, &params).await?;
         upserts += 1;
@@ -492,9 +501,18 @@ mod tests {
         assert_eq!(bare.distribution_mode, "legacy");
         assert_eq!(bare.distribution_usd_month, 0.0);
         assert_eq!(bare.is_internal, 0);
+        assert_eq!(bare.icon_url, None);
         assert_eq!(
             plan_mining_coin_row(&json!({ "isInternal": true }), GENERATED).is_internal,
             1
+        );
+        assert_eq!(
+            plan_mining_coin_row(&json!({ "iconUrl": "  /img/x.png  " }), GENERATED).icon_url,
+            Some("/img/x.png".to_string())
+        );
+        assert_eq!(
+            plan_mining_coin_row(&json!({ "iconUrl": "" }), GENERATED).icon_url,
+            None
         );
 
         let usd = plan_mining_coin_row(

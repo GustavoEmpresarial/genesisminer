@@ -74,7 +74,7 @@ pub async fn run_catalog_mining_coins(pool: &Pool) -> Result<Value, PlayerReadEr
                     target_daily_usd::double precision AS target_daily_usd,
                     distribution_mode,
                     distribution_usd_month::double precision AS distribution_usd_month,
-                    is_internal,
+                    is_internal, icon_url,
                     show_in_exchange, nft_room_only
                FROM mining_coins ORDER BY name ASC",
             &[],
@@ -113,6 +113,7 @@ pub async fn run_catalog_mining_coins(pool: &Pool) -> Result<Value, PlayerReadEr
                 "distributionMode": distribution_mode,
                 "distributionUsdMonth": f64_cell(r, "distribution_usd_month"),
                 "isInternal": i32_cell(r, "is_internal") == 1,
+                "iconUrl": opt_string_cell(r, "icon_url"),
                 "showInExchange": i32_cell(r, "show_in_exchange") != 0,
                 "nftRoomOnly": i32_cell(r, "nft_room_only") == 1,
             })

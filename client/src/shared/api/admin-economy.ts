@@ -91,7 +91,9 @@ export function normalizeMiningCoinPayload(coin: Record<string, unknown>): Recor
     targetDailyUSD: Math.max(0, targetDailyUSD),
     distributionMode,
     distributionUsdMonth: Math.max(0, distributionUsdMonth),
-    isInternal: coin.isInternal === true || coin.isInternal === 1 || coin.isInternal === '1'
+    isInternal: coin.isInternal === true || coin.isInternal === 1 || coin.isInternal === '1',
+    iconUrl:
+      typeof coin.iconUrl === 'string' && coin.iconUrl.trim() ? coin.iconUrl.trim() : null
   };
 }
 

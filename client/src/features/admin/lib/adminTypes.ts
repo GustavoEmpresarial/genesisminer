@@ -652,6 +652,8 @@ export interface MiningCoin {
   distributionUsdMonth?: number;
   /** true = moeda interna do jogo (saldo F2P/Gênesis, não sacável, ex. usdc_interno). */
   isInternal?: boolean;
+  /** Logo custom da moeda (URL de /api/admin/upload-image). null = resolve pelo símbolo. */
+  iconUrl?: string | null;
 }
 
 export interface SeasonPassReward {
