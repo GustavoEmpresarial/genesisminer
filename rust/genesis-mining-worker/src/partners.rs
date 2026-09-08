@@ -1159,28 +1159,53 @@ pub async fn run_profile_update(
             json!({ "error": "Invalid cover/photo.", "code": "AVATAR_REQUIRED" }),
         ));
     }
-    // `channel_url` is only honoured while the stored value is still empty — a
-    // self-serve partner sets it once here; admin review owns it after that.
-    let raw_channel_url = value_str(&req.channel_url);
-    let channel_url = if raw_channel_url.trim().is_empty() {
-        String::new()
+    let updated = now_ms();
+    let conn = pool.get().await?;
+
+    // Is there already a locked channel URL? Once set, it is immutable here
+    // (admin review owns it). Only a first-time / still-empty URL is editable.
+    let existing_url: String = conn
+        .query_opt(
+            "SELECT btrim(COALESCE(channel_url, '')) AS u
+               FROM partner_youtube_creator_profiles WHERE user_id = $1",
+            &[&uid],
+        )
+        .await?
+        .map(|r| string_cell(&r, "u"))
+        .unwrap_or_default();
+    let locked = !existing_url.is_empty();
+
+    // Resolve the URL to persist. Locked → keep the stored one (ignore input).
+    // Unlocked → the URL is required and must be a valid YouTube channel link.
+    let channel_url = if locked {
+        existing_url.clone()
     } else {
-        let clean = sanitize_channel_url(&raw_channel_url);
+        let raw = value_str(&req.channel_url);
+        if raw.trim().is_empty() {
+            return Ok((
+                HTTP_BAD_REQUEST,
+                json!({
+                    "error": "Informe a URL do canal do YouTube (https://www.youtube.com/@seucanal).",
+                    "code": "CHANNEL_URL_REQUIRED"
+                }),
+            ));
+        }
+        let clean = sanitize_channel_url(&raw);
         if clean.is_empty() {
             return Ok((
                 HTTP_BAD_REQUEST,
-                json!({ "error": "Link do canal inválido (use https:// no YouTube).", "code": "VALIDATION" }),
+                json!({
+                    "error": "Link do canal inválido — use o endereço https:// do teu canal no YouTube (não pode ser um vídeo).",
+                    "code": "CHANNEL_URL_INVALID"
+                }),
             ));
         }
         clean
     };
-    let updated = now_ms();
-    let conn = pool.get().await?;
-    // Upsert: a partner (access level or manual allowlist) editing their channel
-    // for the first time has no `partner_youtube_creator_profiles` row yet — the
-    // row was previously only created by admin action, which left self-serve
-    // partners stuck on "Partner profile not found." A fresh row takes the
-    // supplied `channel_url`; on an existing row it is only filled if still empty.
+
+    // Upsert: an access-level / allowlisted partner has no row until this first
+    // save (previously only admin actions created one -> "Partner profile not
+    // found."). `channel_url` is written on insert and only while still empty.
     let row = conn
         .query_one(
             "INSERT INTO partner_youtube_creator_profiles
