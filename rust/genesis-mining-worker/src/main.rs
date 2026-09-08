@@ -22,6 +22,7 @@ mod admin_economy_reports;
 mod admin_gate;
 mod admin_mining_dist;
 mod admin_referral;
+mod admin_security;
 mod admin_users;
 mod announcements;
 mod backup_admin;

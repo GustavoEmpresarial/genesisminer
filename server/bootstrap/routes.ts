@@ -12,13 +12,10 @@ import pool from '../core/database/pool.js';
 import type { AppDeps } from './deps.js';
 
 import { registerAdminUsersModuleRoutes } from '../modules/admin/users/index.js';
-import { registerDeviceFingerprintAdminModuleRoutes } from '../modules/admin/device-fingerprint/index.js';
 import { registerImageAssetModuleRoutes } from '../modules/admin/image-asset/index.js';
 import { registerAdminPromoCodesModuleRoutes } from '../modules/admin/promo-codes/index.js';
 import { registerAdminRecallAllModuleRoutes } from '../modules/admin/recall-all/index.js';
 import { registerAdminRecallScanModuleRoutes } from '../modules/admin/recall-scan/index.js';
-import { registerAdminSecurityBulkModuleRoutes } from '../modules/admin/security-bulk/index.js';
-import { registerAdminSecurityStatsModuleRoutes } from '../modules/admin/security-stats/index.js';
 import { registerAdminSuspiciousEmailsModuleRoutes } from '../modules/admin/suspicious-emails/index.js';
 import { registerAdminUserAuditModuleRoutes } from '../modules/admin/user-audit/index.js';
 import { registerCheckinModuleRoutes } from '../modules/checkin/index.js';
@@ -41,7 +38,6 @@ export function registerAllRoutes(app: Express, deps: AppDeps): void {
     parseCookies,
     issueJwtAuthCookies
   });
-  registerDeviceFingerprintAdminModuleRoutes(app, { isAdmin });
   registerImageAssetModuleRoutes(app, {
     isAdmin: deps.isAdmin,
     imgDir: deps.imgDir,
@@ -50,8 +46,6 @@ export function registerAllRoutes(app: Express, deps: AppDeps): void {
   registerAdminPromoCodesModuleRoutes(app, { isAdmin });
   registerAdminRecallAllModuleRoutes(app, { isAdmin });
   registerAdminRecallScanModuleRoutes(app, { isAdmin });
-  registerAdminSecurityBulkModuleRoutes(app, { isAdmin });
-  registerAdminSecurityStatsModuleRoutes(app, { isAdmin });
   registerAdminSuspiciousEmailsModuleRoutes(app, { isAdmin });
   registerAdminUserAuditModuleRoutes(app, { isAdmin });
 

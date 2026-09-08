@@ -212,6 +212,17 @@ pub fn resolve_admin_route_requirement(method: &Method, raw_path: &str) -> Admin
     if p.starts_with("/api/admin/support-tickets") || p.starts_with("/api/admin/support/") {
         return Tab(TAB_SUPPORT);
     }
+    // Destructive bulk security tools — super-admin only (Node `requireSuperAdmin`).
+    if is_post
+        && matches!(
+            p,
+            "/api/admin/security/bulk-tools/config"
+                | "/api/admin/security/inactive-block/apply"
+                | "/api/admin/security/force-password-reset/apply"
+        )
+    {
+        return Super;
+    }
     if p == "/api/admin/device-fingerprints" || p.starts_with("/api/admin/security/") {
         return Tab(TAB_SECURITY);
     }

@@ -99,6 +99,14 @@ use crate::price_sync_loop::{run_price_sync_once, SYNC_LIVE_PRICES_PATH};
 use crate::backup_admin::{
     run_backup_create, run_backup_verify, BACKUP_CREATE_PATH, BACKUP_VERIFY_PATH,
 };
+use crate::admin_security::{
+    run_blacklist_add, run_blacklist_remove, run_bulk_config_get, run_bulk_config_set,
+    run_device_fingerprints, run_inactive_block_apply, run_inactive_block_preview,
+    run_pw_reset_apply, run_pw_reset_preview, run_security_stats, SECURITY_BLACKLIST_ADD_PATH,
+    SECURITY_BLACKLIST_REMOVE_PATH, SECURITY_BULK_CONFIG_GET_PATH, SECURITY_BULK_CONFIG_SET_PATH,
+    SECURITY_FINGERPRINTS_PATH, SECURITY_INACTIVE_APPLY_PATH, SECURITY_INACTIVE_PREVIEW_PATH,
+    SECURITY_PWRESET_APPLY_PATH, SECURITY_PWRESET_PREVIEW_PATH, SECURITY_STATS_PATH,
+};
 use crate::admin_economy_reports::{
     run_economy_coin_stats, run_mining_runtime_summary, ECONOMY_STATS_PATH,
     MINING_RUNTIME_SUMMARY_PATH,
@@ -359,6 +367,16 @@ pub fn router(state: AppState) -> Router {
         .route(SYNC_LIVE_PRICES_PATH, post(post_sync_live_prices))
         .route(BACKUP_CREATE_PATH, post(post_backup_create))
         .route(BACKUP_VERIFY_PATH, post(post_backup_verify))
+        .route(SECURITY_STATS_PATH, post(post_security_stats))
+        .route(SECURITY_BLACKLIST_ADD_PATH, post(post_security_blacklist_add))
+        .route(SECURITY_BLACKLIST_REMOVE_PATH, post(post_security_blacklist_remove))
+        .route(SECURITY_FINGERPRINTS_PATH, post(post_security_fingerprints))
+        .route(SECURITY_BULK_CONFIG_GET_PATH, post(post_security_bulk_config_get))
+        .route(SECURITY_BULK_CONFIG_SET_PATH, post(post_security_bulk_config_set))
+        .route(SECURITY_INACTIVE_PREVIEW_PATH, post(post_security_inactive_preview))
+        .route(SECURITY_INACTIVE_APPLY_PATH, post(post_security_inactive_apply))
+        .route(SECURITY_PWRESET_PREVIEW_PATH, post(post_security_pwreset_preview))
+        .route(SECURITY_PWRESET_APPLY_PATH, post(post_security_pwreset_apply))
         .route(REF_COMMISSIONS_PATH, post(post_ref_commissions))
         .route(REF_LINKS_PATH, post(post_ref_links))
         .route(REF_EXPORT_CSV_PATH, post(post_ref_export_csv))
@@ -827,6 +845,105 @@ async fn post_backup_verify(
     Json(body): Json<serde_json::Value>,
 ) -> impl axum::response::IntoResponse {
     match run_backup_verify(&state.cfg, body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_security_stats(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    let section = body.get("section").and_then(|v| v.as_str()).unwrap_or("");
+    match run_security_stats(&state.pool, section).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_security_blacklist_add(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    match run_blacklist_add(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_security_blacklist_remove(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    match run_blacklist_remove(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_security_fingerprints(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    match run_device_fingerprints(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_security_bulk_config_get(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match run_bulk_config_get(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_security_bulk_config_set(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    match run_bulk_config_set(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_security_inactive_preview(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    match run_inactive_block_preview(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_security_inactive_apply(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    match run_inactive_block_apply(&state.pool, &state.http, &state.cfg, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_security_pwreset_preview(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match run_pw_reset_preview(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_security_pwreset_apply(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    match run_pw_reset_apply(&state.pool, &state.http, &state.cfg, &body).await {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
     }

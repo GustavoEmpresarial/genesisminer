@@ -148,3 +148,23 @@ pub async fn auth_session_delete_by_user(
     .await?;
     Ok(())
 }
+
+/// Bulk variant — wipe sessions for many users in one call (admin security
+/// bulk block / password reset). No-op for an empty slice.
+pub async fn auth_session_delete_by_users(
+    http: &Client,
+    cfg: &WorkerConfig,
+    user_ids: &[i64],
+) -> Result<(), PlayerReadError> {
+    if user_ids.is_empty() {
+        return Ok(());
+    }
+    let _ = post_auth(
+        http,
+        cfg,
+        SESSION_DELETE_BY_USER_PATH,
+        &json!({ "userIds": user_ids }),
+    )
+    .await?;
+    Ok(())
+}
