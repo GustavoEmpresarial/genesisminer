@@ -220,6 +220,17 @@ pub fn parse_upgrade_write_rows(
             }
         }
 
+        // Máquinas NFT (id `nft_*`): o H/s efetivo é o preço em USD. Força
+        // `baseProduction == baseCost` no save — o admin não consegue dessincronizar
+        // e mudar o preço propaga pro H/s. Só quando baseCost é número finito >= 0.
+        if id.starts_with("nft_") {
+            if let Some(cost) = fields.get("baseCost").and_then(Value::as_f64) {
+                if cost.is_finite() && cost >= 0.0 {
+                    fields.insert("baseProduction".to_string(), fields["baseCost"].clone());
+                }
+            }
+        }
+
         out.push(UpgradeWriteRow {
             id,
             name,
@@ -254,6 +265,38 @@ pub fn assert_canonical_ids_immutable(rows: &[UpgradeWriteRow]) -> Result<(), Ca
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn nft_row_forces_base_production_equals_base_cost() {
+        let rows = parse_upgrade_write_rows(&[json!({
+            "id": "nft_pool_v3_mitico", "name": "NFT MÍTICO",
+            "category": "NFT", "type": "machine",
+            "baseCost": 200, "baseProduction": 2
+        })])
+        .unwrap();
+        assert_eq!(rows[0].fields["baseProduction"].as_f64(), Some(200.0));
+    }
+
+    #[test]
+    fn non_nft_row_keeps_base_production() {
+        let rows = parse_upgrade_write_rows(&[json!({
+            "id": "asic_aura-tec", "name": "USDC AURA MINER",
+            "category": "ASIC", "type": "machine",
+            "baseCost": 5, "baseProduction": 20
+        })])
+        .unwrap();
+        assert_eq!(rows[0].fields["baseProduction"].as_f64(), Some(20.0));
+    }
+
+    #[test]
+    fn nft_row_null_base_cost_leaves_base_production() {
+        let rows = parse_upgrade_write_rows(&[json!({
+            "id": "nft_x", "name": "X", "category": "NFT", "type": "machine",
+            "baseCost": null, "baseProduction": 7
+        })])
+        .unwrap();
+        assert_eq!(rows[0].fields["baseProduction"].as_f64(), Some(7.0));
+    }
 
     #[test]
     fn shop_id_regex_parity() {
