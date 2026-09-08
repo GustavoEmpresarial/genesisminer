@@ -46,6 +46,10 @@ pub async fn run_backup_sql_loop(pool: Pool, locks: RedisLockClient, cfg: Worker
         "auto backup cron starting"
     );
 
+    // A dump killed mid-write (deploy / OOM) leaves a large `.tmp`. Clear stale
+    // ones (>1h old) on startup so they don't accumulate.
+    sweep_stale_tmp(Path::new(&cfg.backup_dir));
+
     loop {
         let delay =
             ms_until_next_local_clock_run(cfg.backup_auto_local_hour, cfg.backup_auto_local_minute);
@@ -210,6 +214,35 @@ pub fn prune_auto_backups_by_age(backup_dir: &Path, retention_days: u32, count_c
             continue; // always keep the newest; keep the rest within age + cap
         }
         remove_with_sidecar(path);
+    }
+}
+
+/// Delete `*.tmp` backup files older than one hour (orphans from a killed dump).
+fn sweep_stale_tmp(backup_dir: &Path) {
+    let Ok(rd) = std::fs::read_dir(backup_dir) else {
+        return;
+    };
+    let cutoff = Duration::from_secs(3600);
+    let now = SystemTime::now();
+    for ent in rd.flatten() {
+        let name = ent.file_name();
+        let Some(n) = name.to_str() else { continue };
+        if !n.to_ascii_lowercase().ends_with(".tmp") {
+            continue;
+        }
+        let stale = ent
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| now.duration_since(t).ok())
+            .map(|age| age > cutoff)
+            .unwrap_or(true);
+        if stale {
+            match std::fs::remove_file(ent.path()) {
+                Ok(()) => info!(path = %ent.path().display(), "stale backup .tmp removed"),
+                Err(e) => warn!(path = %ent.path().display(), err = %e, "remove stale .tmp failed"),
+            }
+        }
     }
 }
 

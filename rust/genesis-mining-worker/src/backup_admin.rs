@@ -48,8 +48,8 @@ pub async fn run_backup_create(cfg: &WorkerConfig, body: Value) -> Result<Value,
         }
     });
 
+    // `ok_payload` already wraps this with `ok: true`.
     Ok(json!({
-        "ok": true,
         "queued": true,
         "message": "Backup iniciado em segundo plano. Atualize a lista em ~1–3 minutos.",
     }))
@@ -72,7 +72,7 @@ pub async fn run_backup_verify(cfg: &WorkerConfig, body: Value) -> Result<Value,
         let integrity = verify_existing(&cfg.backup_dir, &name).await;
         results.insert(name, json!(integrity.as_str()));
     }
-    Ok(json!({ "ok": true, "results": Value::Object(results) }))
+    Ok(json!({ "results": Value::Object(results) }))
 }
 
 #[cfg(test)]

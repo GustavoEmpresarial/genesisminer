@@ -438,12 +438,16 @@ services:
       CLOUDFLARE_TURNSTILE_SITE_KEY: ${CLOUDFLARE_TURNSTILE_SITE_KEY:-}
       IMG_UPLOADS_DIR: /app/storage/uploads
       SUPPORT_UPLOAD_DIR: /app/storage/uploads
+      # DB backups: genesis-api lists / deletes / streams downloads from this
+      # shared volume (genesis-mining-worker runs pg_dump into it).
+      BACKUP_DIR: /app/storage/backups
       TRUST_CF_CONNECTING_IP: ${TRUST_CF_CONNECTING_IP:-0}
     env_file:
       - .env
     volumes:
       - ../storage/uploads:/app/storage/uploads
       - ../storage/media-seed:/app/storage/media-seed
+      - ../storage/backups:/app/storage/backups
     networks:
       app_production_default:
         aliases:
