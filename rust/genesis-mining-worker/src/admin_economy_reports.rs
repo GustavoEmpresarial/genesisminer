@@ -271,7 +271,10 @@ pub async fn run_distribution_preview(
     };
     let total_coins_month = yield_per_hash * active_hashrate * SECONDS_PER_MONTH;
     let total_usd_month = total_coins_month * price_or_1;
-    let per_hash_usd_month = yield_per_hash * price_or_1 * SECONDS_PER_MONTH;
+    let per_hash_coins_month = yield_per_hash * SECONDS_PER_MONTH;
+    let per_hash_usd_month = per_hash_coins_month * price_or_1;
+    // Unidade de referência: uma máquina de 10 H/s.
+    let representative_unit_coins_month = 10.0 * per_hash_coins_month;
     let representative_unit_usd_month = 10.0 * per_hash_usd_month;
 
     // Top mineradores por hashrate na moeda (do ranking do último tick).
@@ -303,6 +306,7 @@ pub async fn run_distribution_preview(
                 "userId": uid,
                 "hashrate": h,
                 "sharePct": share * 100.0,
+                "coinsMonth": h * per_hash_coins_month,   // = share * total_coins_month
                 "usdMonth": share * total_usd_month,
             })
         })
@@ -344,7 +348,9 @@ pub async fn run_distribution_preview(
         "budgetPerSecCoins": budget_per_sec_coins,
         "totalCoinsMonth": total_coins_month,
         "totalUsdMonth": total_usd_month,
+        "perHashCoinsMonth": per_hash_coins_month,
         "perHashUsdMonth": per_hash_usd_month,
+        "representativeUnitCoinsMonth": representative_unit_coins_month,
         "representativeUnitUsdMonth": representative_unit_usd_month,
         "topMiners": top_miners,
         "warnings": warnings,

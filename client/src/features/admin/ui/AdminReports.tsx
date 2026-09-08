@@ -921,19 +921,31 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                             ) : distPreview?.error ? (
                                                                 <p className="text-rose-400">{distPreview.error}</p>
                                                             ) : distPreview ? (
+                                                                (() => {
+                                                                    const sym = distPreview.symbol || editingCoin.symbol || '';
+                                                                    const fmtC = (n: number) => {
+                                                                        const v = Number(n) || 0;
+                                                                        if (v === 0) return '0';
+                                                                        if (v >= 0.0001) return v.toLocaleString('pt-BR', { maximumFractionDigits: 8 });
+                                                                        return v.toExponential(3);
+                                                                    };
+                                                                    const fmtU = (n: number) => {
+                                                                        const v = Number(n) || 0;
+                                                                        return v >= 0.01 || v === 0 ? `$${v.toFixed(2)}` : `$${v.toExponential(2)}`;
+                                                                    };
+                                                                    return (
                                                                 <div className="space-y-1 font-mono">
-                                                                    <div>Hashrate ativo: {Number(distPreview.activeHashrate).toLocaleString()} H/s · {distPreview.activeMiners} mineradores</div>
-                                                                    <div>Preço: ${Number(distPreview.priceUsd).toFixed(6)}</div>
-                                                                    <div>Total projetado: <span className="text-emerald-400">${Number(distPreview.totalUsdMonth).toFixed(2)}/mês</span></div>
-                                                                    <div>$/mês por H/s: ${Number(distPreview.perHashUsdMonth).toFixed(6)}</div>
-                                                                    <div>Unidade $10 / 10 H/s: ${Number(distPreview.representativeUnitUsdMonth).toFixed(4)}/mês</div>
-                                                                    <div>yield/hash: {Number(distPreview.yieldPerHash).toExponential(4)}</div>
+                                                                    <div>Hashrate ativo: {Number(distPreview.activeHashrate).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} H/s · {distPreview.activeMiners} mineradores</div>
+                                                                    <div>Preço {sym}: ${Number(distPreview.priceUsd).toLocaleString('pt-BR', { maximumFractionDigits: 6 })}</div>
+                                                                    <div>Emissão total: <span className="text-emerald-400">{fmtC(distPreview.totalCoinsMonth)} {sym}/mês</span> ({fmtU(distPreview.totalUsdMonth)})</div>
+                                                                    <div>Máquina 10 H/s ganha: <span className="text-emerald-300">{fmtC(distPreview.representativeUnitCoinsMonth)} {sym}/mês</span> ({fmtU(distPreview.representativeUnitUsdMonth)})</div>
+                                                                    <div className="text-slate-500">por H/s: {fmtC(distPreview.perHashCoinsMonth)} {sym}/mês</div>
                                                                     {Array.isArray(distPreview.topMiners) && distPreview.topMiners.length > 0 && (
                                                                         <div className="pt-1">
-                                                                            <div className="text-slate-500">Top mineradores:</div>
-                                                                            {distPreview.topMiners.slice(0, 5).map((t: any) => (
+                                                                            <div className="text-slate-500">Quanto cada minerador recebe (por mês):</div>
+                                                                            {distPreview.topMiners.slice(0, 8).map((t: any) => (
                                                                                 <div key={t.userId}>
-                                                                                    #{t.userId}: {Number(t.sharePct).toFixed(1)}% · ${Number(t.usdMonth).toFixed(2)}/mês
+                                                                                    #{t.userId} · {Number(t.hashrate).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} H/s ({Number(t.sharePct).toFixed(1)}%): <span className="text-white">{fmtC(t.coinsMonth)} {sym}</span> ({fmtU(t.usdMonth)})
                                                                                 </div>
                                                                             ))}
                                                                         </div>
@@ -942,6 +954,8 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                                         <div key={i} className="text-amber-400">⚠ {w}</div>
                                                                     ))}
                                                                 </div>
+                                                                    );
+                                                                })()
                                                             ) : (
                                                                 <p className="text-slate-500">—</p>
                                                             )}

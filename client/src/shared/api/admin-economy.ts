@@ -223,9 +223,11 @@ export interface DistributionPreview {
   yieldPerHash: number;
   totalCoinsMonth: number;
   totalUsdMonth: number;
+  perHashCoinsMonth: number;
   perHashUsdMonth: number;
+  representativeUnitCoinsMonth: number;
   representativeUnitUsdMonth: number;
-  topMiners: Array<{ userId: number; hashrate: number; sharePct: number; usdMonth: number }>;
+  topMiners: Array<{ userId: number; hashrate: number; sharePct: number; coinsMonth: number; usdMonth: number }>;
   warnings: string[];
 }
 
