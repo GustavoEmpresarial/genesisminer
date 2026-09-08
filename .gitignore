@@ -39,3 +39,6 @@ __pycache__/
 
 # --- Deploy artefacts ---
 .last-deployed-image
+
+# Local-only VM credentials in plaintext (do not commit)
+vm-credentials.txt

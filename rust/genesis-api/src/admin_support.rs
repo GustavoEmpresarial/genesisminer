@@ -28,6 +28,9 @@ const ADMIN_SUPPORT_STATUS_PATH: &str = "/api/admin/support-tickets/status";
 const ADMIN_SUPPORT_REPLY_PATH: &str = "/api/admin/support-tickets/reply";
 const ADMIN_SUPPORT_USER_HISTORY_PATH: &str = "/api/admin/support/user-history";
 const ADMIN_SUPPORT_TICKET_PATH: &str = "/api/admin/support/tickets/{ticket_id}";
+/// Legacy (Node-era) detail path — kept so stale admin browser bundles that
+/// still call `/api/admin/support-tickets/<id>` don't 404.
+const ADMIN_SUPPORT_TICKET_LEGACY_PATH: &str = "/api/admin/support-tickets/{ticket_id}";
 
 // genesis-mining-worker twins.
 const W_TICKETS: &str = "/v1/support/admin/tickets-payload";
@@ -196,4 +199,5 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route(ADMIN_SUPPORT_USER_HISTORY_PATH, get(user_history))
         .route(ADMIN_SUPPORT_TICKET_PATH, get(ticket_detail))
+        .route(ADMIN_SUPPORT_TICKET_LEGACY_PATH, get(ticket_detail))
 }
