@@ -13,6 +13,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
+use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
@@ -22,9 +23,12 @@ use crate::config::{WorkerConfig, AUTO_SQL_BACKUP_PREFIX, GOOGLE_OAUTH_TOKEN_URL
 const DRIVE_UPLOAD_URL: &str =
     "https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&supportsAllDrives=true";
 const DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
-/// Read-into-memory cap for the upload body. `-Fc` dumps compress well; a bigger
-/// archive is skipped (logged) rather than risking OOM.
-const MAX_UPLOAD_BYTES: u64 = 512 * 1024 * 1024;
+/// Resumable-upload chunk size — 128 MiB (must be a multiple of 256 KiB per the
+/// Drive API). Only one chunk is held in memory at a time, so a multi-GB dump
+/// uploads without an OOM.
+const UPLOAD_CHUNK_BYTES: u64 = 128 * 1024 * 1024;
+/// Refuse only absurd sizes (Drive free tier is 15 GB total anyway).
+const MAX_UPLOAD_BYTES: u64 = 30 * 1024 * 1024 * 1024;
 
 struct CachedToken {
     value: String,
@@ -38,7 +42,8 @@ fn token_cache() -> &'static Mutex<Option<CachedToken>> {
 
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
+        // one 128 MiB chunk over a slow uplink can take a few minutes
+        .timeout(Duration::from_secs(600))
         .build()
         .unwrap_or_default()
 }
@@ -153,31 +158,26 @@ async fn upload_file(
     name: &str,
     sha256: Option<&str>,
 ) -> Result<String, String> {
-    let meta = tokio::fs::metadata(local_path)
+    let total = tokio::fs::metadata(local_path)
         .await
-        .map_err(|e| format!("stat {name}: {e}"))?;
-    if meta.len() > MAX_UPLOAD_BYTES {
-        return Err(format!(
-            "{name} is {} bytes — over the {MAX_UPLOAD_BYTES}-byte upload cap; skipped",
-            meta.len()
-        ));
+        .map_err(|e| format!("stat {name}: {e}"))?
+        .len();
+    if total > MAX_UPLOAD_BYTES {
+        return Err(format!("{name} is {total} bytes — over the {MAX_UPLOAD_BYTES}-byte cap; skipped"));
     }
-    let bytes = tokio::fs::read(local_path)
-        .await
-        .map_err(|e| format!("read {name}: {e}"))?;
 
     let mut metadata = json!({ "name": name, "parents": [folder_id] });
     if let Some(h) = sha256 {
         metadata["appProperties"] = json!({ "sha256": h });
     }
 
-    // 1) start resumable session
+    // 1) start a resumable session
     let start = http
         .post(DRIVE_UPLOAD_URL)
         .bearer_auth(token)
         .header("Content-Type", "application/json; charset=UTF-8")
         .header("X-Upload-Content-Type", "application/octet-stream")
-        .header("X-Upload-Content-Length", bytes.len().to_string())
+        .header("X-Upload-Content-Length", total.to_string())
         .body(serde_json::to_vec(&metadata).unwrap_or_default())
         .send()
         .await
@@ -196,24 +196,58 @@ async fn upload_file(
         .ok_or("resumable start: no Location header")?
         .to_string();
 
-    // 2) single PUT of the whole body
-    let put = http
-        .put(&session)
-        .header("Content-Type", "application/octet-stream")
-        .body(bytes)
-        .send()
+    // 2) PUT the file in <=128 MiB chunks (Content-Range) so we never hold the
+    //    whole dump in memory. Server answers 308 until the final chunk.
+    let mut f = tokio::fs::File::open(local_path)
         .await
-        .map_err(|e| format!("upload PUT: {e}"))?;
-    let status = put.status();
-    let body: serde_json::Value = put.json().await.unwrap_or(serde_json::Value::Null);
-    if !status.is_success() {
-        return Err(format!("upload PUT HTTP {}: {body}", status.as_u16()));
+        .map_err(|e| format!("open {name}: {e}"))?;
+    let mut offset: u64 = 0;
+    let mut buf = vec![0u8; UPLOAD_CHUNK_BYTES as usize];
+    loop {
+        let want = std::cmp::min(UPLOAD_CHUNK_BYTES, total - offset) as usize;
+        if want == 0 && total != 0 {
+            break;
+        }
+        let mut filled = 0usize;
+        while filled < want {
+            let n = f
+                .read(&mut buf[filled..want])
+                .await
+                .map_err(|e| format!("read {name}: {e}"))?;
+            if n == 0 {
+                break;
+            }
+            filled += n;
+        }
+        let end = offset + filled as u64; // exclusive
+        let range = if total == 0 {
+            "bytes */0".to_string()
+        } else {
+            format!("bytes {}-{}/{}", offset, end - 1, total)
+        };
+        let resp = http
+            .put(&session)
+            .header("Content-Type", "application/octet-stream")
+            .header("Content-Range", range)
+            .body(buf[..filled].to_vec())
+            .send()
+            .await
+            .map_err(|e| format!("upload chunk @{offset}: {e}"))?;
+        let code = resp.status().as_u16();
+        if code == 308 {
+            offset = end;
+            continue;
+        }
+        if resp.status().is_success() {
+            let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
+            return Ok(body.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string());
+        }
+        return Err(format!(
+            "upload chunk @{offset} HTTP {code}: {}",
+            resp.text().await.unwrap_or_default().chars().take(200).collect::<String>()
+        ));
     }
-    Ok(body
-        .get("id")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string())
+    Err("upload finished without a final 2xx".into())
 }
 
 async fn prune_drive_folder(
