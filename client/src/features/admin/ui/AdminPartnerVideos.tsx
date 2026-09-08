@@ -401,6 +401,7 @@ export const AdminPartnerVideos: React.FC = () => {
         alert(r.error || 'Falha ao guardar.');
         return;
       }
+      alert('Vitrine do parceiro atualizada.');
       setVitrineUserId(null);
       void loadPartners();
     } finally {
