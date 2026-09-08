@@ -96,6 +96,9 @@ use crate::quests_admin::{
     QUESTS_ADMIN_SAVE_PATH,
 };
 use crate::price_sync_loop::{run_price_sync_once, SYNC_LIVE_PRICES_PATH};
+use crate::backup_admin::{
+    run_backup_create, run_backup_verify, BACKUP_CREATE_PATH, BACKUP_VERIFY_PATH,
+};
 use crate::admin_economy_reports::{
     run_economy_coin_stats, run_mining_runtime_summary, ECONOMY_STATS_PATH,
     MINING_RUNTIME_SUMMARY_PATH,
@@ -354,6 +357,8 @@ pub fn router(state: AppState) -> Router {
         .route(ECONOMY_STATS_PATH, post(post_economy_coin_stats))
         .route(MINING_RUNTIME_SUMMARY_PATH, post(post_mining_runtime_summary))
         .route(SYNC_LIVE_PRICES_PATH, post(post_sync_live_prices))
+        .route(BACKUP_CREATE_PATH, post(post_backup_create))
+        .route(BACKUP_VERIFY_PATH, post(post_backup_verify))
         .route(REF_COMMISSIONS_PATH, post(post_ref_commissions))
         .route(REF_LINKS_PATH, post(post_ref_links))
         .route(REF_EXPORT_CSV_PATH, post(post_ref_export_csv))
@@ -802,6 +807,26 @@ async fn post_economy_coin_stats(
     State(state): State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse {
     match run_economy_coin_stats(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_backup_create(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    match run_backup_create(&state.cfg, body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_backup_verify(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    match run_backup_verify(&state.cfg, body).await {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
     }

@@ -7,6 +7,7 @@ interface BackupFile {
     filename: string;
     size: number;
     createdAt: number;
+    integrity?: 'ok' | 'corrupt' | 'unverified';
 }
 
 export const AdminBackup: React.FC = () => {
@@ -52,9 +53,10 @@ export const AdminBackup: React.FC = () => {
                 try {
                     const j = await resp.json();
                     const fn = typeof j.filename === 'string' ? j.filename : '';
-                    if (fn && !fn.toLowerCase().endsWith('.sql')) {
+                    const lower = fn.toLowerCase();
+                    if (fn && !lower.endsWith('.dump') && !lower.endsWith('.sql')) {
                         setMessage({
-                            text: `Resposta inesperada: «${fn}». O backup manual deve ser .sql (pg_dump). Reinicie o servidor com a versão atual do código ou instale pg_dump no PATH.`,
+                            text: `Resposta inesperada: «${fn}». O backup deve ser .dump (pg_dump -Fc) ou .sql. Reconstrua a imagem com a versão atual do código.`,
                             type: 'error'
                         });
                         loadBackups();
@@ -63,8 +65,10 @@ export const AdminBackup: React.FC = () => {
                     const mib = typeof j.bytes === 'number' ? (j.bytes / (1024 * 1024)).toFixed(2) : null;
                     const extra = mib != null ? ` ${mib} MiB.` : '';
                     const namePart = fn ? ` Ficheiro: ${fn}.` : '';
+                    const integ = j.integrity === 'ok' ? ' Integridade verificada (pg_restore --list OK).' : '';
+                    const gd = j.gdrive === true ? ' Cópia enviada ao Google Drive.' : '';
                     setMessage({
-                        text: `Backup SQL completo (schema + dados + constraints) criado no servidor.${namePart}${extra}`,
+                        text: `Backup completo (schema + dados + constraints) criado no servidor.${namePart}${extra}${integ}${gd}`,
                         type: 'success'
                     });
                 } catch {
@@ -192,8 +196,7 @@ export const AdminBackup: React.FC = () => {
                         <DbIcon className="text-red-500 shrink-0" /> Gerenciador de Backups
                     </h2>
                     <p className="text-slate-400 text-sm leading-relaxed break-words">
-                        O botão abaixo gera sempre <strong className="text-slate-200">.sql</strong> com <code className="text-slate-300">pg_dump</code> (schema, dados, constraints). Ficheiros <code className="text-slate-300">.json</code> na lista são só legado — não voltam a ser criados pelo painel atual.
-                        Dump automático: <code className="text-slate-300">auto_pgdump_*.sql</code> (worker em segundo plano).
+                        O botão abaixo gera um <strong className="text-slate-200">.dump</strong> com <code className="text-slate-300">pg_dump -Fc</code> (custom, comprimido — schema, dados, constraints), <strong className="text-slate-200">verificado</strong> (<code className="text-slate-300">pg_restore --list</code> + sha256) e, se configurado, copiado para o <strong className="text-slate-200">Google Drive</strong>. Automático diário: <code className="text-slate-300">auto_pgdump_*.dump</code> (worker), mantido por <strong className="text-slate-200">3 dias</strong>. Ficheiros <code className="text-slate-300">.sql</code>/<code className="text-slate-300">.json</code> são legado.
                     </p>
                     <p className="mt-2 text-xs text-slate-500 break-words">
                         Se aparecer erro com <code className="text-slate-400">ENOENT</code>: o processo Node não encontrou <code className="text-slate-400">pg_dump</code>. No deploy com Docker do repositório atual, faça <strong className="text-slate-300">rebuild da imagem</strong> do serviço <code className="text-slate-400">app</code> (o Dockerfile já inclui <code className="text-slate-400">postgresql-client</code>).
@@ -319,8 +322,20 @@ export const AdminBackup: React.FC = () => {
                                                         <span className="text-white font-medium truncate max-w-xs" title={b.filename}>{b.filename}</span>
                                                         <span className="text-[10px] text-slate-500 flex flex-wrap items-center gap-1">
                                                             {new Date(b.createdAt).toLocaleString()}
+                                                            {b.filename.toLowerCase().endsWith('.dump') && (
+                                                                <span className="font-bold uppercase text-emerald-600/90 dark:text-emerald-400/90">DUMP (-Fc)</span>
+                                                            )}
                                                             {b.filename.toLowerCase().endsWith('.sql') && (
                                                                 <span className="font-bold uppercase text-emerald-600/90 dark:text-emerald-400/90">SQL</span>
+                                                            )}
+                                                            {b.integrity === 'ok' && (
+                                                                <span className="font-bold uppercase text-emerald-500" title="pg_restore --list OK + sha256">✓ íntegro</span>
+                                                            )}
+                                                            {b.integrity === 'corrupt' && (
+                                                                <span className="font-bold uppercase text-red-500" title="pg_restore --list falhou ou sha256 não bate">✗ corrompido</span>
+                                                            )}
+                                                            {b.integrity === 'unverified' && b.filename.toLowerCase().endsWith('.dump') && (
+                                                                <span className="font-bold uppercase text-slate-500" title="worker indisponível para verificar">? não verificado</span>
                                                             )}
                                                             {b.filename.toLowerCase().endsWith('.json') && (
                                                                 <span className="font-bold uppercase text-amber-600/90 dark:text-amber-400/90" title="Export antigo; use Gerar SQL para dump completo">

@@ -133,14 +133,23 @@ pub const JOB_TIMEOUT_BACKUP_SQL_MAX_MS: u64 = 30 * MS_PER_MINUTE;
 pub const AUTO_SQL_BACKUP_LOCK_K1: i32 = 0x4d53;
 /// Node `AUTO_SQL_BACKUP_LOCK_K2`.
 pub const AUTO_SQL_BACKUP_LOCK_K2: i32 = 0x6270;
-/// Node `DEFAULT_BACKUP_SQL_KEEP` / `DEFAULT_AUTO_BACKUP_KEEP_COUNT`.
-pub const DEFAULT_BACKUP_SQL_KEEP: u32 = 14;
+/// Hard count cap so a runaway can't fill disk (age-based prune is primary).
+pub const DEFAULT_BACKUP_SQL_KEEP: u32 = 30;
 /// Node `AUTO_BACKUP_KEEP_MIN`.
 pub const AUTO_BACKUP_KEEP_MIN: u32 = 1;
 /// Node `AUTO_BACKUP_KEEP_MAX`.
 pub const AUTO_BACKUP_KEEP_MAX: u32 = 500;
 /// Node `AUTO_SQL_BACKUP_PREFIX`.
 pub const AUTO_SQL_BACKUP_PREFIX: &str = "auto_pgdump_";
+/// Age-based retention for `auto_pgdump_*` dumps (primary prune). Newest is
+/// always kept regardless of age.
+pub const DEFAULT_BACKUP_RETENTION_DAYS: u32 = 3;
+pub const BACKUP_RETENTION_DAYS_MIN: u32 = 1;
+pub const BACKUP_RETENTION_DAYS_MAX: u32 = 90;
+/// Custom-format dump extension (`pg_dump -Fc`).
+pub const BACKUP_ARCHIVE_EXT: &str = ".dump";
+/// Google OAuth2 token endpoint (refresh-token grant).
+pub const GOOGLE_OAUTH_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 /// Node `DEFAULT_BACKUP_DIR_SEGMENTS` joined.
 pub const DEFAULT_BACKUP_DIR: &str = "storage/backups";
 /// Node `PROFILE_AUDIT_RETENTION_DAYS`.
@@ -257,8 +266,17 @@ pub struct WorkerConfig {
     pub backup_auto_local_hour: u32,
     pub backup_auto_local_minute: u32,
     pub backup_sql_keep: u32,
+    /// Age-based retention for auto dumps (days). Primary prune.
+    pub backup_retention_days: u32,
     pub job_timeout_backup_sql_ms: u64,
     pub backup_dir: String,
+    /// Google Drive off-site copy of every verified backup. All four required;
+    /// module idles otherwise.
+    pub gdrive_client_id: Option<String>,
+    pub gdrive_client_secret: Option<String>,
+    pub gdrive_refresh_token: Option<String>,
+    pub gdrive_backup_folder_id: Option<String>,
+    pub gdrive_retention_days: u32,
     /// Node `UPLOADS_DIR` (`bootstrap/deps.ts`) — runtime upload root.
     pub img_uploads_dir: String,
     /// Node `IMG_DIR` (`bootstrap/deps.ts`) — media-seed catalog root.
@@ -424,6 +442,12 @@ impl WorkerConfig {
                 BACKUP_AUTO_MINUTE_MAX,
             ),
             backup_sql_keep: resolve_backup_sql_keep(),
+            backup_retention_days: env_u32_clamped(
+                "BACKUP_RETENTION_DAYS",
+                DEFAULT_BACKUP_RETENTION_DAYS,
+                BACKUP_RETENTION_DAYS_MIN,
+                BACKUP_RETENTION_DAYS_MAX,
+            ),
             job_timeout_backup_sql_ms: env_u64_clamped(
                 "JOB_TIMEOUT_BACKUP_SQL_MS",
                 DEFAULT_JOB_TIMEOUT_BACKUP_SQL_MS,
@@ -431,6 +455,21 @@ impl WorkerConfig {
                 JOB_TIMEOUT_BACKUP_SQL_MAX_MS,
             ),
             backup_dir: resolve_backup_dir(),
+            gdrive_client_id: env_opt("GDRIVE_CLIENT_ID"),
+            gdrive_client_secret: env_opt("GDRIVE_CLIENT_SECRET"),
+            gdrive_refresh_token: env_opt("GDRIVE_REFRESH_TOKEN"),
+            gdrive_backup_folder_id: env_opt("GDRIVE_BACKUP_FOLDER_ID"),
+            gdrive_retention_days: env_u32_clamped(
+                "GDRIVE_RETENTION_DAYS",
+                env_u32_clamped(
+                    "BACKUP_RETENTION_DAYS",
+                    DEFAULT_BACKUP_RETENTION_DAYS,
+                    BACKUP_RETENTION_DAYS_MIN,
+                    BACKUP_RETENTION_DAYS_MAX,
+                ),
+                BACKUP_RETENTION_DAYS_MIN,
+                BACKUP_RETENTION_DAYS_MAX,
+            ),
             img_uploads_dir,
             img_dir: resolve_img_dir(),
             chat_audio_dir,
@@ -482,6 +521,22 @@ impl WorkerConfig {
     pub fn backup_sql_loop_active(&self) -> bool {
         self.scheduler_enabled && self.backup_sql_loop_enabled && !self.backup_disable_auto
     }
+
+    /// Google Drive off-site copy is configured (all four secrets present).
+    pub fn gdrive_active(&self) -> bool {
+        self.gdrive_client_id.is_some()
+            && self.gdrive_client_secret.is_some()
+            && self.gdrive_refresh_token.is_some()
+            && self.gdrive_backup_folder_id.is_some()
+    }
+}
+
+/// Trimmed env var, `None` when unset or blank.
+fn env_opt(key: &str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// `MINING_WORKER_AUTH_TOKEN`: required when `NODE_ENV=production`; optional in dev

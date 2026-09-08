@@ -133,11 +133,21 @@ services:
       IMG_DIR: /app/storage/media-seed
       IMG_UPLOADS_DIR: /app/storage/uploads
       SUPPORT_UPLOAD_DIR: /app/storage/uploads
+      # DB backups: pg_dump -Fc runs HERE (worker has postgresql-client). Written
+      # to the shared volume so genesis-api can list/download them.
+      BACKUP_DIR: /app/storage/backups
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-3}
+      # Off-site copy to Google Drive (optional — idles unless all 4 are set).
+      GDRIVE_CLIENT_ID: ${GDRIVE_CLIENT_ID:-}
+      GDRIVE_CLIENT_SECRET: ${GDRIVE_CLIENT_SECRET:-}
+      GDRIVE_REFRESH_TOKEN: ${GDRIVE_REFRESH_TOKEN:-}
+      GDRIVE_BACKUP_FOLDER_ID: ${GDRIVE_BACKUP_FOLDER_ID:-}
     env_file:
       - .env
     volumes:
       - ../storage/uploads:/app/storage/uploads
       - ../storage/media-seed:/app/storage/media-seed
+      - ../storage/backups:/app/storage/backups
     networks:
       app_production_default:
         aliases:

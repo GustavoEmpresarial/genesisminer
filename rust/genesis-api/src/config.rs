@@ -70,6 +70,9 @@ pub struct ApiConfig {
     pub img_uploads_dir: String,
     pub img_dir: String,
     pub support_upload_dir: String,
+    /// `BACKUP_DIR` — shared volume with `genesis-mining-worker` (list / delete /
+    /// download of DB backups). See [`crate::admin_backup`].
+    pub backup_dir: String,
     pub client_dist: String,
     pub trust_cf_connecting_ip: bool,
 }
@@ -182,6 +185,7 @@ impl ApiConfig {
             img_uploads_dir,
             img_dir: env_string_or("IMG_DIR", DEFAULT_IMG_DIR),
             support_upload_dir,
+            backup_dir: env_string_or("BACKUP_DIR", "storage/backups"),
             client_dist: env_string_or("CLIENT_DIST", DEFAULT_CLIENT_DIST),
             trust_cf_connecting_ip: env_nonempty("TRUST_CF_CONNECTING_IP")
                 .map(|v| v == "1")

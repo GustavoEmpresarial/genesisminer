@@ -87,6 +87,7 @@ fn router_arc(state: Arc<AppState>) -> Router {
         .merge(crate::admin_users::router())
         .merge(crate::admin_lucky_boxes::router())
         .merge(crate::admin_announcements::router())
+        .merge(crate::admin_backup::router())
         .merge(crate::admin_dashboard::router())
         .merge(crate::admin_economy::router())
         .merge(crate::admin_market::router())
@@ -925,6 +926,7 @@ mod tests {
             img_uploads_dir: "storage/uploads".into(),
             img_dir: "storage/media-seed".into(),
             support_upload_dir: "storage/uploads".into(),
+            backup_dir: "storage/backups".into(),
             client_dist: "client/dist".into(),
             trust_cf_connecting_ip: false,
         }

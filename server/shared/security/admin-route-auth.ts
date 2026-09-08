@@ -100,7 +100,6 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
   if (p === '/api/admin/impersonate' && method.toUpperCase() === 'POST') return { kind: 'tab', tab: 'users' };
   if (p === '/api/admin/bulk-delete') return { kind: 'super' };
   if (p === '/api/admin/recall-all-players-items') return { kind: 'super' };
-  if (p === '/api/admin/restore') return { kind: 'super' };
   if (p === '/api/admin/promo-codes/bulk-delete') return { kind: 'super' };
 
   // /api/admin/wheel/* is 100% Rust (genesis-api admin_wheel.rs, tab games).
@@ -119,9 +118,8 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
   if (p === '/api/admin/device-fingerprints') return { kind: 'tab', tab: 'security' };
   if (p.startsWith('/api/admin/security/')) return { kind: 'tab', tab: 'security' };
 
-  if (p.startsWith('/api/admin/backups') || p === '/api/admin/backup' || p.startsWith('/api/admin/backup-settings')) {
-    return { kind: 'tab', tab: 'backup' };
-  }
+  // /api/admin/backup(s)* and /api/admin/restore are 100% Rust
+  // (genesis-api admin_backup.rs, tab backup). Express handlers deleted.
   if (p === '/api/admin/recall-scan') return { kind: 'tab', tab: 'backup' };
 
   if (p.startsWith('/api/admin/transparency')) return { kind: 'tab', tab: 'transparency' };
