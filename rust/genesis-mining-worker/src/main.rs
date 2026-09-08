@@ -43,6 +43,7 @@ mod kafka;
 mod partner_games;
 mod partners;
 mod partners_admin;
+mod partner_report_loop;
 mod player_reads;
 mod price_sync_loop;
 mod profile_writes;
@@ -213,6 +214,15 @@ async fn main() -> anyhow::Result<()> {
         })
     };
 
+    let partner_report_task = {
+        let pool = pool.clone();
+        let locks = locks.clone();
+        let cfg = cfg.clone();
+        tokio::spawn(async move {
+            partner_report_loop::run_partner_report_loop(pool, locks, cfg).await;
+        })
+    };
+
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             info!(event = "shutdown", "SIGINT — mining worker stopping");
@@ -240,6 +250,9 @@ async fn main() -> anyhow::Result<()> {
         }
         _ = price_sync_task => {
             warn!("price sync task ended");
+        }
+        _ = partner_report_task => {
+            warn!("partner report task ended");
         }
     }
 

@@ -127,6 +127,10 @@ services:
       KAFKA_ENABLED: "1"
       KAFKA_BROKERS: "kafka:9092"
       KAFKA_CLIENT_ID: "genesis-mining-worker"
+      # Daily 00:00 UTC Telegram report of inactive Streamer-room partners.
+      # Idles unless both are set in deploy/.env.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_PARTNER_REPORT_CHAT_ID: ${TELEGRAM_PARTNER_REPORT_CHAT_ID:-}
       # File uploads (support attachments, admin catalog images, chat audio,
       # partner avatars) are written HERE by genesis-mining-worker and served by
       # genesis-api's /img — both must point at the same host-mounted dir.
