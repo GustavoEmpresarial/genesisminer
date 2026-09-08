@@ -127,8 +127,17 @@ services:
       KAFKA_ENABLED: "1"
       KAFKA_BROKERS: "kafka:9092"
       KAFKA_CLIENT_ID: "genesis-mining-worker"
+      # File uploads (support attachments, admin catalog images, chat audio,
+      # partner avatars) are written HERE by genesis-mining-worker and served by
+      # genesis-api's /img — both must point at the same host-mounted dir.
+      IMG_DIR: /app/storage/media-seed
+      IMG_UPLOADS_DIR: /app/storage/uploads
+      SUPPORT_UPLOAD_DIR: /app/storage/uploads
     env_file:
       - .env
+    volumes:
+      - ../storage/uploads:/app/storage/uploads
+      - ../storage/media-seed:/app/storage/media-seed
     networks:
       app_production_default:
         aliases:
