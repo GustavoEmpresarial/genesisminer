@@ -190,6 +190,11 @@ async fn reply(
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route(ADMIN_SUPPORT_TICKETS_PATH, get(tickets))
+        // nginx 301-redirects `/api/admin/support-tickets` -> `.../support-tickets/`
+        // (a `location ^~ /api/admin/support-tickets/` block for the reply upload
+        // limit); serve the list on the slashed path too so the browser's
+        // followed redirect lands on 200 instead of the fallback 404.
+        .route("/api/admin/support-tickets/", get(tickets))
         .route(ADMIN_SUPPORT_STATUS_PATH, post(status))
         .route(
             ADMIN_SUPPORT_REPLY_PATH,
