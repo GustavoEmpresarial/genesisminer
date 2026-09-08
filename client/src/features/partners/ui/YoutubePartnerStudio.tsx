@@ -37,6 +37,7 @@ import {
 } from '../../../shared/constants/partnerFormLimits';
 import { useI18n, useT, type TranslateFn } from '../../../shared/i18n';
 import { normalizePublicAssetUrl } from '../../../shared/utils/public-url';
+import { resizeImageFile } from '../../../shared/utils/resizeImage';
 import { formatPartnerDateShort } from '../lib/formatPartnerDate';
 
 function statusLabel(st: string, t: TranslateFn): string {
@@ -127,13 +128,15 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
   }, [profile?.channelName, profile?.avatarUrl, profile?.channelUrl]);
 
   const handleAvatarPick = useCallback(
-    async (file: File | undefined, mode: 'apply' | 'edit') => {
-      if (!file) return;
-      const localUrl = URL.createObjectURL(file);
+    async (picked: File | undefined, mode: 'apply' | 'edit') => {
+      if (!picked) return;
+      const localUrl = URL.createObjectURL(picked);
       if (mode === 'apply') setAvatarPreview(localUrl);
       else setEditPreview(localUrl);
       setApplyErr(null);
       setProfileErr(null);
+      // Shrink before upload — a raw phone photo (2–5 MB) 413s at the proxy.
+      const file = await resizeImageFile(picked);
       const up = await uploadPartnerYoutubeAvatar(file);
       if (!up.ok || !up.avatarUrl) {
         const msg = partnerApiError(up.error, t, 'partners.uploadFailed');

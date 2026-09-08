@@ -154,6 +154,9 @@ export async function uploadPartnerYoutubeAvatar(
     const fd = new FormData();
     fd.append('avatar', file);
     const res = await apiFetch(`${base}/partners/youtube/avatar-upload`, { method: 'POST', body: fd });
+    if (res.status === 413) {
+      return { ok: false, error: 'Imagem muito grande. Use uma foto menor (até ~1 MB).' };
+    }
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; avatarUrl?: string; error?: string };
     if (!res.ok) return { ok: false, error: data.error || `HTTP ${res.status}` };
     return { ok: true, avatarUrl: data.avatarUrl };
