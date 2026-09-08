@@ -205,7 +205,8 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
         showInExchange: true,
         targetDailyUSD: 0,
         distributionMode: 'legacy',
-        distributionUsdMonth: 0
+        distributionUsdMonth: 0,
+        isInternal: false
     });
 
     const loadCalcData = async () => {
@@ -934,6 +935,16 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                     <span className="text-xs text-white">Moeda ativa (minerável)</span>
                                                 </label>
 
+                                                <label className="flex cursor-pointer items-center gap-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editingCoin.isInternal === true}
+                                                        onChange={(e) => setEditingCoin((prev) => ({ ...prev, isInternal: e.target.checked }))}
+                                                        className="h-4 w-4 rounded border-slate-700 bg-slate-800"
+                                                    />
+                                                    <span className="text-xs text-white">Moeda interna (saldo do jogo, não sacável)</span>
+                                                </label>
+
                                                 <details className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm text-slate-300">
                                                     <summary className="cursor-pointer select-none text-xs font-bold uppercase tracking-wide text-slate-400">
                                                         Parâmetros avançados
@@ -1108,6 +1119,21 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                                     {(coin.symbol && coin.symbol[0]) || '?'}
                                                                 </div>
                                                                 <span className="font-semibold text-white">{coin.name}</span>
+                                                                <span
+                                                                    className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                                                                        coin.isInternal
+                                                                            ? 'bg-sky-500/20 text-sky-300'
+                                                                            : 'bg-slate-700/50 text-slate-400'
+                                                                    }`}
+                                                                    title={coin.isInternal ? 'Moeda interna (saldo do jogo, não sacável)' : 'Moeda externa'}
+                                                                >
+                                                                    {coin.isInternal ? 'Interna' : 'Externa'}
+                                                                </span>
+                                                                {coin.distributionMode === 'usd_month' && (
+                                                                    <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-300" title="Distribuição USD/mês">
+                                                                        ${Number(coin.distributionUsdMonth || 0)}/mês
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         </td>
                                                         <td className="px-3 py-3 font-mono text-slate-400">{coin.symbol}</td>

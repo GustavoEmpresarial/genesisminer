@@ -197,6 +197,10 @@ model mining_coins {
   /// USD/month budget when distribution_mode = 'usd_month'. A continuous rate,
   /// not a draining pot — paid ~this much per rolling 30 days until changed.
   distribution_usd_month Float @default(0)
+  /// 1 = moeda interna do jogo (saldo F2P/Gênesis, não sacável on-chain, ex.
+  /// `usdc_interno`); 0 = moeda externa. Rótulo administrativo — não altera a
+  /// mecânica de mineração.
+  is_internal        Int     @default(0)
 
   @@map("mining_coins")
 }

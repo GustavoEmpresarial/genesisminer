@@ -650,6 +650,8 @@ export interface MiningCoin {
   distributionMode?: 'legacy' | 'usd_month';
   /** Orçamento USD/mês (taxa) quando distributionMode === 'usd_month'. */
   distributionUsdMonth?: number;
+  /** true = moeda interna do jogo (saldo F2P/Gênesis, não sacável, ex. usdc_interno). */
+  isInternal?: boolean;
 }
 
 export interface SeasonPassReward {

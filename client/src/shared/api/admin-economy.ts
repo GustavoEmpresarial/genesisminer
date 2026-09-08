@@ -90,7 +90,8 @@ export function normalizeMiningCoinPayload(coin: Record<string, unknown>): Recor
     difficulty: difficulty > 0 ? difficulty : 1,
     targetDailyUSD: Math.max(0, targetDailyUSD),
     distributionMode,
-    distributionUsdMonth: Math.max(0, distributionUsdMonth)
+    distributionUsdMonth: Math.max(0, distributionUsdMonth),
+    isInternal: coin.isInternal === true || coin.isInternal === 1 || coin.isInternal === '1'
   };
 }
 
