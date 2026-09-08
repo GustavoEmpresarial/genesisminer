@@ -107,6 +107,7 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
   const [editPreview, setEditPreview] = useState(previewAssetUrl(profile?.avatarUrl));
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileErr, setProfileErr] = useState<string | null>(null);
+  const [okMsg, setOkMsg] = useState<string | null>(null);
   const editFileRef = useRef<HTMLInputElement>(null);
 
   const [formOpen, setFormOpen] = useState(true);
@@ -154,6 +155,7 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
   const onApply = async (e: FormEvent) => {
     e.preventDefault();
     setApplyErr(null);
+    setOkMsg(null);
     setApplyBusy(true);
     try {
       const r = await submitPartnerYoutubeApplication({
@@ -171,6 +173,7 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
       setDescription('');
       setAvatarUrl('');
       setAvatarPreview('');
+      setOkMsg(t('partners.applySent'));
       await onReload();
     } finally {
       setApplyBusy(false);
@@ -180,6 +183,7 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
   const onSaveProfile = async (e: FormEvent) => {
     e.preventDefault();
     setProfileErr(null);
+    setOkMsg(null);
     setProfileBusy(true);
     try {
       const r = await updatePartnerYoutubeMyProfile({
@@ -191,6 +195,7 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
         setProfileErr(partnerApiError(r.error, t, 'partners.profileFailed'));
         return;
       }
+      setOkMsg(t('partners.profileSaved'));
       await onReload();
     } finally {
       setProfileBusy(false);
@@ -200,6 +205,7 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
   const onSubmitVideo = async (e: FormEvent) => {
     e.preventDefault();
     setSubmitErr(null);
+    setOkMsg(null);
     setSubmitting(true);
     try {
       const r = await submitPartnerYoutubeVideo({ title, youtubeUrl, description: videoDesc });
@@ -210,6 +216,7 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
       setTitle('');
       setYoutubeUrl('');
       setVideoDesc('');
+      setOkMsg(t('partners.videoSent'));
       await onReload();
     } finally {
       setSubmitting(false);
@@ -353,6 +360,7 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
                   />
                 </div>
                 {applyErr && <p className="text-sm text-red-400">{applyErr}</p>}
+                {okMsg && <p className="text-sm text-emerald-400">{okMsg}</p>}
                 <button
                   type="submit"
                   disabled={applyBusy || !avatarUrl}
@@ -487,6 +495,7 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
               )}
             </div>
             {profileErr && <p className="text-sm text-red-400">{profileErr}</p>}
+            {okMsg && <p className="text-sm text-emerald-400">{okMsg}</p>}
             <button
               type="submit"
               disabled={profileBusy}
@@ -544,6 +553,7 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
                 className="w-full rounded-lg bg-slate-950 border border-slate-600 px-3 py-2 text-sm resize-y"
               />
               {submitErr && <p className="text-sm text-red-400">{submitErr}</p>}
+              {okMsg && <p className="text-sm text-emerald-400">{okMsg}</p>}
               <button
                 type="submit"
                 disabled={submitting || !auth.canSubmitToday}
