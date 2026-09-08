@@ -923,42 +923,49 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                             ) : distPreview ? (
                                                                 (() => {
                                                                     const sym = distPreview.symbol || editingCoin.symbol || '';
-                                                                    const c8 = (n: number) => (Number(n) || 0).toFixed(8);
-                                                                    const u8 = (n: number) => '$' + (Number(n) || 0).toFixed(8);
-                                                                    // mês -> dia (÷30) -> bloco de 10 min (÷4320)
-                                                                    const row = (label: string, coinsMonth: number, usdMonth: number, strong?: boolean) => {
-                                                                        const cm = Number(coinsMonth) || 0;
-                                                                        const um = Number(usdMonth) || 0;
-                                                                        return (
-                                                                            <tr className={strong ? 'text-emerald-300' : ''}>
-                                                                                <td className="py-0.5 pr-3 text-slate-400">{label}</td>
-                                                                                <td className="py-0.5 pr-3 text-right">{c8(cm / 4320)} <span className="text-slate-600">/ {u8(um / 4320)}</span></td>
-                                                                                <td className="py-0.5 pr-3 text-right">{c8(cm / 30)} <span className="text-slate-600">/ {u8(um / 30)}</span></td>
-                                                                                <td className="py-0.5 text-right">{c8(cm)} <span className="text-slate-600">/ {u8(um)}</span></td>
-                                                                            </tr>
-                                                                        );
+                                                                    // formata com dígitos significativos, sem notação científica nem 0,00000000
+                                                                    const n = (v: number, sig = 4) => {
+                                                                        const x = Number(v) || 0;
+                                                                        if (x === 0) return '0';
+                                                                        if (x >= 1) return x.toLocaleString('pt-BR', { maximumFractionDigits: 4 });
+                                                                        const dec = Math.min(12, Math.max(4, -Math.floor(Math.log10(x)) + sig - 1));
+                                                                        return x.toFixed(dec).replace(/0+$/, '').replace(/\.$/, '');
                                                                     };
+                                                                    const usd = (v: number) => {
+                                                                        const x = Number(v) || 0;
+                                                                        if (x === 0) return '$0';
+                                                                        if (x >= 0.01) return '$' + x.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+                                                                        return '$' + n(x, 3);
+                                                                    };
+                                                                    const cm = Number(distPreview.representativeUnitCoinsMonth) || 0;
+                                                                    const um = Number(distPreview.representativeUnitUsdMonth) || 0;
+                                                                    const tcm = Number(distPreview.totalCoinsMonth) || 0;
                                                                     return (
-                                                                <div className="space-y-2 font-mono">
-                                                                    <div>Hashrate ativo: {Number(distPreview.activeHashrate).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} H/s · {distPreview.activeMiners} mineradores</div>
-                                                                    <div>Preço {sym}: ${Number(distPreview.priceUsd).toLocaleString('pt-BR', { maximumFractionDigits: 8 })}</div>
-                                                                    <div className="overflow-x-auto">
-                                                                        <table className="w-full text-[11px]">
-                                                                            <thead>
-                                                                                <tr className="text-slate-500">
-                                                                                    <th className="py-0.5 pr-3 text-left font-semibold">{sym} (moeda / USD)</th>
-                                                                                    <th className="py-0.5 pr-3 text-right font-semibold">por bloco (10 min)</th>
-                                                                                    <th className="py-0.5 pr-3 text-right font-semibold">por dia</th>
-                                                                                    <th className="py-0.5 text-right font-semibold">por mês</th>
-                                                                                </tr>
-                                                                            </thead>
-                                                                            <tbody>
-                                                                                {row('Emissão total', distPreview.totalCoinsMonth, distPreview.totalUsdMonth, true)}
-                                                                                {row('Máquina 10 H/s', distPreview.representativeUnitCoinsMonth, distPreview.representativeUnitUsdMonth)}
-                                                                                {row('Por 1 H/s', distPreview.perHashCoinsMonth, distPreview.perHashUsdMonth)}
-                                                                            </tbody>
-                                                                        </table>
+                                                                <div className="space-y-2">
+                                                                    <div className="text-slate-400">
+                                                                        Rede ativa: <span className="text-white">{Number(distPreview.activeHashrate).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} H/s</span>
+                                                                        {' · '}{distPreview.activeMiners} mineradores
+                                                                        {' · '}preço {sym} {usd(distPreview.priceUsd)}
                                                                     </div>
+
+                                                                    <div className="rounded border border-slate-800 bg-slate-900/60 p-2">
+                                                                        <div className="text-slate-500">Você distribui (total da moeda):</div>
+                                                                        <div className="font-mono text-emerald-300">
+                                                                            mês {n(tcm)} {sym} = {usd(distPreview.totalUsdMonth)}
+                                                                        </div>
+                                                                        <div className="font-mono text-slate-400">
+                                                                            dia {n(tcm / 30)} {sym} ({usd(distPreview.totalUsdMonth / 30)}) · bloco {n(tcm / 4320)} {sym} ({usd(distPreview.totalUsdMonth / 4320)})
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="rounded border border-slate-800 bg-slate-900/60 p-2">
+                                                                        <div className="text-slate-500">Uma máquina de 10 H/s recebe:</div>
+                                                                        <div className="font-mono text-white">mês {n(cm)} {sym} ({usd(um)})</div>
+                                                                        <div className="font-mono text-slate-400">
+                                                                            dia {n(cm / 30)} {sym} ({usd(um / 30)}) · bloco {n(cm / 4320)} {sym} ({usd(um / 4320)})
+                                                                        </div>
+                                                                    </div>
+
                                                                     {Array.isArray(distPreview.warnings) && distPreview.warnings.map((w: string, i: number) => (
                                                                         <div key={i} className="text-amber-400">⚠ {w}</div>
                                                                     ))}
@@ -1201,19 +1208,12 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                                     )}
                                                                 </span>
                                                                 <span className="font-semibold text-white">{coin.name}</span>
-                                                                <span
-                                                                    className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${
-                                                                        coin.isInternal
-                                                                            ? 'bg-sky-500/20 text-sky-300'
-                                                                            : 'bg-slate-700/50 text-slate-400'
-                                                                    }`}
-                                                                    title={coin.isInternal ? 'Moeda interna (saldo do jogo, não sacável)' : 'Moeda externa'}
-                                                                >
-                                                                    {coin.isInternal ? 'Interna' : 'Externa'}
-                                                                </span>
-                                                                {coin.distributionMode === 'usd_month' && (
-                                                                    <span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-amber-300" title="Distribuição USD/mês">
-                                                                        ${Number(coin.distributionUsdMonth || 0)}/mês
+                                                                {coin.isInternal && (
+                                                                    <span
+                                                                        className="rounded bg-sky-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase text-sky-300"
+                                                                        title="Moeda interna (saldo do jogo, não sacável)"
+                                                                    >
+                                                                        interna
                                                                     </span>
                                                                 )}
                                                             </div>
