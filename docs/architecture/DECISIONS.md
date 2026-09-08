@@ -3478,3 +3478,46 @@ aprovação de vídeo Partners era `updateMany` Prisma. Support submit/reply
 
 **Fora de escopo:** socket chat, multer áudio, application approve multi-step
 (allowlist/NFT room), reject/delete de vídeos.
+
+## 124. Distribuição de mineração por orçamento USD mensal (por moeda)
+
+**Problema:** `mining_coins.block_reward / block_time / network_hashrate` são
+knobs indiretos — o USD pago por moeda deriva e desvia conforme o hashrate muda
+(medido: GHO_nft ~3,4%/mês vs ~240%/mês pela fórmula ingênua). Admin não consegue
+dizer "distribui $X este mês nesta moeda".
+
+**Decisão:** nova coluna `mining_coins.distribution_mode` (`legacy` | `usd_month`)
++ `distribution_usd_month` (Float). No modo `usd_month`:
+
+```
+budget_per_sec_coins = distribution_usd_month / SECONDS_PER_MONTH(2_592_000) / max(price_usd, 1)
+divisor              = max(real_active_hashrate, DIST_MIN_HASHRATE = 10)
+yield_per_hash        = 0 se real_active_hashrate <= MIN_NETWORK_HASHRATE(1)
+                      = budget_per_sec_coins / divisor caso contrário
+```
+
+- **Taxa perpétua, não pote:** paga ~$X a cada 30 dias corridos até o admin mudar.
+  Sem ledger. Mudança vale a partir do próximo boundary.
+- **Spike-guard = clamp do divisor** (não cap no yield): mantém a identidade
+  `yield * network_hashrate ≈ reward_per_sec` (guarda `block_reward =
+  budget_per_sec_coins`, `network_hashrate = divisor`), então
+  `assert_tick_history_matches_economy` não muda. Abaixo do piso só sub-distribui.
+- Vale para **todas as moedas** (GPU/ASIC/NFT). No modo `usd_month` a distinção
+  competitivo vs pool-independente é irrelevante — sempre divide pelo hash ativo
+  real (`real_network_by_coin` do tick, já computado para todo tipo de moeda).
+- **Único ponto de mudança no pipeline:** `build_yield_history_rows_for_boundary`
+  (`rust/genesis-core/src/mining/yield_boundary.rs`, fn `usd_month_yield`). Grade
+  de 10 min, `mining_yield_history`, integração e crédito por usuário intactos.
+- Preview admin: `POST /api/admin/economy/distribution-preview` (Super) →
+  `run_distribution_preview` no worker, usando `app_cache.network_stats` (mesmo
+  hashrate que o boundary usa). Editor de moedas em `AdminReports.tsx` ganha
+  toggle Legado/USD-mensal + painel de preview ao vivo (debounced).
+- Migração: `scripts/ops/distribution-usd-month-seed-20260908{,-preview}.sql` —
+  semeia `distribution_usd_month` com a emissão real de 30d de
+  `mining_block_history.amount_usd`. Reversível: `distribution_mode='legacy'`
+  (knobs legados nunca são tocados).
+
+**Fora de escopo:** ledger de "saldo restante"; remover `target_daily_usd` (fica
+morto no DB, some só da UI); consolidar `AdminEconomy.tsx` no editor principal.
+**Caveat:** não re-rodar `scripts/ops/fix-gho-nft-network-floor-20260831.sql`
+contra moedas em `usd_month`.

@@ -8,12 +8,17 @@
 use std::collections::{HashMap, HashSet};
 
 use deadpool_postgres::Pool;
+use genesis_core::calculator::constants::{
+    DIST_MIN_HASHRATE, MIN_NETWORK_HASHRATE, SECONDS_PER_MONTH,
+};
+use genesis_core::mining::{usd_month_yield, NETWORK_FLOOR_SINGLE_MINER_DOMINANCE_WARN_PCT};
 use serde_json::{json, Value};
 
 use crate::player_reads::PlayerReadError;
 
 pub const ECONOMY_STATS_PATH: &str = "/v1/admin/economy/coin-stats";
 pub const MINING_RUNTIME_SUMMARY_PATH: &str = "/v1/admin/economy/runtime-summary";
+pub const DISTRIBUTION_PREVIEW_PATH: &str = "/v1/admin/economy/distribution-preview";
 
 const COIN_SELECT: &str = "id, name, symbol, description, network_hashrate, block_reward, block_time,
      price_usd, algorithm, difficulty, multiplier, color, min_proportion, usdc_rate, is_active,
@@ -203,10 +208,157 @@ pub async fn run_mining_runtime_summary(pool: &Pool) -> Result<Value, PlayerRead
     }))
 }
 
+/// `POST /v1/admin/economy/distribution-preview` — projeta a distribuição de um
+/// orçamento USD mensal para uma moeda, usando o MESMO hashrate ativo que o
+/// yield-tick usa (`app_cache.network_stats`, ~2 min de defasagem). Assim o
+/// preview "ajusta certinho" com o que o boundary vai realmente pagar.
+pub async fn run_distribution_preview(
+    pool: &Pool,
+    coin_id: &str,
+    distribution_usd_month: f64,
+) -> Result<Value, PlayerReadError> {
+    let c = pool.get().await?;
+
+    let coin = c
+        .query_opt(
+            "SELECT symbol, price_usd::double precision AS price_usd, distribution_mode
+               FROM mining_coins WHERE id = $1",
+            &[&coin_id],
+        )
+        .await?
+        .ok_or_else(|| PlayerReadError::bad("Coin not found."))?;
+    let symbol: String = coin
+        .try_get::<_, Option<String>>("symbol")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let price_usd = coin
+        .try_get::<_, Option<f64>>("price_usd")
+        .ok()
+        .flatten()
+        .unwrap_or(0.0);
+    let current_mode: String = coin
+        .try_get::<_, Option<String>>("distribution_mode")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "legacy".to_string());
+
+    // Snapshot do último tick.
+    let stats: Value = c
+        .query_opt("SELECT value FROM app_cache WHERE key = 'network_stats'", &[])
+        .await?
+        .and_then(|r| r.try_get::<_, Option<Value>>("value").ok().flatten())
+        .unwrap_or_else(|| json!({}));
+
+    let active_hashrate = stats
+        .get("hashrates")
+        .and_then(|h| h.get(coin_id))
+        .and_then(Value::as_f64)
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .unwrap_or(0.0);
+    let active_miners = stats
+        .get("activeMinersByCoin")
+        .and_then(|m| m.get(coin_id))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+
+    let (yield_per_hash, budget_per_sec_coins, divisor) =
+        usd_month_yield(distribution_usd_month, price_usd, active_hashrate);
+    let price_or_1 = if price_usd.is_finite() && price_usd > 0.0 {
+        price_usd
+    } else {
+        1.0
+    };
+    let total_coins_month = yield_per_hash * active_hashrate * SECONDS_PER_MONTH;
+    let total_usd_month = total_coins_month * price_or_1;
+    let per_hash_usd_month = yield_per_hash * price_or_1 * SECONDS_PER_MONTH;
+    let representative_unit_usd_month = 10.0 * per_hash_usd_month;
+
+    // Top mineradores por hashrate na moeda (do ranking do último tick).
+    let mut per_user: Vec<(i64, f64)> = Vec::new();
+    if let Some(rows) = stats.get("ranking").and_then(Value::as_array) {
+        for r in rows {
+            let uid = r.get("user_id").and_then(Value::as_i64).unwrap_or(0);
+            let h = r
+                .get("coins")
+                .and_then(|cc| cc.get(coin_id))
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
+            if uid != 0 && h.is_finite() && h > 0.0 {
+                per_user.push((uid, h));
+            }
+        }
+    }
+    per_user.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let top_share_pct = per_user
+        .first()
+        .map(|(_, h)| if active_hashrate > 0.0 { h / active_hashrate * 100.0 } else { 0.0 })
+        .unwrap_or(0.0);
+    let top_miners: Vec<Value> = per_user
+        .iter()
+        .take(10)
+        .map(|(uid, h)| {
+            let share = if active_hashrate > 0.0 { h / active_hashrate } else { 0.0 };
+            json!({
+                "userId": uid,
+                "hashrate": h,
+                "sharePct": share * 100.0,
+                "usdMonth": share * total_usd_month,
+            })
+        })
+        .collect();
+
+    let mut warnings: Vec<String> = Vec::new();
+    if active_hashrate <= MIN_NETWORK_HASHRATE {
+        warnings.push("Sem hashrate ativo nesta moeda — nada será distribuído.".into());
+    } else if active_hashrate < DIST_MIN_HASHRATE {
+        warnings.push(format!(
+            "Hashrate abaixo do piso ({DIST_MIN_HASHRATE:.0} H/s) — sub-distribuindo (~${:.2}/mês).",
+            total_usd_month
+        ));
+    }
+    if top_share_pct > NETWORK_FLOOR_SINGLE_MINER_DOMINANCE_WARN_PCT {
+        warnings.push(format!(
+            "Um único minerador leva {top_share_pct:.1}% da distribuição.",
+        ));
+    }
+    let is_stable = genesis_core::calculator::constants::NFT_STABLE_USD_SYMBOLS
+        .contains(&symbol.trim().to_ascii_uppercase().as_str());
+    if (!price_usd.is_finite() || price_usd <= 0.0) && !is_stable {
+        warnings.push("Preço da moeda é 0/desconhecido — tratando 1 coin = $1.".into());
+    }
+    if yield_per_hash > 0.0 && yield_per_hash < 1e-12 {
+        warnings.push("Orçamento arredonda para ~0 por hash nesse hashrate.".into());
+    }
+
+    Ok(json!({
+        "coinId": coin_id,
+        "symbol": symbol,
+        "currentMode": current_mode,
+        "distributionUsdMonth": distribution_usd_month,
+        "priceUsd": price_usd,
+        "activeHashrate": active_hashrate,
+        "activeMiners": active_miners,
+        "divisor": divisor,
+        "yieldPerHash": yield_per_hash,
+        "budgetPerSecCoins": budget_per_sec_coins,
+        "totalCoinsMonth": total_coins_month,
+        "totalUsdMonth": total_usd_month,
+        "perHashUsdMonth": per_hash_usd_month,
+        "representativeUnitUsdMonth": representative_unit_usd_month,
+        "topMiners": top_miners,
+        "warnings": warnings,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn paths_stable() {
         assert_eq!(super::ECONOMY_STATS_PATH, "/v1/admin/economy/coin-stats");
+        assert_eq!(
+            super::DISTRIBUTION_PREVIEW_PATH,
+            "/v1/admin/economy/distribution-preview"
+        );
     }
 }

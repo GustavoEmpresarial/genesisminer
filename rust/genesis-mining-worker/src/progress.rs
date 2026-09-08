@@ -231,7 +231,7 @@ async fn compute_progress_inner(
         let economy_rows = client
             .query(
                 "SELECT id, symbol, block_reward, block_time, network_hashrate, usdc_rate, price_usd, name,
-                        nft_room_only
+                        nft_room_only, distribution_mode, distribution_usd_month
                    FROM mining_coins WHERE id = ANY($1) AND is_active = 1",
                 &[&coin_ids],
             )
@@ -248,6 +248,14 @@ async fn compute_progress_inner(
             let usdc_rate = row_f64(coin, "usdc_rate");
             let price_usd = row_f64(coin, "price_usd");
             let nft_room_only = row_i32(coin, "nft_room_only") != 0;
+            let distribution_mode = genesis_core::mining::DistributionMode::parse(
+                &coin
+                    .try_get::<_, Option<String>>("distribution_mode")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
+            );
+            let distribution_usd_month = row_f64(coin, "distribution_usd_month");
             let coin_input_for_flag = MiningCoinInput {
                 id: coin_id.clone(),
                 symbol: symbol.clone(),
@@ -268,15 +276,28 @@ async fn compute_progress_inner(
                 &empty_implied,
                 independent_pool,
             );
-            let reward_per_sec = if block_time > 0.0 {
-                block_reward / block_time
+            // `fallback` só é usado quando não há linha de `mining_yield_history`
+            // cobrindo a janela de crédito (gap > lookback ou moeda recém-criada).
+            let fallback = if distribution_mode == genesis_core::mining::DistributionMode::UsdMonth {
+                // Divisor com hashrate live (levemente stale) e clamp no piso —
+                // mesma fórmula do boundary; 0 se hashrate desconhecido.
+                let active = live_hashrates
+                    .get(&coin_id)
+                    .copied()
+                    .filter(|v| v.is_finite() && *v > 0.0)
+                    .unwrap_or(0.0);
+                genesis_core::mining::usd_month_yield(distribution_usd_month, price_usd, active).0
             } else {
-                0.0
-            };
-            let fallback = if effective_hashrate > 0.0 {
-                reward_per_sec / effective_hashrate
-            } else {
-                0.0
+                let reward_per_sec = if block_time > 0.0 {
+                    block_reward / block_time
+                } else {
+                    0.0
+                };
+                if effective_hashrate > 0.0 {
+                    reward_per_sec / effective_hashrate
+                } else {
+                    0.0
+                }
             };
             fallback_yield.insert(
                 coin_id.clone(),

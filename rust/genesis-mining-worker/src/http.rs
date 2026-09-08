@@ -108,8 +108,8 @@ use crate::admin_security::{
     SECURITY_PWRESET_APPLY_PATH, SECURITY_PWRESET_PREVIEW_PATH, SECURITY_STATS_PATH,
 };
 use crate::admin_economy_reports::{
-    run_economy_coin_stats, run_mining_runtime_summary, ECONOMY_STATS_PATH,
-    MINING_RUNTIME_SUMMARY_PATH,
+    run_distribution_preview, run_economy_coin_stats, run_mining_runtime_summary,
+    DISTRIBUTION_PREVIEW_PATH, ECONOMY_STATS_PATH, MINING_RUNTIME_SUMMARY_PATH,
 };
 use crate::admin_referral::{
     run_commissions, run_export_csv, run_links, run_lookup, run_network_block, run_network_delete,
@@ -363,6 +363,7 @@ pub fn router(state: AppState) -> Router {
         .route(QUESTS_ADMIN_LIST_PATH, post(post_quests_admin_list))
         .route(REF_SUMMARY_PATH, post(post_ref_summary))
         .route(ECONOMY_STATS_PATH, post(post_economy_coin_stats))
+        .route(DISTRIBUTION_PREVIEW_PATH, post(post_distribution_preview))
         .route(MINING_RUNTIME_SUMMARY_PATH, post(post_mining_runtime_summary))
         .route(SYNC_LIVE_PRICES_PATH, post(post_sync_live_prices))
         .route(BACKUP_CREATE_PATH, post(post_backup_create))
@@ -825,6 +826,31 @@ async fn post_economy_coin_stats(
     State(state): State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse {
     match run_economy_coin_stats(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_distribution_preview(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    let coin_id = body
+        .get("coinId")
+        .or_else(|| body.get("coin_id"))
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    let usd_month = body
+        .get("distributionUsdMonth")
+        .or_else(|| body.get("distribution_usd_month"))
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0);
+    if coin_id.is_empty() {
+        return fail_read(crate::player_reads::PlayerReadError::bad("coinId obrigatório."));
+    }
+    match run_distribution_preview(&state.pool, &coin_id, usd_month).await {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
     }

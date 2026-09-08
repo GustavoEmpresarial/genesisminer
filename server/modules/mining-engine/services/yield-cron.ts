@@ -105,7 +105,7 @@ type CoinYieldRow = {
  * Monta linhas de `mining_yield_history` para um `effective_at` fixo.
  * Hashrate real = snapshot do tick actual (não há série histórica por boundary).
  */
-function buildYieldHistoryRowsForBoundary(
+export function buildYieldHistoryRowsForBoundary(
   coins: CoinYieldRow[],
   realNetworkHashratesMap: Map<string, number>,
   effectiveAtMs: number
@@ -119,9 +119,39 @@ function buildYieldHistoryRowsForBoundary(
   const netHashes: number[] = [];
   const effectives: number[] = [];
 
+  // usd_month: SECONDS_PER_MONTH = 30 * 86400 ; DIST_MIN_HASHRATE = 10.
+  // Mesma fórmula de rust/genesis-core/src/mining/yield_boundary.rs (usd_month_yield).
+  const SECONDS_PER_MONTH = 30 * 86400;
+  const DIST_MIN_HASHRATE = 10;
+  const MIN_NETWORK_HASHRATE = 1;
+
   for (const coin of coins) {
     const coinId = String(coin.id);
     const realNetHash = realNetworkHashratesMap.get(coinId) || 0;
+
+    const distributionMode =
+      String((coin as { distribution_mode?: unknown }).distribution_mode ??
+             (coin as { distributionMode?: unknown }).distributionMode ?? 'legacy').toLowerCase() === 'usd_month'
+        ? 'usd_month'
+        : 'legacy';
+    if (distributionMode === 'usd_month') {
+      const usdMonthRaw = Number((coin as { distribution_usd_month?: unknown }).distribution_usd_month ??
+                                 (coin as { distributionUsdMonth?: unknown }).distributionUsdMonth);
+      const usdMonth = Number.isFinite(usdMonthRaw) && usdMonthRaw > 0 ? usdMonthRaw : 0;
+      const priceRaw = Number((coin as { price_usd?: unknown }).price_usd ??
+                              (coin as { priceUsd?: unknown }).priceUsd);
+      const priceOr1 = Number.isFinite(priceRaw) && priceRaw > 0 ? priceRaw : 1;
+      const budgetPerSecCoins = usdMonth / SECONDS_PER_MONTH / priceOr1;
+      const active = Number.isFinite(realNetHash) && realNetHash > 0 ? realNetHash : 0;
+      const divisor = Math.max(active, DIST_MIN_HASHRATE);
+      const yph = active <= MIN_NETWORK_HASHRATE || budgetPerSecCoins <= 0 ? 0 : budgetPerSecCoins / divisor;
+      coinIds.push(coinId);
+      yields.push(yph);
+      rewards.push(budgetPerSecCoins);
+      netHashes.push(divisor);
+      effectives.push(effectiveAtMs);
+      continue;
+    }
 
     const blockReward = parseFiniteNumberLenient(coin.block_reward, `coin.${coinId}.block_reward`);
     const blockTime = parseFiniteNumberLenient(coin.block_time, `coin.${coinId}.block_time`);

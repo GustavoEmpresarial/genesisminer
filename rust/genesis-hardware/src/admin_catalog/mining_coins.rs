@@ -72,8 +72,8 @@ const UPSERT_SQL: &str = "INSERT INTO mining_coins
        (id, name, symbol, description, color, algorithm, network_hashrate, block_reward,
         block_time, price_usd, difficulty, multiplier, min_proportion, usdc_rate,
         is_active, target_daily_usd, show_in_exchange, nft_room_only,
-        price_source, price_updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::int4::int2,$18,$19,$20)
+        price_source, price_updated_at, distribution_mode, distribution_usd_month)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::int4::int2,$18,$19,$20,$21,$22)
      ON CONFLICT (id) DO UPDATE SET
        name = EXCLUDED.name,
        symbol = EXCLUDED.symbol,
@@ -93,7 +93,9 @@ const UPSERT_SQL: &str = "INSERT INTO mining_coins
        show_in_exchange = EXCLUDED.show_in_exchange,
        nft_room_only = EXCLUDED.nft_room_only,
        price_source = EXCLUDED.price_source,
-       price_updated_at = EXCLUDED.price_updated_at";
+       price_updated_at = EXCLUDED.price_updated_at,
+       distribution_mode = EXCLUDED.distribution_mode,
+       distribution_usd_month = EXCLUDED.distribution_usd_month";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MiningCoinRow {
@@ -118,9 +120,23 @@ pub struct MiningCoinRow {
     /// `'manual'` — an admin edited the row; a future live-price job skips these.
     pub price_source: String,
     pub price_updated_at: i64,
+    /// `'legacy'` | `'usd_month'`.
+    pub distribution_mode: String,
+    /// USD/month budget (rate) when `distribution_mode == 'usd_month'`.
+    pub distribution_usd_month: f64,
 }
 
 const PRICE_SOURCE_MANUAL: &str = "manual";
+const DIST_MODE_LEGACY: &str = "legacy";
+const DIST_MODE_USD_MONTH: &str = "usd_month";
+
+/// Accept only the two known modes; anything else → `legacy`.
+fn normalize_distribution_mode(raw: Option<&Value>) -> String {
+    match raw.and_then(|v| v.as_str()).map(|s| s.trim().to_ascii_lowercase()) {
+        Some(ref s) if s == DIST_MODE_USD_MONTH => DIST_MODE_USD_MONTH.to_string(),
+        _ => DIST_MODE_LEGACY.to_string(),
+    }
+}
 
 /// Node `Array.isArray(payload) ? payload : [payload]`, then
 /// `if (!raw || typeof raw !== 'object') continue`.
@@ -186,6 +202,10 @@ pub fn plan_mining_coin_row(coin: &Value, generated_id: &str) -> MiningCoinRow {
         nft_room_only: i32::from(js::truthy(field("nftRoomOnly"))),
         price_source: PRICE_SOURCE_MANUAL.to_string(),
         price_updated_at: current_unix_ms(),
+        distribution_mode: normalize_distribution_mode(field("distributionMode")),
+        distribution_usd_month: js::round8(
+            or_zero(parse_num(field("distributionUsdMonth"))).max(NON_NEGATIVE_FLOOR),
+        ),
     }
 }
 
@@ -247,7 +267,7 @@ pub async fn run_upsert_mining_coins(
             }
         }
 
-        let params: [&(dyn ToSql + Sync); 20] = [
+        let params: [&(dyn ToSql + Sync); 22] = [
             &row.id,
             &row.name,
             &row.symbol,
@@ -268,6 +288,8 @@ pub async fn run_upsert_mining_coins(
             &row.nft_room_only,
             &row.price_source,
             &row.price_updated_at,
+            &row.distribution_mode,
+            &row.distribution_usd_month,
         ];
         tx.execute(UPSERT_SQL, &params).await?;
         upserts += 1;
@@ -353,6 +375,64 @@ pub async fn run_economy_settings_coin(
     if !coin_id_ok(&coin_id) {
         return Err(PlayerReadError::bad("Invalid coinId."));
     }
+
+    let conn = pool.get().await?;
+
+    // --- usd_month mode: single $/month budget; legacy knobs untouched. ---
+    if normalize_distribution_mode(field("distributionMode")) == DIST_MODE_USD_MONTH {
+        let usd_month = js::parse_float_field(field("distributionUsdMonth"));
+        if !usd_month.is_finite() || usd_month < 0.0 {
+            return Err(PlayerReadError::bad("Invalid distributionUsdMonth."));
+        }
+        let usd_month = js::round8(usd_month);
+
+        let coin = conn
+            .query_opt(
+                "SELECT symbol, price_usd FROM mining_coins WHERE id = $1",
+                &[&coin_id],
+            )
+            .await?
+            .ok_or_else(|| PlayerReadError::bad("Coin not found."))?;
+        let symbol: String = coin
+            .try_get::<_, Option<String>>("symbol")
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_uppercase();
+        let price_usd = coin
+            .try_get::<_, Option<f64>>("price_usd")
+            .ok()
+            .flatten()
+            .unwrap_or(0.0);
+        let is_stable =
+            genesis_core::calculator::constants::NFT_STABLE_USD_SYMBOLS.contains(&symbol.as_str());
+        if usd_month > 0.0 && (!price_usd.is_finite() || price_usd <= 0.0) && !is_stable {
+            return Err(PlayerReadError::bad(
+                "price_usd da moeda é 0 — defina o preço antes de usar Distribuição USD mensal.",
+            ));
+        }
+
+        let n = conn
+            .execute(
+                "UPDATE mining_coins
+                    SET distribution_mode = 'usd_month', distribution_usd_month = $2
+                  WHERE id = $1",
+                &[&coin_id, &usd_month],
+            )
+            .await?;
+        if n == 0 {
+            return Err(PlayerReadError::bad("Coin not found."));
+        }
+        return Ok(json!({
+            "ok": true,
+            "coinId": coin_id,
+            "distributionMode": "usd_month",
+            "distributionUsdMonth": usd_month,
+        }));
+    }
+
+    // --- legacy mode ---
     let net = js::parse_float_field(field("networkHashrate"));
     if !net.is_finite() || net <= 0.0 {
         return Err(PlayerReadError::bad("Invalid networkHashrate."));
@@ -364,10 +444,11 @@ pub async fn run_economy_settings_coin(
     let network_hashrate = js::round8(net).max(MIN_NETWORK_HASHRATE);
     let block_reward = js::round8(reward);
 
-    let conn = pool.get().await?;
     let n = conn
         .execute(
-            "UPDATE mining_coins SET network_hashrate = $2, block_reward = $3 WHERE id = $1",
+            "UPDATE mining_coins
+                SET network_hashrate = $2, block_reward = $3, distribution_mode = 'legacy'
+              WHERE id = $1",
             &[&coin_id, &network_hashrate, &block_reward],
         )
         .await?;
@@ -398,6 +479,28 @@ mod tests {
         assert!(coin_entries(&json!(null)).is_empty());
         assert!(coin_entries(&json!("x")).is_empty());
         assert_eq!(coin_entries(&json!([{ "id": "a" }, 7, null])).len(), 1);
+    }
+
+    #[test]
+    fn distribution_mode_defaults_and_maps() {
+        let bare = plan_mining_coin_row(&json!({}), GENERATED);
+        assert_eq!(bare.distribution_mode, "legacy");
+        assert_eq!(bare.distribution_usd_month, 0.0);
+
+        let usd = plan_mining_coin_row(
+            &json!({ "distributionMode": "usd_month", "distributionUsdMonth": "123.5" }),
+            GENERATED,
+        );
+        assert_eq!(usd.distribution_mode, "usd_month");
+        assert_eq!(usd.distribution_usd_month, 123.5);
+
+        // junk mode → legacy; negative budget → 0
+        let junk = plan_mining_coin_row(
+            &json!({ "distributionMode": "banana", "distributionUsdMonth": -9 }),
+            GENERATED,
+        );
+        assert_eq!(junk.distribution_mode, "legacy");
+        assert_eq!(junk.distribution_usd_month, 0.0);
     }
 
     #[test]

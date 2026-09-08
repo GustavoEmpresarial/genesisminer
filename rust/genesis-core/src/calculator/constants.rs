@@ -10,6 +10,17 @@ pub const PROJECTION_30D_DAYS: f64 = PROJECTION_DAYS_PER_MONTH;
 pub const BLOCK_HISTORY_LIMIT: usize = 120;
 pub const MIN_NETWORK_HASHRATE: f64 = 1.0;
 
+/// Seconds in a distribution month (30 * 86400). Denominator for the
+/// `usd_month` distribution mode — see `mining::yield_boundary`.
+pub const SECONDS_PER_MONTH: f64 = PROJECTION_DAYS_PER_MONTH * 86_400.0;
+
+/// Spike guard for `usd_month` distribution: the per-boundary divisor is
+/// `max(active_hashrate, DIST_MIN_HASHRATE)`. Below this the coin
+/// under-distributes (`budget * active / DIST_MIN_HASHRATE`), never over —
+/// the safe direction for a perpetual rate and for catch-up replay. `10.0`
+/// makes a "$10 / 10 H/s" unit the break-even point.
+pub const DIST_MIN_HASHRATE: f64 = 10.0;
+
 /// `snapshot.ts` `SCOPE_TOTAL`.
 pub const SCOPE_TOTAL: &str = "total";
 /// `snapshot.ts` `ROOM_ID_PATTERN` `{1,120}`.

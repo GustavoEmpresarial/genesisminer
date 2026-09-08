@@ -404,6 +404,10 @@ pub fn resolve_admin_route_requirement(method: &Method, raw_path: &str) -> Admin
     if p == "/api/admin/economy-settings" && is_post {
         return Super;
     }
+    if p == "/api/admin/economy/distribution-preview" && is_post {
+        // Revela ganho por minerador → mesmo nível de economy-settings.
+        return Super;
+    }
     if p == "/api/admin/mining-coins/sync-live-prices" && is_post {
         return Super;
     }
@@ -565,6 +569,19 @@ mod tests {
             &tabs(&["dashboard"]),
             &AnyOf(TABS_ADMIN_METRICS)
         ));
+    }
+
+    #[test]
+    fn distribution_preview_is_super() {
+        assert_eq!(
+            resolve_admin_route_requirement(
+                &Method::POST,
+                "/api/admin/economy/distribution-preview"
+            ),
+            Super
+        );
+        // GET is not a defined route → falls to the /api/admin/* Super catch-all anyway,
+        // but the POST rule must be explicit.
     }
 
     #[test]

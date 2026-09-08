@@ -36,5 +36,6 @@ pub use wall_clock::{
     CreditHistoryWindow, TEN_MIN_MS,
 };
 pub use yield_boundary::{
-    build_yield_history_rows_for_boundary, CoinYieldInput, YieldHistoryBoundaryRows,
+    build_yield_history_rows_for_boundary, usd_month_yield, CoinYieldInput, DistributionMode,
+    YieldHistoryBoundaryRows,
 };

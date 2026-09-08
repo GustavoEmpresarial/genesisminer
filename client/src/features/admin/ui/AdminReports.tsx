@@ -40,6 +40,8 @@ import {
     getWeb3Settings
 } from '../../../shared/api/admin-legacy';
 
+import { getDistributionPreview } from '../../../shared/api/admin-economy';
+
 import { AdminManualWithdrawals } from './AdminManualWithdrawals';
 import { AdminReferral } from './AdminReferral';
 import { AdminMiningDistribution } from './AdminMiningDistribution';
@@ -151,6 +153,30 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
     });
     const [editingCoin, setEditingCoin] = useState<Partial<MiningCoin> | null>(null);
     const [isSavingCoin, setIsSavingCoin] = useState(false);
+    const [distPreview, setDistPreview] = useState<any>(null);
+    const [distPreviewLoading, setDistPreviewLoading] = useState(false);
+
+    // Debounced live preview for usd_month distribution.
+    useEffect(() => {
+        if (!editingCoin?.id || editingCoin.distributionMode !== 'usd_month') {
+            setDistPreview(null);
+            return;
+        }
+        const coinId = String(editingCoin.id);
+        const usd = Math.max(0, Number(editingCoin.distributionUsdMonth) || 0);
+        let cancelled = false;
+        setDistPreviewLoading(true);
+        const t = window.setTimeout(async () => {
+            const res = await getDistributionPreview(coinId, usd);
+            if (cancelled) return;
+            setDistPreviewLoading(false);
+            setDistPreview(res.ok ? res.preview : { error: res.error });
+        }, 400);
+        return () => {
+            cancelled = true;
+            window.clearTimeout(t);
+        };
+    }, [editingCoin?.id, editingCoin?.distributionMode, editingCoin?.distributionUsdMonth]);
     const [calcDataLoading, setCalcDataLoading] = useState(false);
     const [syncingMiningPrices, setSyncingMiningPrices] = useState(false);
     const [coinNotice, setCoinNotice] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
@@ -177,7 +203,9 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
         usdcRate: 0,
         isActive: true,
         showInExchange: true,
-        targetDailyUSD: 0
+        targetDailyUSD: 0,
+        distributionMode: 'legacy',
+        distributionUsdMonth: 0
     });
 
     const loadCalcData = async () => {
@@ -776,6 +804,88 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                     />
                                                 </div>
 
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold uppercase text-slate-500">Modo de distribuição</label>
+                                                    <div className="flex gap-1 rounded border border-slate-700 bg-slate-900 p-1">
+                                                        {(['legacy', 'usd_month'] as const).map((m) => (
+                                                            <button
+                                                                key={m}
+                                                                type="button"
+                                                                onClick={() => setEditingCoin((prev) => ({ ...prev, distributionMode: m }))}
+                                                                className={`flex-1 rounded px-2 py-1 text-[11px] font-bold uppercase ${
+                                                                    (editingCoin.distributionMode || 'legacy') === m
+                                                                        ? 'bg-amber-500 text-slate-950'
+                                                                        : 'text-slate-400 hover:text-white'
+                                                                }`}
+                                                            >
+                                                                {m === 'legacy' ? 'Legado' : 'USD mensal'}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                {(editingCoin.distributionMode || 'legacy') === 'usd_month' ? (
+                                                    <div className="space-y-2">
+                                                        <div className="space-y-1">
+                                                            <label className="text-[10px] font-bold uppercase text-slate-500">
+                                                                Distribuição USD / mês (taxa contínua)
+                                                            </label>
+                                                            <input
+                                                                type="number"
+                                                                step="0.01"
+                                                                min={0}
+                                                                value={editingCoin.distributionUsdMonth ?? 0}
+                                                                onChange={(e) => {
+                                                                    const v = parseFloat(e.target.value);
+                                                                    setEditingCoin((prev) => ({
+                                                                        ...prev,
+                                                                        distributionUsdMonth: Number.isFinite(v) ? Math.max(0, v) : 0
+                                                                    }));
+                                                                }}
+                                                                className="w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-sm text-white outline-none focus:border-amber-500"
+                                                            />
+                                                            <p className="text-[10px] text-slate-500">
+                                                                Pago ~esse valor a cada 30 dias, dividido pelo hashrate ativo real, até você alterar.
+                                                                Requer preço &gt; 0 (exceto stablecoins). Bloco base: 10 min.
+                                                            </p>
+                                                        </div>
+                                                        <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-xs text-slate-300">
+                                                            <div className="mb-2 flex items-center justify-between">
+                                                                <span className="font-bold uppercase tracking-wide text-slate-400">Preview da distribuição</span>
+                                                                {distPreviewLoading && <span className="text-[10px] text-slate-500">calculando…</span>}
+                                                            </div>
+                                                            {!editingCoin.id ? (
+                                                                <p className="text-slate-500">Salve a moeda para ver o preview.</p>
+                                                            ) : distPreview?.error ? (
+                                                                <p className="text-rose-400">{distPreview.error}</p>
+                                                            ) : distPreview ? (
+                                                                <div className="space-y-1 font-mono">
+                                                                    <div>Hashrate ativo: {Number(distPreview.activeHashrate).toLocaleString()} H/s · {distPreview.activeMiners} mineradores</div>
+                                                                    <div>Preço: ${Number(distPreview.priceUsd).toFixed(6)}</div>
+                                                                    <div>Total projetado: <span className="text-emerald-400">${Number(distPreview.totalUsdMonth).toFixed(2)}/mês</span></div>
+                                                                    <div>$/mês por H/s: ${Number(distPreview.perHashUsdMonth).toFixed(6)}</div>
+                                                                    <div>Unidade $10 / 10 H/s: ${Number(distPreview.representativeUnitUsdMonth).toFixed(4)}/mês</div>
+                                                                    <div>yield/hash: {Number(distPreview.yieldPerHash).toExponential(4)}</div>
+                                                                    {Array.isArray(distPreview.topMiners) && distPreview.topMiners.length > 0 && (
+                                                                        <div className="pt-1">
+                                                                            <div className="text-slate-500">Top mineradores:</div>
+                                                                            {distPreview.topMiners.slice(0, 5).map((t: any) => (
+                                                                                <div key={t.userId}>
+                                                                                    #{t.userId}: {Number(t.sharePct).toFixed(1)}% · ${Number(t.usdMonth).toFixed(2)}/mês
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                    {Array.isArray(distPreview.warnings) && distPreview.warnings.map((w: string, i: number) => (
+                                                                        <div key={i} className="text-amber-400">⚠ {w}</div>
+                                                                    ))}
+                                                                </div>
+                                                            ) : (
+                                                                <p className="text-slate-500">—</p>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ) : (
                                                 <div className="grid grid-cols-2 gap-3">
                                                     <div className="space-y-1">
                                                         <label className="text-[10px] font-bold uppercase text-slate-500">Recompensa / bloco</label>
@@ -812,6 +922,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                         />
                                                     </div>
                                                 </div>
+                                                )}
 
                                                 <label className="flex cursor-pointer items-center gap-2">
                                                     <input

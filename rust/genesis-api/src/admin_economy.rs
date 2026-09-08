@@ -29,11 +29,13 @@ const SYNC_LIVE_PRICES_PATH: &str = "/api/admin/mining-coins/sync-live-prices";
 const SET_ACTIVE_PATH: &str = "/api/mining-coins/set-active";
 const ECONOMY_STATS_PATH: &str = "/api/admin/economy-stats";
 const RUNTIME_SUMMARY_PATH: &str = "/api/admin/mining-runtime-summary";
+const DISTRIBUTION_PREVIEW_PATH: &str = "/api/admin/economy/distribution-preview";
 const W_ECONOMY_SETTINGS: &str = "/v1/catalog/mining-coins/economy-settings";
 const W_SET_ACTIVE: &str = "/v1/catalog/mining-coins/set-active";
 const W_ECONOMY_STATS: &str = "/v1/admin/economy/coin-stats";
 const W_RUNTIME_SUMMARY: &str = "/v1/admin/economy/runtime-summary";
 const W_SYNC_LIVE_PRICES: &str = "/v1/admin/economy/sync-live-prices";
+const W_DISTRIBUTION_PREVIEW: &str = "/v1/admin/economy/distribution-preview";
 
 async fn economy_settings(
     State(state): State<Arc<AppState>>,
@@ -91,6 +93,39 @@ async fn runtime_summary(State(state): State<Arc<AppState>>, headers: HeaderMap)
     forward_mining(&state, W_RUNTIME_SUMMARY, json!({})).await
 }
 
+/// Projects a `usd_month` distribution for one coin using the last tick's real
+/// active hashrate (same value the boundary formula divides by).
+async fn distribution_preview(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
+    if let Err(e) = require_admin(&state, &headers, &Method::POST, DISTRIBUTION_PREVIEW_PATH).await {
+        return e;
+    }
+    let coin_id = body
+        .get("coinId")
+        .or_else(|| body.get("coin_id"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if coin_id.is_empty() {
+        return json_status(400, json!({ "ok": false, "error": "coinId obrigatório." }));
+    }
+    let usd_month = body
+        .get("distributionUsdMonth")
+        .or_else(|| body.get("distribution_usd_month"))
+        .and_then(Value::as_f64)
+        .unwrap_or(0.0);
+    forward_mining(
+        &state,
+        W_DISTRIBUTION_PREVIEW,
+        json!({ "coinId": coin_id, "distributionUsdMonth": usd_month }),
+    )
+    .await
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route(ECONOMY_SETTINGS_PATH, post(economy_settings))
@@ -98,4 +133,5 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(SYNC_LIVE_PRICES_PATH, post(sync_live_prices))
         .route(ECONOMY_STATS_PATH, get(economy_stats))
         .route(RUNTIME_SUMMARY_PATH, get(runtime_summary))
+        .route(DISTRIBUTION_PREVIEW_PATH, post(distribution_preview))
 }

@@ -421,3 +421,49 @@ describe('mining-engine yield-cron — catch-up canónico (grelha ON)', () => {
     expect(mod.getMiningYieldHistoryBoundaryMsForTests()).toBe(t2250);
   });
 });
+
+describe('mining-engine yield-cron — modo usd_month (fallback JS)', () => {
+  it('divide o orçamento USD/mês pelo hashrate ativo real', async () => {
+    const { buildYieldHistoryRowsForBoundary } = await import(
+      '../../../../server/modules/mining-engine/services/yield-cron.js'
+    );
+    const SECONDS_PER_MONTH = 30 * 86400;
+    const coins = [
+      { id: 'c', block_reward: 0, block_time: 0, network_hashrate: 0,
+        distribution_mode: 'usd_month', distribution_usd_month: SECONDS_PER_MONTH, price_usd: 1 } as any,
+      { id: 'legacy', block_reward: 6, block_time: 60, network_hashrate: 100 } as any
+    ];
+    const live = new Map<string, number>([['c', 100], ['legacy', 200]]);
+    const rows = buildYieldHistoryRowsForBoundary(coins, live, 7);
+    // usd_month: budget_per_sec = 1 coin/s ; active 100 → yph 0.01
+    expect(rows.yields[0]).toBeCloseTo(0.01, 12);
+    expect(rows.netHashes[0]).toBe(100);
+    expect(rows.rewards[0]).toBeCloseTo(1, 12);
+    // legacy unchanged: 0.1 / 200
+    expect(rows.yields[1]).toBeCloseTo(0.1 / 200, 12);
+  });
+
+  it('spike-guard: hashrate abaixo do piso sub-distribui', async () => {
+    const { buildYieldHistoryRowsForBoundary } = await import(
+      '../../../../server/modules/mining-engine/services/yield-cron.js'
+    );
+    const SECONDS_PER_MONTH = 30 * 86400;
+    const coins = [
+      { id: 'c', distribution_mode: 'usd_month', distribution_usd_month: SECONDS_PER_MONTH, price_usd: 1 } as any
+    ];
+    const rows = buildYieldHistoryRowsForBoundary(coins, new Map([['c', 2]]), 1);
+    expect(rows.netHashes[0]).toBe(10); // divisor clamped
+    expect(rows.yields[0] * 2).toBeCloseTo(0.2, 12); // total paid = budget * 2/10
+  });
+
+  it('sem hashrate ativo → yield 0', async () => {
+    const { buildYieldHistoryRowsForBoundary } = await import(
+      '../../../../server/modules/mining-engine/services/yield-cron.js'
+    );
+    const coins = [
+      { id: 'c', distribution_mode: 'usd_month', distribution_usd_month: 1000, price_usd: 1 } as any
+    ];
+    const rows = buildYieldHistoryRowsForBoundary(coins, new Map(), 1);
+    expect(rows.yields[0]).toBe(0);
+  });
+});

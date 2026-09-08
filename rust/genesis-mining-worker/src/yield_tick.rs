@@ -15,7 +15,7 @@ use genesis_core::calculator::slot_credits::list_slot_mining_credits;
 use genesis_core::calculator::types::{CalculatorUpgradeLite, MiningCoinInput};
 use genesis_core::mining::{
     build_yield_history_rows_for_boundary, last_completed_ten_minute_utc_grid,
-    list_pending_ten_minute_boundaries, CoinYieldInput,
+    list_pending_ten_minute_boundaries, CoinYieldInput, DistributionMode,
 };
 use serde_json::json;
 use tokio_postgres::types::ToSql;
@@ -84,7 +84,8 @@ async fn execute_mining_yield_tick(pool: &Pool, cfg: &WorkerConfig) -> anyhow::R
     let ups_sql =
         "SELECT id, type, category, base_production, multiplier, nft_mining_coin_id FROM upgrades";
     let coins_sql =
-        "SELECT id, symbol, nft_room_only, block_reward, block_time, network_hashrate FROM mining_coins WHERE is_active = 1";
+        "SELECT id, symbol, nft_room_only, block_reward, block_time, network_hashrate, \
+         price_usd, distribution_mode, distribution_usd_month FROM mining_coins WHERE is_active = 1";
 
     let active_rows = client
         .query(active_sql, &[])
@@ -296,6 +297,14 @@ async fn execute_mining_yield_tick(pool: &Pool, cfg: &WorkerConfig) -> anyhow::R
             let block_reward = row_f64(r, "block_reward");
             let block_time = row_f64(r, "block_time");
             let network_hashrate = row_f64(r, "network_hashrate");
+            let price_usd = row_f64(r, "price_usd");
+            let distribution_mode = DistributionMode::parse(
+                &r.try_get::<_, Option<String>>("distribution_mode")
+                    .ok()
+                    .flatten()
+                    .unwrap_or_default(),
+            );
+            let distribution_usd_month = row_f64(r, "distribution_usd_month");
             let independent_pool = is_independent_network_pool_mining_coin_ref(&MiningCoinInput {
                 id: id.clone(),
                 symbol: symbol.clone(),
@@ -313,6 +322,9 @@ async fn execute_mining_yield_tick(pool: &Pool, cfg: &WorkerConfig) -> anyhow::R
                 block_time,
                 network_hashrate,
                 independent_pool,
+                distribution_mode,
+                distribution_usd_month,
+                price_usd,
             }
         })
         .collect();
@@ -338,6 +350,11 @@ async fn execute_mining_yield_tick(pool: &Pool, cfg: &WorkerConfig) -> anyhow::R
             );
         }
 
+        // Catch-up: cada boundary pendente reusa o mesmo snapshot de `real_network` +
+        // params de moeda deste tick (igual ao legado). Limitado a
+        // MAX_YIELD_CATCHUP_BOUNDARIES_PER_TICK (72 = 12h). Para moedas em `usd_month`
+        // o spike-guard (clamp do divisor) garante que o replay só sub-distribua,
+        // nunca acima do orçamento.
         for boundary in pending {
             insert_yield_history_boundary(&*client, &coins, &real_network, boundary as f64)
                 .await

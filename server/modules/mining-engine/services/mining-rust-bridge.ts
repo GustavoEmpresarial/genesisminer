@@ -296,6 +296,12 @@ export function rustBuildYieldHistoryRowsForBoundary(
     block_reward: unknown;
     block_time: unknown;
     network_hashrate: unknown;
+    price_usd?: unknown;
+    priceUsd?: unknown;
+    distribution_mode?: unknown;
+    distributionMode?: unknown;
+    distribution_usd_month?: unknown;
+    distributionUsdMonth?: unknown;
     independentPool?: boolean;
     independent_pool?: boolean;
   }>,
@@ -321,11 +327,18 @@ export function rustBuildYieldHistoryRowsForBoundary(
           nft_room_only: c.nft_room_only,
           nftRoomOnly: c.nftRoomOnly
         });
+      const distributionMode =
+        String(c.distribution_mode ?? c.distributionMode ?? 'legacy').toLowerCase() === 'usd_month'
+          ? 'usd_month'
+          : 'legacy';
       return {
         id: String(c.id),
         blockReward: Number(c.block_reward) || 0,
         blockTime: Number(c.block_time) || 0,
         networkHashrate: Number(c.network_hashrate) || 0,
+        priceUsd: Number(c.price_usd ?? c.priceUsd) || 0,
+        distributionMode,
+        distributionUsdMonth: Number(c.distribution_usd_month ?? c.distributionUsdMonth) || 0,
         independentPool
       };
     });

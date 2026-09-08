@@ -191,6 +191,12 @@ model mining_coins {
   price_updated_at   BigInt?
   /// Optional spot exchange asset id used by the (future) live-price sync.
   spot_asset_id      String? @db.VarChar(64)
+  /// `legacy` (block_reward / block_time / network_hashrate) or `usd_month`
+  /// (perpetual monthly USD budget split by real active hashrate every boundary).
+  distribution_mode  String  @default("legacy") @db.VarChar(16)
+  /// USD/month budget when distribution_mode = 'usd_month'. A continuous rate,
+  /// not a draining pot — paid ~this much per rolling 30 days until changed.
+  distribution_usd_month Float @default(0)
 
   @@map("mining_coins")
 }

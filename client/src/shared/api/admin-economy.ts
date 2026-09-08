@@ -74,6 +74,10 @@ export function normalizeMiningCoinPayload(coin: Record<string, unknown>): Recor
   const minProportion = roundMiningFieldTo8Decimals(Math.max(0, parseLocaleNumber(coin.minProportion, 0)));
   const targetDailyUSD = roundMiningFieldTo8Decimals(Math.max(0, parseLocaleNumber(coin.targetDailyUSD, 0)));
   const difficulty = roundMiningFieldTo8Decimals(Math.max(1, parseLocaleNumber(coin.difficulty, 1)));
+  const distributionMode = coin.distributionMode === 'usd_month' ? 'usd_month' : 'legacy';
+  const distributionUsdMonth = roundMiningFieldTo8Decimals(
+    Math.max(0, parseLocaleNumber(coin.distributionUsdMonth, 0))
+  );
   return {
     ...coin,
     networkHashrate,
@@ -84,7 +88,9 @@ export function normalizeMiningCoinPayload(coin: Record<string, unknown>): Recor
     multiplier: multiplier > 0 ? multiplier : 1,
     minProportion: Math.max(0, minProportion),
     difficulty: difficulty > 0 ? difficulty : 1,
-    targetDailyUSD: Math.max(0, targetDailyUSD)
+    targetDailyUSD: Math.max(0, targetDailyUSD),
+    distributionMode,
+    distributionUsdMonth: Math.max(0, distributionUsdMonth)
   };
 }
 
@@ -178,16 +184,62 @@ export async function getMiningRuntimeSummary(): Promise<MiningRuntimeSummary | 
   }
 }
 
-export async function updateEconomySettings(coinId: string, networkHashrate: number, blockReward: number): Promise<{ ok: boolean; error?: string }> {
+export async function updateEconomySettings(
+  coinId: string,
+  networkHashrate: number,
+  blockReward: number,
+  opts?: { distributionMode?: 'legacy' | 'usd_month'; distributionUsdMonth?: number }
+): Promise<{ ok: boolean; error?: string }> {
   try {
+    const body =
+      opts?.distributionMode === 'usd_month'
+        ? { coinId, distributionMode: 'usd_month', distributionUsdMonth: Math.max(0, Number(opts.distributionUsdMonth) || 0) }
+        : { coinId, networkHashrate, blockReward };
     const res = await apiFetch(`${base}/admin/economy-settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ coinId, networkHashrate, blockReward })
+      body: JSON.stringify(body)
     });
     const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
     if (!res.ok) return { ok: false, error: data.error || `HTTP ${res.status}` };
     return { ok: !!data.ok, error: data.error };
+  } catch {
+    return { ok: false, error: 'Network Error' };
+  }
+}
+
+export interface DistributionPreview {
+  coinId: string;
+  symbol: string;
+  currentMode: 'legacy' | 'usd_month' | string;
+  distributionUsdMonth: number;
+  priceUsd: number;
+  activeHashrate: number;
+  activeMiners: number;
+  divisor: number;
+  yieldPerHash: number;
+  totalCoinsMonth: number;
+  totalUsdMonth: number;
+  perHashUsdMonth: number;
+  representativeUnitUsdMonth: number;
+  topMiners: Array<{ userId: number; hashrate: number; sharePct: number; usdMonth: number }>;
+  warnings: string[];
+}
+
+/** Preview ao vivo da distribuição USD mensal (usa o hashrate do último tick). */
+export async function getDistributionPreview(
+  coinId: string,
+  distributionUsdMonth: number
+): Promise<{ ok: boolean; preview?: DistributionPreview; error?: string }> {
+  try {
+    const res = await apiFetch(`${base}/admin/economy/distribution-preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coinId, distributionUsdMonth: Math.max(0, Number(distributionUsdMonth) || 0) })
+    });
+    const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string } & Partial<DistributionPreview>;
+    if (!res.ok || data.ok === false) return { ok: false, error: data.error || `HTTP ${res.status}` };
+    return { ok: true, preview: data as DistributionPreview };
   } catch {
     return { ok: false, error: 'Network Error' };
   }

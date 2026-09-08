@@ -643,6 +643,13 @@ export interface MiningCoin {
   showInExchange: boolean;
   realNetworkHashrate?: number;
   targetDailyUSD?: number;
+  /**
+   * `legacy` = block_reward / block_time / network_hashrate (histórico).
+   * `usd_month` = orçamento USD/mês contínuo, dividido pelo hashrate ativo real a cada bloco.
+   */
+  distributionMode?: 'legacy' | 'usd_month';
+  /** Orçamento USD/mês (taxa) quando distributionMode === 'usd_month'. */
+  distributionUsdMonth?: number;
 }
 
 export interface SeasonPassReward {

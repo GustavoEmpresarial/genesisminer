@@ -72,6 +72,8 @@ pub async fn run_catalog_mining_coins(pool: &Pool) -> Result<Value, PlayerReadEr
                     block_time::double precision AS block_time,
                     price_usd::double precision AS price_usd,
                     target_daily_usd::double precision AS target_daily_usd,
+                    distribution_mode,
+                    distribution_usd_month::double precision AS distribution_usd_month,
                     show_in_exchange, nft_room_only
                FROM mining_coins ORDER BY name ASC",
             &[],
@@ -84,6 +86,12 @@ pub async fn run_catalog_mining_coins(pool: &Pool) -> Result<Value, PlayerReadEr
             if !used_rate.is_finite() || used_rate == 0.0 {
                 used_rate = DEFAULT_NETWORK_HASHRATE;
             }
+            let distribution_mode =
+                if opt_string_cell(r, "distribution_mode").as_deref() == Some("usd_month") {
+                    "usd_month"
+                } else {
+                    "legacy"
+                };
             json!({
                 "id": string_cell(r, "id"),
                 "name": string_cell(r, "name"),
@@ -101,6 +109,8 @@ pub async fn run_catalog_mining_coins(pool: &Pool) -> Result<Value, PlayerReadEr
                 "blockTime": f64_cell(r, "block_time"),
                 "priceUSD": f64_cell(r, "price_usd"),
                 "targetDailyUSD": f64_cell(r, "target_daily_usd"),
+                "distributionMode": distribution_mode,
+                "distributionUsdMonth": f64_cell(r, "distribution_usd_month"),
                 "showInExchange": i32_cell(r, "show_in_exchange") != 0,
                 "nftRoomOnly": i32_cell(r, "nft_room_only") == 1,
             })
