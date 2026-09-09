@@ -378,6 +378,8 @@ fn coin_is_nft_exclusive(meta: &ExclusiveCoinMeta) -> bool {
         price_usd: 0.0,
         usdc_rate: 0.0,
         nft_room_only: meta.nft_room_only,
+        distribution_mode: Default::default(),
+        distribution_usd_month: 0.0,
     })
 }
 

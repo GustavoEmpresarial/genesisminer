@@ -149,6 +149,8 @@ pub async fn run_wallet_state(pool: &Pool, user_id: i64) -> Result<Value, Player
                 price_usd: parse_f64_cell(r, "price_usd"),
                 usdc_rate: parse_f64_cell(r, "usdc_rate"),
                 nft_room_only: false,
+                distribution_mode: Default::default(),
+                distribution_usd_month: 0.0,
             });
             let gross = bal * rate;
             let fee = gross * (fee_percent / EXCHANGE_FEE_PERCENT_MAX);

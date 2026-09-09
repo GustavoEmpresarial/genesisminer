@@ -21,6 +21,11 @@ pub const SECONDS_PER_MONTH: f64 = PROJECTION_DAYS_PER_MONTH * 86_400.0;
 /// makes a "$10 / 10 H/s" unit the break-even point.
 pub const DIST_MIN_HASHRATE: f64 = 10.0;
 
+/// Cadência de crédito (grade UTC de 10 min). No modo `usd_month` a linha da
+/// moeda não tem mais `block_time` significativo, então a calculadora reporta
+/// esta cadência — a real — junto do reward por bloco derivado do orçamento.
+pub const USD_MONTH_DISPLAY_BLOCK_TIME_SEC: f64 = 600.0;
+
 /// `snapshot.ts` `SCOPE_TOTAL`.
 pub const SCOPE_TOTAL: &str = "total";
 /// `snapshot.ts` `ROOM_ID_PATTERN` `{1,120}`.

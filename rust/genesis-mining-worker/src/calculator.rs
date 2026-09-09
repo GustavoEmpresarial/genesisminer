@@ -496,7 +496,8 @@ pub async fn run_calculator_snapshot(
     let coin_rows = client
         .query(
             r#"SELECT id, name, symbol, network_hashrate, block_reward, block_time,
-                      price_usd, usdc_rate, nft_room_only
+                      price_usd, usdc_rate, nft_room_only,
+                      distribution_mode, distribution_usd_month
                  FROM mining_coins
                 WHERE is_active = 1
                 ORDER BY name ASC"#,
@@ -521,6 +522,13 @@ pub async fn run_calculator_snapshot(
                 price_usd: row_f64(c, "price_usd"),
                 usdc_rate: row_f64(c, "usdc_rate"),
                 nft_room_only: row_i32(c, "nft_room_only") != 0,
+                distribution_mode: genesis_core::mining::DistributionMode::parse(
+                    &c.try_get::<_, Option<String>>("distribution_mode")
+                        .ok()
+                        .flatten()
+                        .unwrap_or_default(),
+                ),
+                distribution_usd_month: row_f64(c, "distribution_usd_month"),
             }
         })
         .collect();

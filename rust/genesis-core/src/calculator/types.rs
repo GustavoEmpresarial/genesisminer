@@ -47,6 +47,12 @@ pub struct MiningCoinInput {
     #[serde(alias = "usdcRate", default)]
     pub usdc_rate: f64,
     pub nft_room_only: bool,
+    /// `legacy` vs `usd_month` — espelha `mining_coins.distribution_mode`.
+    #[serde(default)]
+    pub distribution_mode: crate::mining::DistributionMode,
+    /// Orçamento USD/mês quando `distribution_mode = usd_month`.
+    #[serde(default)]
+    pub distribution_usd_month: f64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

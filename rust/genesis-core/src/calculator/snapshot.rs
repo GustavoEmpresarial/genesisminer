@@ -1,4 +1,5 @@
-use super::constants::PROJECTION_30D_DAYS;
+use super::constants::{PROJECTION_30D_DAYS, USD_MONTH_DISPLAY_BLOCK_TIME_SEC};
+use crate::mining::{usd_month_yield, DistributionMode};
 use super::nft::{
     is_independent_network_pool_mining_coin_ref, is_nft_room_exclusive_mining_coin_ref,
     resolve_mining_coin_usd_rate,
@@ -122,9 +123,36 @@ pub fn compute_snapshot(input: &CalculatorComputeInput) -> PlayerCalculatorSnaps
                 &input.implied_network_by_coin,
                 independent_pool,
             );
-            let block_time = c.block_time;
-            let block_reward = c.block_reward;
             let price_usd = resolve_mining_coin_usd_rate(c);
+            // `usd_month`: o motor rateia o orçamento mensal pelo hashrate ATIVO real
+            // (`app_cache.network_stats.hashrates`, o mesmo divisor de
+            // `usd_month_yield` em `build_yield_history_rows_for_boundary`).
+            // Os campos legados `block_reward`/`block_time`/`network_hashrate` da
+            // linha ficam obsoletos nesse modo — projetar por eles mente em ordens
+            // de grandeza. Reescrevemos o trio para o equivalente do orçamento, de
+            // forma que todo consumidor a jusante (payload, ticker do cliente,
+            // comparativos) veja exatamente o que o motor credita.
+            let (block_time, block_reward, net_eff) =
+                if c.distribution_mode == DistributionMode::UsdMonth {
+                    let active = input
+                        .runtime_network_by_coin
+                        .get(&id)
+                        .copied()
+                        .filter(|v| v.is_finite() && *v > 0.0)
+                        .unwrap_or(0.0);
+                    let (yph, _budget_per_sec_coins, divisor) =
+                        usd_month_yield(c.distribution_usd_month, price_usd, active);
+                    // reward por bloco da rede inteira: yph × divisor × block_time.
+                    // Preserva o zero que `usd_month_yield` devolve quando não há
+                    // hashrate ativo suficiente.
+                    (
+                        USD_MONTH_DISPLAY_BLOCK_TIME_SEC,
+                        yph * divisor * USD_MONTH_DISPLAY_BLOCK_TIME_SEC,
+                        divisor,
+                    )
+                } else {
+                    (c.block_time, c.block_reward, net_eff)
+                };
             let (daily_coins, daily_usd) = compute_daily_earnings(
                 user_power_hps,
                 block_time,
@@ -251,6 +279,8 @@ mod tests {
             price_usd: 2.0,
             usdc_rate: 0.0,
             nft_room_only: false,
+            distribution_mode: DistributionMode::Legacy,
+            distribution_usd_month: 0.0,
         }
     }
 
@@ -467,6 +497,8 @@ mod tests {
             price_usd: 2.0,
             usdc_rate: 0.0,
             nft_room_only: false,
+            distribution_mode: DistributionMode::Legacy,
+            distribution_usd_month: 0.0,
         };
         let snap = compute_snapshot(&independent_net_input(
             coin,
@@ -495,6 +527,8 @@ mod tests {
             price_usd: 2.0,
             usdc_rate: 0.0,
             nft_room_only: false,
+            distribution_mode: DistributionMode::Legacy,
+            distribution_usd_month: 0.0,
         };
         let snap = compute_snapshot(&independent_net_input(
             coin,
@@ -524,6 +558,8 @@ mod tests {
             price_usd: 1.0,
             usdc_rate: 0.0,
             nft_room_only: true,
+            distribution_mode: DistributionMode::Legacy,
+            distribution_usd_month: 0.0,
         };
         let snap = compute_snapshot(&independent_net_input(
             coin,
@@ -554,6 +590,8 @@ mod tests {
             price_usd: 1.0,
             usdc_rate: 1.0,
             nft_room_only: false,
+            distribution_mode: DistributionMode::Legacy,
+            distribution_usd_month: 0.0,
         };
         let snap = compute_snapshot(&independent_net_input(
             coin,
@@ -567,5 +605,86 @@ mod tests {
         ));
         assert_independent_net(&snap, floor, user_hps);
         assert!(!snap.coins[0].nft_room_only);
+    }
+}
+
+#[cfg(test)]
+mod usd_month_projection_tests {
+    use super::*;
+    use crate::calculator::types::{
+        CalculatorComputeInput, MiningCoinInput, ScopeOption,
+    };
+
+    fn gho(mode: DistributionMode) -> MiningCoinInput {
+        MiningCoinInput {
+            id: "GHO_nft".into(),
+            symbol: "GHO_nft".into(),
+            name: "GHO".into(),
+            // piso admin obsoleto — a fonte do erro de 73× no modo usd_month
+            network_hashrate: 179.0,
+            block_reward: 0.1,
+            block_time: 600.0,
+            price_usd: 1.0,
+            usdc_rate: 0.0,
+            nft_room_only: true,
+            distribution_mode: mode,
+            distribution_usd_month: 0.01,
+        }
+    }
+
+    fn input(coin: MiningCoinInput) -> CalculatorComputeInput {
+        CalculatorComputeInput {
+            scope: "total".into(),
+            scopes_ui: vec![ScopeOption {
+                id: "total".into(),
+                name: "Poder Total".into(),
+            }],
+            checkin_frozen: false,
+            checkin_bonus_hps: 0.0,
+            racks: vec![],
+            upgrades_by_id: HashMap::new(),
+            coins: vec![coin],
+            nft_room_ids: vec![],
+            asic_room_ids: vec![],
+            runtime_network_by_coin: HashMap::from([("GHO_nft".to_string(), 13_150.0)]),
+            implied_network_by_coin: HashMap::new(),
+            block_history_rows: vec![],
+        }
+    }
+
+    /// Regressão: sob `usd_month` a projeção tem de vir do orçamento mensal e do
+    /// hashrate ativo real, nunca de `block_reward`/`block_time`/`network_hashrate`.
+    /// O piso admin de 179 H/s inflava a projeção da GHO_nft em ~73×.
+    #[test]
+    fn usd_month_projects_from_budget_not_legacy_fields() {
+        let snap = compute_snapshot(&input(gho(DistributionMode::UsdMonth)));
+        let c = &snap.coins[0];
+        assert_eq!(c.network_hashrate, 13_150.0, "divisor = hashrate ativo real");
+        assert_eq!(c.block_time, 600.0);
+        // rede inteira por bloco: 0.01 USD/mês ÷ 2_592_000 s × 600 s
+        let expected_block_reward = 0.01 / crate::calculator::constants::SECONDS_PER_MONTH * 600.0;
+        assert!((c.block_reward - expected_block_reward).abs() < 1e-15);
+    }
+
+    /// O teto do orçamento: a rede inteira não pode render mais que o
+    /// `distribution_usd_month` configurado, aconteça o que acontecer.
+    #[test]
+    fn usd_month_whole_network_month_equals_budget() {
+        let snap = compute_snapshot(&input(gho(DistributionMode::UsdMonth)));
+        let c = &snap.coins[0];
+        let network_month_usd = c.block_reward / c.block_time
+            * crate::calculator::constants::SECONDS_PER_MONTH
+            * c.price_usd;
+        assert!((network_month_usd - 0.01).abs() < 1e-12, "{network_month_usd}");
+    }
+
+    /// Moedas `legacy` continuam exatamente como antes.
+    #[test]
+    fn legacy_mode_untouched() {
+        let snap = compute_snapshot(&input(gho(DistributionMode::Legacy)));
+        let c = &snap.coins[0];
+        assert_eq!(c.network_hashrate, 179.0);
+        assert_eq!(c.block_reward, 0.1);
+        assert_eq!(c.block_time, 600.0);
     }
 }

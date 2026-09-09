@@ -266,6 +266,8 @@ async fn compute_progress_inner(
                 price_usd,
                 usdc_rate,
                 nft_room_only,
+                distribution_mode: Default::default(),
+                distribution_usd_month: 0.0,
             };
             let independent_pool =
                 is_independent_network_pool_mining_coin_ref(&coin_input_for_flag);
@@ -317,6 +319,8 @@ async fn compute_progress_inner(
                 price_usd,
                 usdc_rate,
                 nft_room_only,
+                distribution_mode: Default::default(),
+                distribution_usd_month: 0.0,
             };
             let usd = resolve_mining_coin_usd_rate(&coin_input);
             if usd > 0.0 {
