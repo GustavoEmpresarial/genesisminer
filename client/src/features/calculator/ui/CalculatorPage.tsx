@@ -3,7 +3,7 @@
  * Ported from `legacy/frontend/components/PlayerCalculator.tsx`.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowUpRight, TrendingUp, Box, Server, Layers, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, TrendingUp, Box, Server, Sparkles } from 'lucide-react';
 import {
   getPlayerCalculatorMe,
   postPlayerCalculatorAiAnalyze,
@@ -26,14 +26,6 @@ function formatDateTime(valueMs: number): string {
     hour: '2-digit',
     minute: '2-digit'
   });
-}
-
-function formatUsd(value: number): string {
-  return value.toLocaleString('en-US', { minimumFractionDigits: 6, maximumFractionDigits: 6 });
-}
-
-function rowUsdByLabel(rows: { label: string; usd: number }[], label: string): number {
-  return rows.find((r) => r.label === label)?.usd ?? 0;
 }
 
 function formatHashrate(hps: number): string {
@@ -189,20 +181,12 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({ onBack, isAdmin 
   const selectedCoin = payload?.coins.find((c) => c.id === selectedCoinId) ?? null;
   const scopesUi = payload?.scopesUi ?? [{ id: 'total', name: t('calculator.totalPower') }];
   const generalPowerHps = payload?.generalPowerHps ?? 0;
-  const coinComparisons = payload?.coinComparisons ?? [];
   const detailTabCoins = useMemo(() => {
     const mining = (payload?.coins ?? []).filter((c) => c.userPowerHps > 0);
     const general = mining.filter((c) => !isIndependentNetworkPoolMiningCoin(c));
     const independent = mining.filter((c) => isIndependentNetworkPoolMiningCoin(c));
     return [...general, ...independent];
   }, [payload?.coins]);
-  const comparisonPeriods = [
-    { key: '1 Hora', label: t('calculator.hourly') },
-    { key: '24 Horas', label: t('calculator.daily') },
-    { key: '7 Dias', label: t('calculator.weekly') },
-    { key: '30 Dias', label: t('calculator.monthly') },
-    { key: '1 Ano', label: t('calculator.yearly') }
-  ] as const;
 
   return (
     <div className="flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden bg-slate-950 text-slate-200 lg:flex-row">
@@ -342,98 +326,6 @@ export const CalculatorPage: React.FC<CalculatorPageProps> = ({ onBack, isAdmin 
                   <SimpleMarkdown text={aiMarkdown} />
                 </div>
               )}
-            </div>
-          )}
-
-          {payload && coinComparisons.length > 0 && generalPowerHps > 0 && (
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-6 lg:p-8">
-              <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h3 className="flex items-center gap-2 text-slate-300 font-bold">
-                    <Layers size={18} className="text-amber-400" />
-                    {t('calculator.coinComparison')}
-                  </h3>
-                  <p className="mt-1 text-xs text-slate-500 max-w-2xl">
-                    {t('calculator.coinComparisonDesc', {
-                      power: generalPowerHps.toLocaleString('en-US', { maximumFractionDigits: 0 })
-                    })}
-                  </p>
-                </div>
-              </div>
-
-              <div className="hidden w-full overflow-x-auto lg:block">
-                <table className="w-full min-w-[760px] text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                      <th className="px-3 py-3">{t('calculator.coinSymbol', { symbol: '' }).replace(' ()', '')}</th>
-                      {comparisonPeriods.map((p) => (
-                        <th key={p.key} className="px-3 py-3 text-right">{p.label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {coinComparisons.map((coin) => (
-                      <tr
-                        key={coin.id}
-                        className={`border-b border-slate-800/50 ${
-                          coin.isActivelyMining ? 'bg-amber-500/5' : 'hover:bg-white/5'
-                        }`}
-                      >
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-white">{coin.symbol}</span>
-                            {coin.isActivelyMining && (
-                              <span className="rounded-full bg-amber-600/20 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-300">
-                                {t('calculator.activelyMining')}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        {comparisonPeriods.map((p) => (
-                          <td key={p.key} className="px-3 py-3 text-right font-mono text-sm text-green-400">
-                            ${formatUsd(rowUsdByLabel(coin.rows, p.key))}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="space-y-3 lg:hidden">
-                {coinComparisons.map((coin) => (
-                  <div
-                    key={coin.id}
-                    className={`rounded-2xl border px-4 py-3 ${
-                      coin.isActivelyMining
-                        ? 'border-amber-500/40 bg-amber-500/5'
-                        : 'border-slate-800 bg-slate-950/50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-bold text-white">{coin.symbol}</span>
-                      {coin.isActivelyMining && (
-                        <span className="text-[10px] font-bold uppercase text-amber-300">
-                          {t('calculator.activelyMining')}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3">
-                      {comparisonPeriods.map((p) => (
-                        <div
-                          key={p.key}
-                          className="rounded-lg bg-slate-900/60 px-2.5 py-2 sm:bg-transparent sm:px-0 sm:py-0"
-                        >
-                          <div className="text-[10px] uppercase tracking-widest text-slate-500">{p.label}</div>
-                          <div className="mt-0.5 font-mono text-sm tabular-nums text-green-400">
-                            ${formatUsd(rowUsdByLabel(coin.rows, p.key))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
 
