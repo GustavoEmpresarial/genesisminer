@@ -51,6 +51,29 @@ fn projection_trio(
     )
 }
 
+/// Hashrate ativo a usar no divisor da tabela "Comparativo" (usd_month): a rede
+/// **depois** de o jogador mover todo o poder para esta moeda. Tira a
+/// contribuição atual dele nesta moeda (0 se não a minera) e soma o poder total.
+/// Sem isto, poder > ativo atual projeta ganho acima do orçamento da moeda.
+fn comparison_active_hashrate(active_now: f64, my_current_on_coin: f64, general_power: f64) -> f64 {
+    let active = if active_now.is_finite() && active_now > 0.0 {
+        active_now
+    } else {
+        0.0
+    };
+    let mine = if my_current_on_coin.is_finite() && my_current_on_coin > 0.0 {
+        my_current_on_coin
+    } else {
+        0.0
+    };
+    let gp = if general_power.is_finite() && general_power > 0.0 {
+        general_power
+    } else {
+        0.0
+    };
+    (active - mine).max(0.0) + gp
+}
+
 fn build_coin_comparison_rows(daily_coins: f64, daily_usd: f64) -> Vec<PlayerCalculatorCoinRow> {
     calculator_projection_periods()
         .into_iter()
@@ -219,13 +242,18 @@ pub fn compute_snapshot(input: &CalculatorComputeInput) -> PlayerCalculatorSnaps
                 false,
             );
             let price_usd = resolve_mining_coin_usd_rate(c);
-            let active_hashrate = input
-                .runtime_network_by_coin
-                .get(&id)
-                .copied()
-                .unwrap_or(0.0);
-            // Mesma reescrita usd_month do painel "Mineração actual" — senão a
-            // tabela "Comparativo" projeta pelos campos legados mortos e diverge.
+            // "E se eu movesse TODO o meu poder para esta moeda?" — simula a rede
+            // DEPOIS da mudança: tira a minha contribuição atual nesta moeda (0 se
+            // não minero ela) e soma o meu poder total. Sem isto, um minerador
+            // cujo poder supera o hashrate ativo atual projeta ganhar mais que o
+            // orçamento inteiro da moeda (ex.: 1803 H/s ÷ 898 ativos = 200 % do
+            // budget). No painel "Mineração actual" não se faz isto porque lá o
+            // meu poder já está dentro de `runtime_network_by_coin`.
+            let active_hashrate = comparison_active_hashrate(
+                input.runtime_network_by_coin.get(&id).copied().unwrap_or(0.0),
+                power_by_coin.get(&id).copied().unwrap_or(0.0),
+                general_power_hps,
+            );
             let (block_time, block_reward, net_eff) =
                 projection_trio(c, legacy_net_eff, price_usd, active_hashrate);
             let (daily_coins, daily_usd) = compute_daily_earnings(
@@ -750,5 +778,50 @@ mod usd_month_projection_tests {
         let c = pol(DistributionMode::Legacy);
         let trio = projection_trio(&c, 777.0, c.price_usd, 29_004.0);
         assert_eq!(trio, (600.0, 0.55, 777.0));
+    }
+
+    /// A tabela "Comparativo" nunca pode projetar mais que o orçamento da moeda.
+    /// Report: 1803 H/s numa SHIB de 898 ativos e $50/mês mostrava $100/mês
+    /// (2× o budget) porque o divisor não somava o poder movido.
+    #[test]
+    fn comparison_never_exceeds_coin_budget() {
+        let usd_month = 50.0;
+        let price = 5.39e-6;
+        let general_power = 1803.0;
+        let active_now = 898.0; // SHIB hoje, sem este jogador
+        let my_on_coin = 0.0; // ele mina POL, não SHIB
+
+        let div = comparison_active_hashrate(active_now, my_on_coin, general_power);
+        assert!((div - (898.0 + 1803.0)).abs() < 1e-9);
+
+        let c = MiningCoinInput {
+            id: "SHIB".into(),
+            symbol: "SHIB".into(),
+            name: "SHIB".into(),
+            network_hashrate: 1_000_000.0,
+            block_reward: 1800.0,
+            block_time: 600.0,
+            price_usd: price,
+            usdc_rate: price,
+            nft_room_only: false,
+            distribution_mode: DistributionMode::UsdMonth,
+            distribution_usd_month: usd_month,
+        };
+        let (bt, br, ne) = projection_trio(&c, 1_000_000.0, price, div);
+        let (daily_coins, daily_usd) = compute_daily_earnings(general_power, bt, ne, br, price);
+        let month_usd = daily_usd * 30.0;
+        // fatia = 1803 / 2701 ≈ 66,7 % de $50 ≈ $33,4 — nunca > $50
+        assert!(month_usd < usd_month, "projetou ${month_usd} > budget ${usd_month}");
+        assert!((month_usd - 50.0 * 1803.0 / 2701.0).abs() < 0.5, "{month_usd}");
+        let _ = daily_coins;
+    }
+
+    /// Moeda que o jogador já minera: tira a contribuição dele e recoloca via
+    /// `general_power`, então o divisor efetivo não muda (não conta em dobro).
+    #[test]
+    fn comparison_actively_mined_coin_no_double_count() {
+        // ativo=29004 já inclui os 1803 do jogador; ele move "tudo" pra cá.
+        let div = comparison_active_hashrate(29_004.0, 1_803.0, 1_803.0);
+        assert!((div - 29_004.0).abs() < 1e-9);
     }
 }
