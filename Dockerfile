@@ -84,7 +84,7 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=6 \
   CMD curl -fsS "http://127.0.0.1:${WALLET_WORKER_PORT}/health" || exit 1
 CMD ["genesis-wallet"]
 
-FROM node:20-bookworm-slim AS client-builder
+FROM node:26-bookworm-slim AS client-builder
 WORKDIR /app/client
 COPY client/package.json client/package-lock.json ./
 RUN npm ci
@@ -108,7 +108,7 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=6 \
   CMD curl -fsS "http://127.0.0.1:${API_PORT}/health" || exit 1
 CMD ["genesis-api"]
 
-FROM node:20-bookworm-slim AS server-builder
+FROM node:26-bookworm-slim AS server-builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
@@ -117,7 +117,7 @@ COPY tsconfig.json tsconfig.build.json ./
 COPY server ./server
 RUN npx prisma generate && npm run build
 
-FROM node:20-bookworm-slim
+FROM node:26-bookworm-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
