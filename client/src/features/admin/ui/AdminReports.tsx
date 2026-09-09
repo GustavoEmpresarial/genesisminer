@@ -1182,8 +1182,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                     <th className="border-b border-slate-800 px-3 py-3">Moeda</th>
                                                     <th className="border-b border-slate-800 px-3 py-3">Símbolo</th>
                                                     <th className="border-b border-slate-800 px-3 py-3">Preço</th>
-                                                    <th className="border-b border-slate-800 px-3 py-3">Reward</th>
-                                                    <th className="border-b border-slate-800 px-3 py-3">Bloco (s)</th>
+                                                    <th className="border-b border-slate-800 px-3 py-3">$ / mês</th>
                                                     <th className="border-b border-slate-800 px-3 py-3 text-center">Estado</th>
                                                     <th className="border-b border-slate-800 px-3 py-3 text-right">Ações</th>
                                                 </tr>
@@ -1191,7 +1190,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                             <tbody className="divide-y divide-slate-800/60">
                                                 {miningCoins.length === 0 && !calcDataLoading ? (
                                                     <tr>
-                                                        <td colSpan={7} className="px-4 py-12 text-center text-slate-500">
+                                                        <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
                                                             Nenhuma moeda cadastrada.
                                                         </td>
                                                     </tr>
@@ -1223,9 +1222,10 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                             ${formatAdminDecimalMax8(resolveMiningCoinDisplayPrice(coin))}
                                                         </td>
                                                         <td className="px-3 py-3 font-mono text-slate-300">
-                                                            {formatAdminDecimalMax8(coin.blockReward)}
+                                                            {coin.distributionMode === 'usd_month'
+                                                                ? `$${formatAdminDecimalMax8(coin.distributionUsdMonth ?? 0)}`
+                                                                : '—'}
                                                         </td>
-                                                        <td className="px-3 py-3 font-mono text-slate-300">{coin.blockTime ?? 600}</td>
                                                         <td className="px-3 py-3 text-center">
                                                             {coin.isActive ? (
                                                                 <span className="rounded-full border border-green-500/25 bg-green-500/10 px-2 py-0.5 text-[10px] font-bold text-green-400">
