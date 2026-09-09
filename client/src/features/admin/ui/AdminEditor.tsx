@@ -688,7 +688,33 @@ export const AdminEditor: React.FC<AdminEditorProps> = ({ gameUpgrades, onUpdate
                                 </div>
                                 )}
                                 <div><label className="text-xs font-bold text-slate-500 block mb-1">Nome</label><input type="text" value={itemForm.name} onChange={e => setItemForm({ ...itemForm, name: e.target.value })} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white text-sm" /></div>
-                                <div><label className="text-xs font-bold text-slate-500 block mb-1">Categoria</label><input type="text" value={itemForm.category} onChange={e => setItemForm({ ...itemForm, category: e.target.value })} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white text-sm" /></div>
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 block mb-1">Classe</label>
+                                    <select
+                                        value={
+                                            itemForm.isNft || /nft/i.test(String(itemForm.category || ''))
+                                                ? 'nft'
+                                                : /asic/i.test(String(itemForm.category || ''))
+                                                ? 'asic'
+                                                : 'gpu'
+                                        }
+                                        onChange={(e) => {
+                                            const v = e.target.value;
+                                            setItemForm({
+                                                ...itemForm,
+                                                isNft: v === 'nft',
+                                                category: v === 'nft' ? 'NFT' : v === 'asic' ? 'ASIC' : 'GPU'
+                                            });
+                                        }}
+                                        className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white text-sm"
+                                    >
+                                        <option value="gpu">Máquina normal (GPU)</option>
+                                        <option value="asic">ASIC</option>
+                                        <option value="nft">NFT</option>
+                                    </select>
+                                    <p className="text-[10px] text-slate-500 mt-1">Define categoria + flag NFT. Ajusta a categoria de texto abaixo se precisar de outro valor.</p>
+                                </div>
+                                <div><label className="text-xs font-bold text-slate-500 block mb-1">Categoria (texto)</label><input type="text" value={itemForm.category} onChange={e => setItemForm({ ...itemForm, category: e.target.value })} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white text-sm" /></div>
                                 <div><label className="text-xs font-bold text-slate-500 block mb-1">Tipo</label><select value={itemForm.type} onChange={e => {
                                     const nextType = e.target.value as Upgrade['type'];
                                     setItemForm({
