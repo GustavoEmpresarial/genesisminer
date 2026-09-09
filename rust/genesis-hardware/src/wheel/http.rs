@@ -235,9 +235,9 @@ pub async fn post_roleta_claim(
 // ---------------------------------------------------------------------------
 
 use super::admin::{
-    run_admin_wheel_players_add, run_admin_wheel_players_list, run_admin_wheel_prizes_list,
-    run_admin_wheel_prizes_replace, run_admin_wheel_runtime_config_get,
-    run_admin_wheel_runtime_config_set,
+    run_admin_wheel_players_add, run_admin_wheel_players_list, run_admin_wheel_players_remove,
+    run_admin_wheel_prizes_list, run_admin_wheel_prizes_replace,
+    run_admin_wheel_runtime_config_get, run_admin_wheel_runtime_config_set,
 };
 
 pub async fn post_admin_wheel_prizes_list(
@@ -292,6 +292,16 @@ pub async fn post_admin_wheel_players_add(
     Json(body): Json<Value>,
 ) -> (StatusCode, Json<Value>) {
     match run_admin_wheel_players_add(&state.pool, &body).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => wheel_fail_value(e),
+    }
+}
+
+pub async fn post_admin_wheel_players_remove(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<Value>,
+) -> (StatusCode, Json<Value>) {
+    match run_admin_wheel_players_remove(&state.pool, &body).await {
         Ok(v) => (StatusCode::OK, Json(v)),
         Err(e) => wheel_fail_value(e),
     }

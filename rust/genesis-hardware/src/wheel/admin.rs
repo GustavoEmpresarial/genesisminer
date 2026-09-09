@@ -13,6 +13,7 @@ pub const WHEEL_ADMIN_RUNTIME_CONFIG_PATH: &str = "/v1/wheel/admin/runtime-confi
 pub const WHEEL_ADMIN_RUNTIME_CONFIG_SET_PATH: &str = "/v1/wheel/admin/runtime-config/set";
 pub const WHEEL_ADMIN_PLAYERS_PATH: &str = "/v1/wheel/admin/players";
 pub const WHEEL_ADMIN_PLAYERS_ADD_PATH: &str = "/v1/wheel/admin/players/add";
+pub const WHEEL_ADMIN_PLAYERS_REMOVE_PATH: &str = "/v1/wheel/admin/players/remove";
 
 const WHEEL_CONFIG_ROW_ID: i32 = 1;
 const DEFAULT_TIER: &str = "BASIC";
@@ -254,6 +255,26 @@ pub async fn run_admin_wheel_players_add(pool: &Pool, body: &Value) -> Result<Va
         )
         .await?;
     Ok(json!({ "ok": true }))
+}
+
+pub async fn run_admin_wheel_players_remove(pool: &Pool, body: &Value) -> Result<Value, WheelError> {
+    let username = body
+        .get("username")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if username.is_empty() {
+        return Err(WheelError::bad("Username required"));
+    }
+    let client = pool.get().await?;
+    let n = client
+        .execute(
+            "DELETE FROM wheel_players WHERE username = $1",
+            &[&username],
+        )
+        .await?;
+    Ok(json!({ "ok": true, "removed": n }))
 }
 
 pub(crate) fn now_ms() -> i64 {

@@ -85,14 +85,15 @@ use crate::shop::SHOP_CHECKOUT_PATH;
 use crate::upgrades::http::post_purchase as post_upgrades_purchase;
 use crate::upgrades::UPGRADE_PACKAGE_PURCHASE_PATH;
 use crate::wheel::http::{
-    post_admin_wheel_players_add, post_admin_wheel_players_list, post_admin_wheel_prizes_list,
+    post_admin_wheel_players_add, post_admin_wheel_players_list, post_admin_wheel_players_remove,
+    post_admin_wheel_prizes_list,
     post_admin_wheel_prizes_replace, post_admin_wheel_runtime_config_get,
     post_admin_wheel_runtime_config_set, post_paid_spin as post_wheel_paid_spin,
     post_redeem_code as post_wheel_redeem_code, post_roleta_claim, post_roll as post_wheel_roll,
 };
 use crate::wheel::{
     ROLETA_CLAIM_PATH, WHEEL_ADMIN_PLAYERS_ADD_PATH, WHEEL_ADMIN_PLAYERS_PATH,
-    WHEEL_ADMIN_PRIZES_PATH, WHEEL_ADMIN_PRIZES_REPLACE_PATH, WHEEL_ADMIN_RUNTIME_CONFIG_PATH,
+    WHEEL_ADMIN_PLAYERS_REMOVE_PATH, WHEEL_ADMIN_PRIZES_PATH, WHEEL_ADMIN_PRIZES_REPLACE_PATH, WHEEL_ADMIN_RUNTIME_CONFIG_PATH,
     WHEEL_ADMIN_RUNTIME_CONFIG_SET_PATH, WHEEL_PAID_SPIN_PATH, WHEEL_REDEEM_CODE_PATH,
     WHEEL_ROLL_PATH,
 };
@@ -270,6 +271,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             WHEEL_ADMIN_PLAYERS_ADD_PATH,
             post(post_admin_wheel_players_add),
+        )
+        .route(
+            WHEEL_ADMIN_PLAYERS_REMOVE_PATH,
+            post(post_admin_wheel_players_remove),
         )
         .route(LUCKY_BOX_BUY_PATH, post(post_lucky_box_buy))
         .route(LUCKY_BOX_OPEN_PATH, post(post_lucky_box_open))
