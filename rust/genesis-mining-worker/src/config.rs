@@ -171,11 +171,16 @@ pub const PG_DUMP_ABORT_KILL_GRACE_MS: u64 = 2 * MS_PER_SECOND;
 pub const LOCK_TTL_SEC_DEFAULT: u64 = 120;
 pub const LOCK_TTL_SEC_MIN: u64 = 30;
 pub const LOCK_TTL_SEC_MAX: u64 = 600;
-/// Offline earning window cap (anti-farm) — mirrors progress-computer.ts.
-pub const HOURS_PER_EARNING_WINDOW: u64 = 72;
-pub const YIELD_HISTORY_LOOKBACK_HOURS: u64 = 73;
-pub const MAX_EARNING_WINDOW_MS: i64 = (HOURS_PER_EARNING_WINDOW * MS_PER_HOUR) as i64;
-pub const YIELD_HISTORY_LOOKBACK_MS: i64 = (YIELD_HISTORY_LOOKBACK_HOURS * MS_PER_HOUR) as i64;
+/// Teto da janela de crédito. Backlog além disto é **descartado**, não pago
+/// (sem pagamento retroativo): quem ficar offline mais que isto perde o intervalo.
+/// 2 boundaries de 10 min — um jogador ativo (tick a cada ~2 min) nunca encosta
+/// neste teto; só morde quem fechou o jogo. Também limita o repagamento de uma
+/// edição de `base_production` no catálogo a, no máximo, esta janela.
+pub const EARNING_WINDOW_MINUTES: i64 = 20;
+pub const MAX_EARNING_WINDOW_MS: i64 = EARNING_WINDOW_MINUTES * MS_PER_MINUTE as i64;
+/// Lookback do `mining_yield_history` na hora do crédito — só precisa cobrir a
+/// janela acima mais um boundary para achar a taxa vigente no início do intervalo.
+pub const YIELD_HISTORY_LOOKBACK_MS: i64 = (EARNING_WINDOW_MINUTES + 20) * MS_PER_MINUTE as i64;
 /// Reject / clamp client `now` more than this ahead of wall clock.
 pub const CLOCK_SKEW_ALLOW_MS: i64 = (5 * MS_PER_MINUTE) as i64;
 /// `SET LOCAL statement_timeout` / `lock_timeout` inside progress TX.

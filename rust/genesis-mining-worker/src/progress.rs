@@ -417,14 +417,20 @@ async fn compute_progress_inner(
             user_id,
             dt_ms,
             max_ms = MAX_EARNING_WINDOW_MS,
-            "progress: offline window capped"
+            "progress: offline backlog discarded (no retroactive credit)"
         );
+        // Sem pagamento retroativo: pula o backlog antigo e avança direto para o
+        // teto. Credita só os últimos MAX_EARNING_WINDOW_MS — o intervalo entre
+        // `last` e `credit_cap - janela` é perdido de propósito.
         dt_ms = MAX_EARNING_WINDOW_MS as f64;
-        last_write = last + MAX_EARNING_WINDOW_MS as f64;
+        last_write = credit_cap as f64;
     }
     if !(dt_ms > 0.0) || !dt_ms.is_finite() {
         return Ok(ProgressResult::ok_empty());
     }
+    // Início efetivo da integração: `last` no caso normal; `credit_cap - janela`
+    // quando o backlog foi descartado. (`last_write - dt_ms` cobre os dois.)
+    let credit_start = last_write - dt_ms;
 
     let history_start = (last - YIELD_HISTORY_LOOKBACK_MS as f64).max(0.0);
     let mut yield_history_map: HashMap<String, Vec<YieldHistPoint>> = HashMap::new();
@@ -588,7 +594,8 @@ async fn compute_progress_inner(
                     .get(&sc.coin_id)
                     .map(|v| v.as_slice())
                     .unwrap_or(&[]);
-                let history_yield = calculate_integrated_yield(last, last + time_avail_ms, hist);
+                let history_yield =
+                    calculate_integrated_yield(credit_start, credit_start + time_avail_ms, hist);
                 let fallback_rate = fallback_yield.get(&sc.coin_id).copied().unwrap_or(0.0);
                 let fallback_y = fallback_rate * (time_avail_ms / MS_PER_SECOND as f64);
                 let integrated = if history_yield > 0.0 {
@@ -619,8 +626,8 @@ async fn compute_progress_inner(
                         BuildHistoryRowsOpts {
                             coin_id: &sc.coin_id,
                             room_id: room_id.as_deref(),
-                            interval_start_ms: last,
-                            interval_end_ms: last + time_avail_ms,
+                            interval_start_ms: credit_start,
+                            interval_end_ms: credit_start + time_avail_ms,
                             sorted_coin_history: hist,
                             use_history_integration: history_yield > 0.0,
                             fallback_yield_per_hash: fallback_rate,
