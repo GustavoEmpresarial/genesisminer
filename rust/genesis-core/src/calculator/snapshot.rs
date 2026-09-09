@@ -15,6 +15,42 @@ use super::types::{
 };
 use std::collections::{HashMap, HashSet};
 
+/// Trio de exibição (`block_time`, `block_reward`, `net_eff`) para a projeção.
+///
+/// `usd_month`: os campos legados da linha (`block_reward`/`block_time`/
+/// `network_hashrate`) ficam obsoletos — projetar por eles mente em ordens de
+/// grandeza (ex.: dividir pelo `network_hashrate = 1_000_000` morto). Reescreve o
+/// trio a partir do orçamento mensal e do hashrate ativo real, de forma que
+/// `compute_daily_earnings` renda exatamente o que o motor credita. Chamado pelos
+/// **dois** painéis (Mineração actual + Comparativo) — se só um usasse isto, eles
+/// divergiriam ~100×.
+///
+/// `legacy`: passa o trio da linha sem tocar.
+fn projection_trio(
+    coin: &super::types::MiningCoinInput,
+    fallback_net_eff: f64,
+    price_usd: f64,
+    active_hashrate: f64,
+) -> (f64, f64, f64) {
+    if coin.distribution_mode != DistributionMode::UsdMonth {
+        return (coin.block_time, coin.block_reward, fallback_net_eff);
+    }
+    let active = if active_hashrate.is_finite() && active_hashrate > 0.0 {
+        active_hashrate
+    } else {
+        0.0
+    };
+    let (yph, _budget_per_sec, divisor) =
+        usd_month_yield(coin.distribution_usd_month, price_usd, active);
+    // reward por bloco da rede inteira = yph × divisor × block_time. Preserva o
+    // zero que `usd_month_yield` devolve sem hashrate ativo suficiente.
+    (
+        USD_MONTH_DISPLAY_BLOCK_TIME_SEC,
+        yph * divisor * USD_MONTH_DISPLAY_BLOCK_TIME_SEC,
+        divisor,
+    )
+}
+
 fn build_coin_comparison_rows(daily_coins: f64, daily_usd: f64) -> Vec<PlayerCalculatorCoinRow> {
     calculator_projection_periods()
         .into_iter()
@@ -124,35 +160,13 @@ pub fn compute_snapshot(input: &CalculatorComputeInput) -> PlayerCalculatorSnaps
                 independent_pool,
             );
             let price_usd = resolve_mining_coin_usd_rate(c);
-            // `usd_month`: o motor rateia o orçamento mensal pelo hashrate ATIVO real
-            // (`app_cache.network_stats.hashrates`, o mesmo divisor de
-            // `usd_month_yield` em `build_yield_history_rows_for_boundary`).
-            // Os campos legados `block_reward`/`block_time`/`network_hashrate` da
-            // linha ficam obsoletos nesse modo — projetar por eles mente em ordens
-            // de grandeza. Reescrevemos o trio para o equivalente do orçamento, de
-            // forma que todo consumidor a jusante (payload, ticker do cliente,
-            // comparativos) veja exatamente o que o motor credita.
+            let active_hashrate = input
+                .runtime_network_by_coin
+                .get(&id)
+                .copied()
+                .unwrap_or(0.0);
             let (block_time, block_reward, net_eff) =
-                if c.distribution_mode == DistributionMode::UsdMonth {
-                    let active = input
-                        .runtime_network_by_coin
-                        .get(&id)
-                        .copied()
-                        .filter(|v| v.is_finite() && *v > 0.0)
-                        .unwrap_or(0.0);
-                    let (yph, _budget_per_sec_coins, divisor) =
-                        usd_month_yield(c.distribution_usd_month, price_usd, active);
-                    // reward por bloco da rede inteira: yph × divisor × block_time.
-                    // Preserva o zero que `usd_month_yield` devolve quando não há
-                    // hashrate ativo suficiente.
-                    (
-                        USD_MONTH_DISPLAY_BLOCK_TIME_SEC,
-                        yph * divisor * USD_MONTH_DISPLAY_BLOCK_TIME_SEC,
-                        divisor,
-                    )
-                } else {
-                    (c.block_time, c.block_reward, net_eff)
-                };
+                projection_trio(c, net_eff, price_usd, active_hashrate);
             let (daily_coins, daily_usd) = compute_daily_earnings(
                 user_power_hps,
                 block_time,
@@ -197,16 +211,23 @@ pub fn compute_snapshot(input: &CalculatorComputeInput) -> PlayerCalculatorSnaps
         .filter(|c| !is_independent_network_pool_mining_coin_ref(c))
         .map(|c| {
             let id = c.id.clone();
-            let net_eff = effective_network_hashrate_for_coin(
+            let legacy_net_eff = effective_network_hashrate_for_coin(
                 &id,
                 c.network_hashrate,
                 &input.runtime_network_by_coin,
                 &input.implied_network_by_coin,
                 false,
             );
-            let block_time = c.block_time;
-            let block_reward = c.block_reward;
             let price_usd = resolve_mining_coin_usd_rate(c);
+            let active_hashrate = input
+                .runtime_network_by_coin
+                .get(&id)
+                .copied()
+                .unwrap_or(0.0);
+            // Mesma reescrita usd_month do painel "Mineração actual" — senão a
+            // tabela "Comparativo" projeta pelos campos legados mortos e diverge.
+            let (block_time, block_reward, net_eff) =
+                projection_trio(c, legacy_net_eff, price_usd, active_hashrate);
             let (daily_coins, daily_usd) = compute_daily_earnings(
                 general_power_hps,
                 block_time,
@@ -686,5 +707,48 @@ mod usd_month_projection_tests {
         assert_eq!(c.network_hashrate, 179.0);
         assert_eq!(c.block_reward, 0.1);
         assert_eq!(c.block_time, 600.0);
+    }
+
+    fn pol(mode: DistributionMode) -> MiningCoinInput {
+        MiningCoinInput {
+            id: "POL".into(),
+            symbol: "POL".into(),
+            name: "POL".into(),
+            network_hashrate: 1_000_000.0, // campo morto — divisor real vem do ativo
+            block_reward: 0.55,
+            block_time: 600.0,
+            price_usd: 0.095,
+            usdc_rate: 0.095,
+            nft_room_only: false, // competitiva → entra no "Comparativo"
+            distribution_mode: mode,
+            distribution_usd_month: 1000.0,
+        }
+    }
+
+    /// O bug do report: "Comparativo de Moedas" e "Mineração actual" divergiam
+    /// ~100× numa moeda `usd_month` porque só um painel tinha a reescrita.
+    /// `projection_trio` é a fonte única — os dois têm de dar o mesmo trio.
+    #[test]
+    fn usd_month_both_panels_use_same_trio() {
+        let c = pol(DistributionMode::UsdMonth);
+        let active = 29_004.0;
+        let legacy_net_eff = 1_000_000.0;
+        let trio = projection_trio(&c, legacy_net_eff, c.price_usd, active);
+        // divisor = hashrate ativo real, não o campo morto de 1M
+        assert_eq!(trio.2, active);
+        assert_eq!(trio.0, USD_MONTH_DISPLAY_BLOCK_TIME_SEC);
+        // rede inteira/mês = orçamento exato
+        let network_month_usd = trio.1 / trio.0
+            * crate::calculator::constants::SECONDS_PER_MONTH
+            * c.price_usd;
+        assert!((network_month_usd - 1000.0).abs() < 1e-6, "{network_month_usd}");
+    }
+
+    /// `legacy` competitiva: `projection_trio` devolve o trio da linha intacto.
+    #[test]
+    fn legacy_competitive_trio_passthrough() {
+        let c = pol(DistributionMode::Legacy);
+        let trio = projection_trio(&c, 777.0, c.price_usd, 29_004.0);
+        assert_eq!(trio, (600.0, 0.55, 777.0));
     }
 }
