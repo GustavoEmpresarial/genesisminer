@@ -52,14 +52,9 @@ const SUPPORT_REOPEN_PATH: &str = "/v1/support/reopen";
 const ANNOUNCEMENTS_PENDING_PATH: &str = "/v1/announcements/pending";
 const ANNOUNCEMENTS_MINI_BLOG_PATH: &str = "/v1/announcements/mini-blog";
 const ANNOUNCEMENTS_MARK_READ_PATH: &str = "/v1/announcements/mark-read";
-const CALCULATOR_SNAPSHOT_PATH: &str = "/v1/calculator/snapshot";
-const CALCULATOR_AI_ANALYZE_PATH: &str = "/v1/calculator/ai-analyze";
-/// Calculator AI analysis: per-user fixed window (LLM calls are expensive).
-const CALCULATOR_AI_RATE_MAX: u64 = 6;
-const CALCULATOR_AI_RATE_SCOPE: &str = "calculator_ai";
-const CALCULATOR_AI_RATE_MSG: &str = "Demasiados pedidos de IA. Aguarda um minuto.";
 const RANKING_PUBLIC_PATH: &str = "/v1/ranking/public";
 const RANKING_ME_PATH: &str = "/v1/ranking/me";
+const MINING_PROJECTION_PATH: &str = "/v1/mining/projection";
 const MARKET_STATE_PATH: &str = "/v1/market/state";
 const MARKET_LISTINGS_PATH: &str = "/v1/market/listings";
 const MARKET_MY_LISTINGS_PATH: &str = "/v1/market/my-listings";
@@ -257,15 +252,15 @@ struct MentionsQ {
 }
 
 #[derive(Deserialize, Default)]
-struct ScopeQ {
-    #[serde(default)]
-    scope: Option<String>,
-}
-
-#[derive(Deserialize, Default)]
 struct FreshQ {
     #[serde(default)]
     fresh: Option<String>,
+}
+
+#[derive(Deserialize, Default)]
+struct CalculatorScopeQ {
+    #[serde(default)]
+    scope: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -454,7 +449,6 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/api/ranking/public", get(ranking_public))
         .route("/api/ranking/me", get(ranking_me))
         .route("/api/calculator/me", get(calculator_me))
-        .route("/api/calculator/ai-analyze", post(calculator_ai_analyze))
         .route("/api/black-market/state", get(bm_state))
         .route("/api/black-market/listings", get(bm_listings))
         .route("/api/black-market/my-listings", get(bm_my_listings))
@@ -1762,7 +1756,33 @@ async fn chat_history(
     if let Some(lim) = q.limit.as_deref().and_then(|s| s.parse::<i64>().ok()) {
         body["limit"] = json!(lim);
     }
-    forward_mining(&state, CHAT_HISTORY_PATH, body).await
+    match crate::workers::post_mining(&state.cfg, &state.http, CHAT_HISTORY_PATH, &body).await {
+        Ok(r) if r.status == HTTP_OK && r.body["ok"] == true => {
+            let rows = r.body.get("rows").cloned().unwrap_or_else(|| json!([]));
+            let messages: Vec<Value> = rows
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|row| {
+                    let username = row
+                        .get("username")
+                        .cloned()
+                        .or_else(|| row.get("usernameSnapshot").cloned())
+                        .unwrap_or(json!(""));
+                    let mut msg = row;
+                    if let Value::Object(ref mut m) = msg {
+                        m.entry("username".to_string()).or_insert(username);
+                    }
+                    msg
+                })
+                .rev()
+                .collect();
+            json_status(HTTP_OK, json!({ "ok": true, "messages": messages }))
+        }
+        Ok(r) => worker_to_response(r),
+        Err(e) => worker_err_response(e),
+    }
 }
 
 async fn chat_mentions(
@@ -1869,10 +1889,11 @@ async fn chat_insert(
     if username.is_empty() {
         return json_status(401, json!({ "error": "Invalid user." }));
     }
-    forward_mining(
-        &state,
+    match crate::workers::post_mining(
+        &state.cfg,
+        &state.http,
         CHAT_INSERT_PATH,
-        json!({
+        &json!({
             "userId": uid,
             "username": username,
             "body": text,
@@ -1880,6 +1901,15 @@ async fn chat_insert(
         }),
     )
     .await
+    {
+        Ok(r) if r.status == HTTP_OK && r.body["ok"] == true => {
+            let message = chat_message_from_insert(&r.body);
+            state.emit_chat_message(channel.to_string(), message.clone());
+            json_status(HTTP_OK, json!({ "ok": true, "message": message }))
+        }
+        Ok(r) => worker_to_response(r),
+        Err(e) => worker_err_response(e),
+    }
 }
 
 async fn chat_edit(
@@ -1896,12 +1926,24 @@ async fn chat_edit(
         .get("body")
         .cloned()
         .unwrap_or(Value::String(String::new()));
-    forward_mining(
-        &state,
+    match crate::workers::post_mining(
+        &state.cfg,
+        &state.http,
         CHAT_EDIT_PATH,
-        merge_user_id(json!({ "messageId": id, "body": text }), uid),
+        &merge_user_id(json!({ "messageId": id, "body": text }), uid),
     )
     .await
+    {
+        Ok(r) if r.status == HTTP_OK && r.body["ok"] == true => {
+            let message = chat_message_from_insert(&r.body);
+            if let Some(channel) = message.get("channel").and_then(|v| v.as_str()) {
+                state.emit_chat_message(channel.to_string(), message.clone());
+            }
+            json_status(HTTP_OK, json!({ "ok": true, "message": message }))
+        }
+        Ok(r) => worker_to_response(r),
+        Err(e) => worker_err_response(e),
+    }
 }
 
 async fn chat_delete(
@@ -2634,62 +2676,27 @@ async fn ranking_me(
     }
 }
 
+/// Player mining calculator — auth user → mining-worker projection.
 async fn calculator_me(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Query(q): Query<ScopeQ>,
+    Query(q): Query<CalculatorScopeQ>,
 ) -> axum::response::Response {
     let uid = match require_player(&state, &headers).await {
         Ok(u) => u,
         Err(e) => return e,
     };
-    let mut body = json!({ "userId": uid });
-    if let Some(scope) = q.scope.filter(|s| !s.is_empty()) {
-        body["scope"] = json!(scope);
-    }
-    forward_mining(&state, CALCULATOR_SNAPSHOT_PATH, body).await
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct AiAnalyzeBody {
-    #[serde(default)]
-    scope: Option<String>,
-}
-
-async fn calculator_ai_analyze(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    body: Option<Json<AiAnalyzeBody>>,
-) -> axum::response::Response {
-    let uid = match require_player(&state, &headers).await {
-        Ok(u) => u,
-        Err(e) => return e,
-    };
-    let ip = get_client_ip(&state.cfg, &headers, None);
-    let key = scoped_actor_key(CALCULATOR_AI_RATE_SCOPE, Some(uid), &ip);
-    if let Some(resp) = enforce(
-        &state,
-        &key,
-        CALCULATOR_AI_RATE_MAX,
-        PARTNER_GAMES_WINDOW_MS,
-        CALCULATOR_AI_RATE_MSG,
-    )
-    .await
-    {
-        return resp;
-    }
-    let mut fwd = json!({ "userId": uid });
-    if let Some(Json(b)) = body {
-        if let Some(scope) = b.scope.filter(|s| !s.trim().is_empty()) {
-            fwd["scope"] = json!(scope);
-        }
-    }
-    match crate::workers::post_mining_slow(
+    let scope = q
+        .scope
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("total");
+    match crate::workers::post_mining(
         &state.cfg,
         &state.http,
-        CALCULATOR_AI_ANALYZE_PATH,
-        &fwd,
-        crate::config::CALCULATOR_AI_TIMEOUT_MS,
+        MINING_PROJECTION_PATH,
+        &json!({ "userId": uid, "scope": scope }),
     )
     .await
     {
