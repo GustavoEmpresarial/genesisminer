@@ -376,6 +376,46 @@ export const PlayerChatWidget: React.FC<Props> = ({
     if (open) scrollToBottom();
   }, [messages, open, scrollToBottom]);
 
+  /**
+   * Fallback de polling: o envio usa REST (POST /chat/messages) e o backend
+   * não emite o evento de socket correspondente (emit_chat_message_to_channel
+   * fica sem chamadas), então sem isto o painel aberto nunca recebe mensagens
+   * novas de outra pessoa — só via fecha/reabre. Só substitui o estado quando
+   * o conteúdo realmente muda, para não interromper edição/scroll.
+   */
+  useEffect(() => {
+    if (!open || !activeChannel) return;
+    const setter = tab === 'global' ? setGlobalMessages : setAmMessages;
+    let cancelled = false;
+    const poll = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void getChatHistory(60, activeChannel).then((res) => {
+        if (cancelled || !res.ok || !res.messages) return;
+        const next = pruneExpiredMessages(res.messages);
+        setter((prev) => {
+          const same =
+            prev.length === next.length &&
+            prev.every((m, i) => {
+              const n = next[i];
+              return (
+                !!n &&
+                m.id === n.id &&
+                m.body === n.body &&
+                m.editedAt === n.editedAt &&
+                m.deletedAt === n.deletedAt
+              );
+            });
+          return same ? prev : next;
+        });
+      });
+    };
+    const id = window.setInterval(poll, 4000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [open, activeChannel, tab]);
+
   /** Limpeza local a cada minuto (mesmo sem evento do servidor). */
   useEffect(() => {
     const tick = () => {
