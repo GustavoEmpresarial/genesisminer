@@ -1,7 +1,7 @@
 use super::constants::NFT_AUTO_ALLOWED_CHASSIS_ID;
 use super::nft::{
-    is_asic_room_for_mining_credits, is_nft_auto_room_id, is_nft_collectible_machine,
-    is_nft_mining_room_id, is_nft_room_exclusive_mining_coin_ref_str,
+    is_asic_room_for_mining_credits, is_nft_collectible_machine,
+    is_nft_room_exclusive_mining_coin_ref_str, is_nft_room_for_mining_credits,
     slot_counts_toward_general_power_for_upgrade,
 };
 use super::types::{CalculatorUpgradeLite, SlotMiningCredit};
@@ -58,10 +58,7 @@ pub fn list_slot_mining_credits(
     asic_room_ids: Option<&HashSet<String>>,
 ) -> Vec<SlotMiningCredit> {
     let mult = rack_multiplier_factor(multiplier_slots, upgrades_map, rack_item_id);
-    let is_nft_room = match nft_room_ids {
-        Some(ids) => is_nft_mining_room_id(room_id, ids),
-        None => is_nft_auto_room_id(room_id),
-    };
+    let is_nft_room = is_nft_room_for_mining_credits(room_id, nft_room_ids);
     let is_asic_room = is_asic_room_for_mining_credits(room_id, asic_room_ids);
     let chassis = rack_item_id.map(str::trim).unwrap_or("");
 
@@ -249,6 +246,61 @@ mod tests {
         );
         assert_eq!(credits.len(), 1);
         assert_eq!(credits[0].coin_id, "gemt");
+        assert!(!credits[0].counts_toward_general_power);
+    }
+
+    #[test]
+    fn empty_nft_room_ids_still_treats_canonical_as_nft() {
+        use super::super::constants::NFT_AUTO_ROOM_ID;
+        let mut map = HashMap::new();
+        map.insert(
+            "nft1".into(),
+            CalculatorUpgradeLite {
+                id: "nft_miner_1".into(),
+                upgrade_type: "machine".into(),
+                category: Some("nft".into()),
+                base_production: 500.0,
+                multiplier: None,
+                power_capacity: None,
+                nft_mining_coin_id: Some("gemt".into()),
+            },
+        );
+        let empty = HashSet::new();
+        let credits = list_slot_mining_credits(
+            Some(NFT_AUTO_ROOM_ID),
+            &[Some("nft1".into())],
+            &[],
+            &map,
+            "bnb",
+            Some(&empty),
+            None,
+            None,
+        );
+        assert_eq!(credits.len(), 1);
+        assert_eq!(credits[0].coin_id, "gemt");
+        assert_eq!(credits[0].effective_base_prod, 500.0);
+        assert!(!credits[0].counts_toward_general_power);
+    }
+
+    #[test]
+    fn empty_asic_room_ids_still_excludes_canonical_from_general_power() {
+        use super::super::constants::ASIC_ROOM_ID;
+        let mut map = HashMap::new();
+        map.insert("gpu".into(), upgrade("gpu", "machine", 10.0, None, None));
+        let empty = HashSet::new();
+        let credits = list_slot_mining_credits(
+            Some(ASIC_ROOM_ID),
+            &[Some("gpu".into())],
+            &[],
+            &map,
+            "btc",
+            None,
+            None,
+            Some(&empty),
+        );
+        assert_eq!(credits.len(), 1);
+        assert_eq!(credits[0].coin_id, "btc");
+        assert_eq!(credits[0].effective_base_prod, 10.0);
         assert!(!credits[0].counts_toward_general_power);
     }
 }

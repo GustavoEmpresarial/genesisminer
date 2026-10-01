@@ -1,3 +1,2 @@
-/** Public exports for the mining calculator feature. */
+/** Public exports for the player mining calculator. */
 export { CalculatorPage } from './ui/CalculatorPage';
-export type { CalculatorPageProps } from './ui/CalculatorPage';

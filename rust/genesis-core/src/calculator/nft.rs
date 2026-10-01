@@ -97,6 +97,28 @@ pub fn is_nft_auto_room_id(room_id: Option<&str>) -> bool {
     normalize_placed_rack_room_id(room_id.unwrap_or("")) == NFT_AUTO_ROOM_ID
 }
 
+/// NFT-room detection for mining credits / general-power exclusion.
+///
+/// Matches `is_asic_room_for_mining_credits`: DB id set when present, plus
+/// always treat the canonical `NFT_AUTO_ROOM_ID` as NFT even if the set is
+/// empty or omits it (resolver miss / unit tests with empty HashSet).
+pub fn is_nft_room_for_mining_credits(
+    room_id: Option<&str>,
+    nft_room_ids: Option<&HashSet<String>>,
+) -> bool {
+    use super::constants::NFT_AUTO_ROOM_ID;
+    let id = normalize_placed_rack_room_id(room_id.unwrap_or(""));
+    if id.is_empty() {
+        return false;
+    }
+    if let Some(ids) = nft_room_ids {
+        if ids.contains(&id) {
+            return true;
+        }
+    }
+    id == normalize_placed_rack_room_id(NFT_AUTO_ROOM_ID)
+}
+
 pub fn is_asic_room_for_mining_credits(
     room_id: Option<&str>,
     asic_room_ids: Option<&HashSet<String>>,

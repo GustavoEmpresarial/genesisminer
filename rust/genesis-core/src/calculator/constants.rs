@@ -22,7 +22,7 @@ pub const SECONDS_PER_MONTH: f64 = PROJECTION_DAYS_PER_MONTH * 86_400.0;
 pub const DIST_MIN_HASHRATE: f64 = 10.0;
 
 /// Cadência de crédito (grade UTC de 10 min). No modo `usd_month` a linha da
-/// moeda não tem mais `block_time` significativo, então a calculadora reporta
+/// moeda não tem mais `block_time` significativo, então a projeção reporta
 /// esta cadência — a real — junto do reward por bloco derivado do orçamento.
 pub const USD_MONTH_DISPLAY_BLOCK_TIME_SEC: f64 = 600.0;
 
@@ -50,4 +50,5 @@ pub const NFT_EXCLUSIVE_ID_KEYS: &[&str] = &["usdt", "usdc", "cbbtc", "dai", "gh
 pub const NFT_STABLE_USD_SYMBOLS: &[&str] = &["DAI", "USDT", "USDC", "GHO"];
 pub const NFT_ROOM_NON_EXCLUSIVE_IDS: &[&str] = &["usdc_interno"];
 pub const NFT_ROOM_NON_EXCLUSIVE_SYMBOLS: &[&str] = &["USDC_INT"];
-pub const NFT_ROOM_EXCLUDED_MACHINE_IDS: &[&str] = &["gpu_iceberg_v1", "rally_v3"];
+pub const NFT_ROOM_EXCLUDED_MACHINE_IDS: &[&str] =
+    &["gpu_iceberg_v1", "rally_v3", "gpu_rally_v1"];
