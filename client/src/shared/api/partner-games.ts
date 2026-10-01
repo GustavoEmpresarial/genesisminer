@@ -1,5 +1,5 @@
 /**
- * Partner Games (BlockMiner hub) — config / visit / heartbeat / stop.
+ * Partner Games — multi-game catalog + session by slug.
  */
 import { apiFetch } from './http';
 
@@ -13,15 +13,26 @@ const SECONDS_PER_MINUTE = 60;
 export const PARTNER_GAMES_HEARTBEAT_INTERVAL_MS = SECONDS_PER_MINUTE * MS_PER_SECOND;
 /** One second in ms — used by session elapsed display tick. */
 export const PARTNER_GAMES_ELAPSED_TICK_MS = MS_PER_SECOND;
-export const PARTNER_GAMES_EMBED_PATH = '/bm/';
-export const PARTNER_GAMES_PUBLIC_URL = 'https://blockminer.space/';
-export { MS_PER_SECOND as PARTNER_GAMES_MS_PER_SECOND, SECONDS_PER_MINUTE as PARTNER_GAMES_SECONDS_PER_MINUTE };
+export {
+  MS_PER_SECOND as PARTNER_GAMES_MS_PER_SECOND,
+  SECONDS_PER_MINUTE as PARTNER_GAMES_SECONDS_PER_MINUTE
+};
+
+export type PartnerGameSection = 'official' | 'partner';
+
+export type PartnerGame = {
+  slug: string;
+  name: string;
+  publicUrl: string;
+  embedPath: string | null;
+  imageUrl: string | null;
+  sessionKind: string;
+  section: PartnerGameSection;
+};
 
 export type PartnerGamesConfig = {
-  embedPath: string;
-  publicUrl: string;
   heartbeatIntervalMs: number;
-  sessionKind: string;
+  games: PartnerGame[];
   /** When true, UI shows maintenance and session APIs reject. */
   maintenance: boolean;
 };
@@ -32,39 +43,74 @@ export type PartnerGamesHeartbeatResult = {
   nextEligibleAtMs: number;
 };
 
-function parseConfig(raw: Record<string, unknown>): PartnerGamesConfig | null {
+function parseOptionalString(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const t = raw.trim();
+  return t ? t : null;
+}
+
+function parseSection(raw: unknown): PartnerGameSection | null {
+  if (typeof raw !== 'string') return null;
+  const t = raw.trim();
+  if (t === 'official' || t === 'partner') return t;
+  return null;
+}
+
+function parseGame(raw: unknown): PartnerGame | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const g = raw as Record<string, unknown>;
+  const slug = parseOptionalString(g.slug);
+  const name = parseOptionalString(g.name);
+  const publicUrl = parseOptionalString(g.publicUrl);
+  const sessionKind = parseOptionalString(g.sessionKind);
+  const section = parseSection(g.section);
+  if (!slug || !name || !publicUrl || !sessionKind || !section) return null;
+  return {
+    slug,
+    name,
+    publicUrl,
+    embedPath: parseOptionalString(g.embedPath),
+    imageUrl: parseOptionalString(g.imageUrl),
+    sessionKind,
+    section
+  };
+}
+
+/** Exported for unit tests. */
+export function parsePartnerGamesConfig(raw: Record<string, unknown>): PartnerGamesConfig | null {
   if (raw.ok !== true) return null;
-  const embedPath =
-    typeof raw.embedPath === 'string' && raw.embedPath.trim()
-      ? raw.embedPath.trim()
-      : PARTNER_GAMES_EMBED_PATH;
-  const publicUrl =
-    typeof raw.publicUrl === 'string' && raw.publicUrl.trim()
-      ? raw.publicUrl.trim()
-      : PARTNER_GAMES_PUBLIC_URL;
   const heartbeatIntervalMs =
     typeof raw.heartbeatIntervalMs === 'number' &&
     Number.isFinite(raw.heartbeatIntervalMs) &&
     raw.heartbeatIntervalMs > 0
       ? Math.floor(raw.heartbeatIntervalMs)
       : PARTNER_GAMES_HEARTBEAT_INTERVAL_MS;
-  const sessionKind =
-    typeof raw.sessionKind === 'string' && raw.sessionKind.trim()
-      ? raw.sessionKind.trim()
-      : 'blockminer';
   const maintenance = raw.maintenance === true;
-  return { embedPath, publicUrl, heartbeatIntervalMs, sessionKind, maintenance };
+  const gamesRaw = Array.isArray(raw.games) ? raw.games : [];
+  const games: PartnerGame[] = [];
+  for (const item of gamesRaw) {
+    const g = parseGame(item);
+    if (g) games.push(g);
+  }
+  return { heartbeatIntervalMs, games, maintenance };
 }
 
 export function fallbackPartnerGamesConfig(): PartnerGamesConfig {
   return {
-    embedPath: PARTNER_GAMES_EMBED_PATH,
-    publicUrl: PARTNER_GAMES_PUBLIC_URL,
     heartbeatIntervalMs: PARTNER_GAMES_HEARTBEAT_INTERVAL_MS,
-    sessionKind: 'blockminer',
+    games: [],
     // Fail-closed while tab is in operational maintenance: config load failure → maintenance UI.
     maintenance: true
   };
+}
+
+export function partnerGameBySlug(
+  config: PartnerGamesConfig,
+  slug: string
+): PartnerGame | null {
+  const needle = slug.trim();
+  if (!needle) return null;
+  return config.games.find((g) => g.slug === needle) ?? null;
 }
 
 /** GET /api/partner-games/config */
@@ -79,7 +125,7 @@ export async function getPartnerGamesConfig(): Promise<
       const err = typeof raw.error === 'string' && raw.error.trim() ? raw.error.trim() : 'LOAD_FAILED';
       return { ok: false, error: err };
     }
-    const data = parseConfig(raw);
+    const data = parsePartnerGamesConfig(raw);
     if (!data) return { ok: false, error: 'INVALID' };
     return { ok: true, data };
   } catch {
@@ -87,12 +133,17 @@ export async function getPartnerGamesConfig(): Promise<
   }
 }
 
+function slugBody(slug: string): string {
+  return JSON.stringify({ slug });
+}
+
 /** POST /api/partner-games/visit */
-export async function postPartnerGamesVisit(): Promise<{ ok: boolean }> {
+export async function postPartnerGamesVisit(slug: string): Promise<{ ok: boolean }> {
   try {
     const res = await apiFetch(`${base}/visit`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      body: slugBody(slug)
     });
     return { ok: res.ok };
   } catch {
@@ -101,13 +152,14 @@ export async function postPartnerGamesVisit(): Promise<{ ok: boolean }> {
 }
 
 /** POST /api/partner-games/heartbeat */
-export async function postPartnerGamesHeartbeat(): Promise<
-  { ok: true; data: PartnerGamesHeartbeatResult } | { ok: false }
-> {
+export async function postPartnerGamesHeartbeat(
+  slug: string
+): Promise<{ ok: true; data: PartnerGamesHeartbeatResult } | { ok: false }> {
   try {
     const res = await apiFetch(`${base}/heartbeat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      body: slugBody(slug)
     });
     if (!res.ok) return { ok: false };
     const raw = (await res.json()) as Record<string, unknown>;
@@ -132,11 +184,12 @@ export async function postPartnerGamesHeartbeat(): Promise<
 }
 
 /** POST /api/partner-games/stop */
-export async function postPartnerGamesStop(): Promise<{ ok: boolean }> {
+export async function postPartnerGamesStop(slug: string): Promise<{ ok: boolean }> {
   try {
     const res = await apiFetch(`${base}/stop`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      body: slugBody(slug)
     });
     return { ok: res.ok };
   } catch {

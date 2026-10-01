@@ -1,7 +1,8 @@
-//! Partner Games session I/O — Redis heartbeat + Kafka (Node `session.ts`).
+//! Partner Games session I/O — Redis heartbeat + Kafka (multi-game by slug).
 
 use genesis_core::partner_games::{
-    accept_heartbeat, build_session_event, session_config, SessionReason, HEARTBEAT_INTERVAL_MS,
+    accept_heartbeat, build_session_event, catalog, game_by_slug, PartnerGame, SessionReason,
+    HEARTBEAT_INTERVAL_MS,
 };
 use genesis_core::time::MS_PER_SECOND;
 use serde::Deserialize;
@@ -56,6 +57,7 @@ const _: () = assert!(PARTNER_GAMES_HEARTBEAT_REDIS_TTL_SECONDS > 0);
 #[serde(rename_all = "camelCase")]
 pub struct PartnerGamesUserRequest {
     pub user_id: i64,
+    pub slug: Option<String>,
     pub now_ms: Option<i64>,
 }
 
@@ -72,8 +74,8 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-fn hb_key(user_id: i64) -> String {
-    format!("partner_games:hb:{user_id}")
+fn hb_key(user_id: i64, slug: &str) -> String {
+    format!("partner_games:hb:{user_id}:{slug}")
 }
 
 fn rejected_decision(now: i64) -> Value {
@@ -83,6 +85,20 @@ fn rejected_decision(now: i64) -> Value {
         "accepted": d.accepted,
         "creditedMinutes": d.credited_minutes,
         "nextEligibleAtMs": d.next_eligible_at_ms,
+    })
+}
+
+fn require_slug(slug: &Option<String>) -> Result<PartnerGame, PartnerGamesError> {
+    let raw = slug.as_deref().unwrap_or("").trim();
+    if raw.is_empty() {
+        return Err(PartnerGamesError {
+            http_status: 400,
+            body: json!({ "ok": false, "error": "SLUG_REQUIRED", "code": "SLUG_REQUIRED" }),
+        });
+    }
+    game_by_slug(raw).ok_or_else(|| PartnerGamesError {
+        http_status: 400,
+        body: json!({ "ok": false, "error": "UNKNOWN_SLUG", "code": "UNKNOWN_SLUG" }),
     })
 }
 
@@ -108,9 +124,10 @@ async fn publish_session(
     user_id: i64,
     reason: SessionReason,
     at_ms: i64,
+    session_kind: &str,
     extra: serde_json::Map<String, Value>,
 ) {
-    let ev = build_session_event(user_id, reason, at_ms, extra);
+    let ev = build_session_event(user_id, reason, at_ms, session_kind, extra);
     match serde_json::to_value(&ev) {
         Ok(payload) => {
             kafka
@@ -125,14 +142,25 @@ async fn publish_session(
     }
 }
 
+fn game_json(g: &PartnerGame) -> Value {
+    json!({
+        "slug": g.slug,
+        "name": g.name,
+        "publicUrl": g.public_url,
+        "embedPath": g.embed_path,
+        "imageUrl": g.image_url,
+        "sessionKind": g.session_kind,
+        "section": g.section,
+    })
+}
+
 pub fn public_config(cfg: &WorkerConfig) -> Value {
-    let c = session_config();
+    let c = catalog();
+    let games: Vec<Value> = c.games.iter().map(game_json).collect();
     json!({
         "ok": true,
-        "embedPath": c.embed_path,
-        "publicUrl": c.public_url,
         "heartbeatIntervalMs": c.heartbeat_interval_ms,
-        "sessionKind": c.session_kind,
+        "games": games,
         "maintenance": cfg.partner_games_maintenance,
     })
 }
@@ -151,6 +179,7 @@ pub async fn run_visit(
     cfg: &WorkerConfig,
     kafka: &SharedKafka,
     user_id: i64,
+    slug: Option<String>,
     now: Option<i64>,
 ) -> Result<Value, PartnerGamesError> {
     require_active(pool, user_id).await?;
@@ -160,8 +189,17 @@ pub async fn run_visit(
             body: json!({ "ok": false, "error": "MAINTENANCE", "maintenance": true }),
         });
     }
+    let game = require_slug(&slug)?;
     let at = now.unwrap_or_else(now_ms);
-    publish_session(kafka, user_id, SessionReason::Visit, at, Default::default()).await;
+    publish_session(
+        kafka,
+        user_id,
+        SessionReason::Visit,
+        at,
+        &game.session_kind,
+        Default::default(),
+    )
+    .await;
     bump_partner_games_quest(pool, user_id, "partner_games_visit", 1, at).await;
     Ok(json!({ "ok": true }))
 }
@@ -172,6 +210,7 @@ pub async fn run_heartbeat(
     locks: &RedisLockClient,
     kafka: &SharedKafka,
     user_id: i64,
+    slug: Option<String>,
     now: Option<i64>,
 ) -> Result<Value, PartnerGamesError> {
     require_active(pool, user_id).await?;
@@ -181,11 +220,23 @@ pub async fn run_heartbeat(
             body: json!({ "ok": false, "error": "MAINTENANCE", "maintenance": true }),
         });
     }
+    let game = require_slug(&slug)?;
+    if game.embed_path.is_none() {
+        return Err(PartnerGamesError {
+            http_status: 400,
+            body: json!({
+                "ok": false,
+                "accepted": false,
+                "error": "HEARTBEAT_NOT_SUPPORTED",
+                "code": "HEARTBEAT_NOT_SUPPORTED",
+            }),
+        });
+    }
     let at = now.unwrap_or_else(now_ms);
     if !locks.has_redis() {
         return Ok(rejected_decision(at));
     }
-    let key = hb_key(user_id);
+    let key = hb_key(user_id, &game.slug);
     let last = match locks.get_string(&key).await {
         Ok(Some(raw)) if !raw.trim().is_empty() => {
             let n: f64 = raw.trim().parse().unwrap_or(f64::NAN);
@@ -220,7 +271,15 @@ pub async fn run_heartbeat(
     }
     let mut extra = serde_json::Map::new();
     extra.insert("creditedMinutes".into(), json!(decision.credited_minutes));
-    publish_session(kafka, user_id, SessionReason::Heartbeat, at, extra).await;
+    publish_session(
+        kafka,
+        user_id,
+        SessionReason::Heartbeat,
+        at,
+        &game.session_kind,
+        extra,
+    )
+    .await;
     let minutes = i32::try_from(decision.credited_minutes).unwrap_or(0).max(1);
     bump_partner_games_quest(pool, user_id, "partner_games_playtime", minutes, at).await;
     Ok(json!({
@@ -236,14 +295,24 @@ pub async fn run_stop(
     cfg: &WorkerConfig,
     kafka: &SharedKafka,
     user_id: i64,
+    slug: Option<String>,
     now: Option<i64>,
 ) -> Result<Value, PartnerGamesError> {
     require_active(pool, user_id).await?;
     if cfg.partner_games_maintenance {
         return Ok(json!({ "ok": true }));
     }
+    let game = require_slug(&slug)?;
     let at = now.unwrap_or_else(now_ms);
-    publish_session(kafka, user_id, SessionReason::Stop, at, Default::default()).await;
+    publish_session(
+        kafka,
+        user_id,
+        SessionReason::Stop,
+        at,
+        &game.session_kind,
+        Default::default(),
+    )
+    .await;
     Ok(json!({ "ok": true }))
 }
 
@@ -261,5 +330,45 @@ mod tests {
             PARTNER_GAMES_HEARTBEAT_REDIS_TTL_SECONDS,
             (HEARTBEAT_INTERVAL_MS as u64 * 3) / MS_PER_SECOND
         );
+    }
+
+    #[test]
+    fn hb_key_includes_slug() {
+        assert_eq!(hb_key(42, "blockminer"), "partner_games:hb:42:blockminer");
+    }
+
+    #[test]
+    fn require_slug_validates() {
+        assert!(require_slug(&None).is_err());
+        assert!(require_slug(&Some("".into())).is_err());
+        assert!(require_slug(&Some("nope".into())).is_err());
+        let g = require_slug(&Some("blockminer".into())).expect("bm");
+        assert_eq!(g.slug, "blockminer");
+    }
+
+    #[test]
+    fn master_legends_has_embed() {
+        use genesis_core::partner_games::{
+            MASTER_LEGENDS_EMBED_PATH, MASTER_LEGENDS_PUBLIC_URL, SECTION_OFFICIAL,
+        };
+        let g = require_slug(&Some("master-legends".into())).expect("ml");
+        assert_eq!(g.embed_path.as_deref(), Some(MASTER_LEGENDS_EMBED_PATH));
+        assert_eq!(g.section, SECTION_OFFICIAL);
+        assert_eq!(g.public_url, MASTER_LEGENDS_PUBLIC_URL);
+    }
+
+    #[test]
+    fn game_json_includes_section() {
+        use genesis_core::partner_games::{
+            BLOCKMINER_EMBED_PATH, MASTER_LEGENDS_EMBED_PATH, SECTION_OFFICIAL, SECTION_PARTNER,
+        };
+        let ml = require_slug(&Some("master-legends".into())).expect("ml");
+        let ml_json = game_json(&ml);
+        assert_eq!(ml_json["section"], SECTION_OFFICIAL);
+        assert_eq!(ml_json["embedPath"], MASTER_LEGENDS_EMBED_PATH);
+        let bm = require_slug(&Some("blockminer".into())).expect("bm");
+        let bm_json = game_json(&bm);
+        assert_eq!(bm_json["section"], SECTION_PARTNER);
+        assert_eq!(bm_json["embedPath"], BLOCKMINER_EMBED_PATH);
     }
 }

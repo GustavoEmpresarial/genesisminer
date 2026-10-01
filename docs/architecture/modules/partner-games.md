@@ -1,22 +1,42 @@
-# Partner Games (BlockMiner hub)
+# Partner Games
 
-Thin HTTP + Kafka session tracking for the embedded BlockMiner partner hub.
+Multi-game hub (official Genesis + partner titles). Catalog and session-by-slug
+live in `genesis-core::partner_games`; I/O is `genesis-mining-worker` via
+`genesis-api` facade.
 
-**Embed path `/bm/`:** served by host nginx via `blockminer-embed.inc` on Hostinger. That include is **not** in this repo’s `deploy/nginx` tree — only the app’s `embedPath` config points at it.
+**Embed paths:** same-origin nginx proxies — BlockMiner `/bm/` (`blockminer-embed.inc`
+on Hostinger; not in this repo’s `deploy/nginx` tree) and Master Legends `/ml/`
+(nginx proxy added on VM separately). Both games support iframe embed + heartbeat.
+
+## Catalog (Rust)
+
+Static games in `genesis-core::partner_games::catalog()` (official first):
+
+| slug | name | section | embed | public URL |
+|------|------|---------|-------|------------|
+| `master-legends` | Master Legends | `official` | `/ml/` | `https://masterlegends.online/` |
+| `blockminer` | BlockMiner | `partner` | `/bm/` | `https://blockminer.space/` |
+
+Section values: `SECTION_OFFICIAL` (`"official"`) | `SECTION_PARTNER` (`"partner"`).
 
 ## API (auth required)
 
 | Method | Path | Body | Response |
 |--------|------|------|----------|
-| `GET` | `/api/partner-games/config` | — | `{ ok, embedPath, publicUrl, heartbeatIntervalMs, sessionKind, maintenance }` |
-| `POST` | `/api/partner-games/visit` | — | `{ ok }` + Kafka `reason=visit` (or **503** `{ ok:false, error:'MAINTENANCE', maintenance:true }` when flag on) |
-| `POST` | `/api/partner-games/heartbeat` | — | `{ ok, accepted, creditedMinutes, nextEligibleAtMs }` (+ Kafka if accepted); **503** when maintenance |
-| `POST` | `/api/partner-games/stop` | — | `{ ok }` + Kafka `reason=stop` (no-op 200 under maintenance) |
+| `GET` | `/api/partner-games/config` | — | `{ ok, heartbeatIntervalMs, games[{ slug, name, publicUrl, embedPath, imageUrl, sessionKind, section }], maintenance }` |
+| `POST` | `/api/partner-games/visit` | `{ slug }` | `{ ok }` + Kafka `reason=visit` (or **503** maintenance / **400** missing/unknown slug) |
+| `POST` | `/api/partner-games/heartbeat` | `{ slug }` | `{ ok, accepted, creditedMinutes, nextEligibleAtMs }` — embed games only; no embed → **400** `HEARTBEAT_NOT_SUPPORTED` |
+| `POST` | `/api/partner-games/stop` | `{ slug }` | `{ ok }` + Kafka `reason=stop` (no-op 200 under maintenance) |
 
-Env `PARTNER_GAMES_MAINTENANCE=1|true` puts the Partner · Games tab and visit/heartbeat APIs in maintenance (compose prod defaults on); Rust session_config stays unchanged (flag is Node I/O only).
+Env `PARTNER_GAMES_MAINTENANCE=1|true` on **mining-worker** puts the Partner · Games
+tab and visit/heartbeat APIs in maintenance.
 
-Domain math (config + heartbeat gate) lives in `genesis-core::partner_games`, opt-in via `GENESIS_PARTNER_GAMES_RUST=1`.
+Redis key: `partner_games:hb:{userId}:{slug}`.
 
-Kafka topic: `genesis.partner_games.session`.
+Kafka topic: `genesis.partner_games.session` (`sessionKind` from the game).
+
+Quest bumps: `partner_games_visit` (any game visit); `partner_games_playtime` (embed heartbeat).
+
+**UI:** hub with official + partner sections at Partner · Games; player at `/partner_games/:slug` (iframe for both).
 
 **Not in scope:** quest rewards / `reward_usdc` / offerwall.
