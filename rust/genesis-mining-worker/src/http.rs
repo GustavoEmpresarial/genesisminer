@@ -17,15 +17,51 @@ use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 use crate::admin_gate::{run_admin_gate, AdminGateRequest, USERS_ADMIN_GATE_PATH};
+use crate::admin_shop_checkouts::{
+    run_admin_shop_checkouts, ShopCheckoutsRequest, ADMIN_SHOP_CHECKOUTS_PATH,
+};
+use crate::admin_purchases_report::{
+    run_admin_purchases_report, PurchasesReportRequest, ADMIN_PURCHASES_REPORT_PATH,
+};
+use crate::admin_users::access_level_referral::{
+    run_access_level_referral_list, run_access_level_referral_save,
+    AccessLevelReferralSaveRequest,
+};
 use crate::admin_users::delete::{
     run_admin_delete_resolve, run_admin_delete_user, AdminUserDeleteRequest,
 };
+use crate::admin_users::dormant_mining::{run_dormant_mining, DormantMiningRequest};
+use crate::admin_users::grant_premium_checkin::{
+    run_grant_premium_checkin, GrantPremiumCheckinRequest,
+};
+use crate::admin_users::impersonate::{
+    run_impersonate_start, run_impersonate_stop, ImpersonateStartRequest, ImpersonateStopRequest,
+};
 use crate::admin_users::list::run_admin_users_list;
+use crate::admin_users::owned_rooms::{
+    run_owned_rooms_finalize, run_owned_rooms_prepare, OwnedRoomsFinalizeRequest,
+    OwnedRoomsPrepareRequest,
+};
+use crate::admin_users::referral_models::{
+    run_referral_models_delete, run_referral_models_list, run_referral_models_upsert,
+    ReferralModelDeleteRequest, ReferralModelUpsertRequest,
+};
+use crate::admin_users::save_game_override::{
+    run_save_game_override_finalize, SaveGameOverrideFinalizeRequest,
+};
 use crate::admin_users::update::{run_admin_update_user, AdminUserUpdateRequest};
+use crate::admin_users::user_activity::{run_user_activity, UserActivityRequest};
+use crate::admin_users::wallet_history::{run_admin_wallet_history, AdminWalletHistoryRequest};
 use crate::admin_users::{
-    run_admin_block_user, AdminUsersBlockRequest, AdminUsersListRequest, ADMIN_USERS_BLOCK_PATH,
-    ADMIN_USERS_DELETE_PATH, ADMIN_USERS_DELETE_RESOLVE_PATH, ADMIN_USERS_LIST_PATH,
-    ADMIN_USERS_UPDATE_PATH,
+    run_admin_block_user, AdminUsersBlockRequest, AdminUsersListRequest,
+    ADMIN_ACCESS_LEVEL_REFERRAL_LIST_PATH, ADMIN_ACCESS_LEVEL_REFERRAL_SAVE_PATH,
+    ADMIN_DORMANT_MINING_PATH, ADMIN_GRANT_PREMIUM_CHECKIN_PATH, ADMIN_IMPERSONATE_START_PATH,
+    ADMIN_IMPERSONATE_STOP_PATH, ADMIN_OWNED_ROOMS_FINALIZE_PATH, ADMIN_OWNED_ROOMS_PREPARE_PATH,
+    ADMIN_REFERRAL_MODELS_DELETE_PATH, ADMIN_REFERRAL_MODELS_LIST_PATH,
+    ADMIN_REFERRAL_MODELS_UPSERT_PATH, ADMIN_SAVE_GAME_OVERRIDE_FINALIZE_PATH,
+    ADMIN_USER_ACTIVITY_PATH, ADMIN_USERS_BLOCK_PATH, ADMIN_USERS_DELETE_PATH,
+    ADMIN_USERS_DELETE_RESOLVE_PATH, ADMIN_USERS_LIST_PATH, ADMIN_USERS_UPDATE_PATH,
+    ADMIN_WALLET_HISTORY_PATH,
 };
 use crate::announcements::{
     run_announcement_admin_list, run_announcement_create, run_announcement_delete,
@@ -37,13 +73,6 @@ use crate::announcements::{
     ANNOUNCEMENTS_CREATE_PATH, ANNOUNCEMENTS_DELETE_PATH, ANNOUNCEMENTS_GET_PATH,
     ANNOUNCEMENTS_MARK_READ_PATH, ANNOUNCEMENTS_MINI_BLOG_PATH, ANNOUNCEMENTS_PENDING_PATH,
     ANNOUNCEMENTS_UPDATE_PATH,
-};
-use crate::calculator::{
-    run_calculator_snapshot, warn_if_server_error, CalculatorSnapshotErrorBody,
-    CalculatorSnapshotRequest, CALCULATOR_SNAPSHOT_PATH,
-};
-use crate::calculator_ai::{
-    run_calculator_ai_analyze, CalculatorAiAnalyzeRequest, CALCULATOR_AI_ANALYZE_PATH,
 };
 use crate::chat_presence::{
     run_chat_presence, run_chat_rate_limit, ChatPresenceRequest, ChatPresenceResponse,
@@ -142,6 +171,9 @@ use crate::partners_admin::{
     PARTNERS_ADMIN_CREATOR_PUT_PATH, PARTNERS_ADMIN_PARTNERS_LIST_PATH,
     PARTNERS_ADMIN_STREAMER_USERS_PATH, PARTNERS_ADMIN_SUBMISSION_DELETE_PATH,
     PARTNERS_ADMIN_SUBMISSION_REJECT_PATH, PARTNERS_ADMIN_SUBMISSIONS_LIST_PATH,
+};
+use crate::mining_projection::{
+    run_mining_projection, ProjectionRequest, MINING_PROJECTION_PATH,
 };
 use crate::player_reads::checkin::{run_checkin_perform, run_checkin_status, CheckinUserRequest};
 use crate::player_reads::guide::run_guide;
@@ -258,6 +290,7 @@ pub fn router(state: AppState) -> Router {
     let state = Arc::new(state);
     let protected = Router::new()
         .route("/v1/mining/progress", post(post_progress))
+        .route(MINING_PROJECTION_PATH, post(post_mining_projection))
         .route(GERENTE_PAYOUT_PATH, post(post_gerente_payout))
         .route(GERENTE_ME_PATH, post(post_gerente_me))
         .route(GERENTE_HIRE_PATH, post(post_gerente_hire))
@@ -295,6 +328,49 @@ pub fn router(state: AppState) -> Router {
             post(post_admin_users_delete_resolve),
         )
         .route(ADMIN_USERS_DELETE_PATH, post(post_admin_users_delete))
+        .route(
+            ADMIN_SAVE_GAME_OVERRIDE_FINALIZE_PATH,
+            post(post_admin_save_game_override_finalize),
+        )
+        .route(
+            ADMIN_OWNED_ROOMS_PREPARE_PATH,
+            post(post_admin_owned_rooms_prepare),
+        )
+        .route(
+            ADMIN_OWNED_ROOMS_FINALIZE_PATH,
+            post(post_admin_owned_rooms_finalize),
+        )
+        .route(ADMIN_WALLET_HISTORY_PATH, post(post_admin_wallet_history))
+        .route(
+            ADMIN_GRANT_PREMIUM_CHECKIN_PATH,
+            post(post_admin_grant_premium_checkin),
+        )
+        .route(ADMIN_IMPERSONATE_START_PATH, post(post_admin_impersonate_start))
+        .route(ADMIN_IMPERSONATE_STOP_PATH, post(post_admin_impersonate_stop))
+        .route(ADMIN_USER_ACTIVITY_PATH, post(post_admin_user_activity))
+        .route(
+            ADMIN_REFERRAL_MODELS_LIST_PATH,
+            post(post_admin_referral_models_list),
+        )
+        .route(
+            ADMIN_REFERRAL_MODELS_UPSERT_PATH,
+            post(post_admin_referral_models_upsert),
+        )
+        .route(
+            ADMIN_REFERRAL_MODELS_DELETE_PATH,
+            post(post_admin_referral_models_delete),
+        )
+        .route(
+            ADMIN_ACCESS_LEVEL_REFERRAL_LIST_PATH,
+            post(post_admin_access_level_referral_list),
+        )
+        .route(
+            ADMIN_ACCESS_LEVEL_REFERRAL_SAVE_PATH,
+            post(post_admin_access_level_referral_save),
+        )
+        .route(ADMIN_DORMANT_MINING_PATH, post(post_admin_dormant_mining))
+        .route(ADMIN_SHOP_CHECKOUTS_PATH, post(post_admin_shop_checkouts))
+        .route(ADMIN_PURCHASES_REPORT_PATH, post(post_admin_purchases_report))
         .route(
             SUPPORT_TICKET_FOR_PLAYER_PATH,
             post(post_support_ticket_for_player),
@@ -355,8 +431,6 @@ pub fn router(state: AppState) -> Router {
             ANNOUNCEMENTS_ADMIN_LIST_PATH,
             post(post_announcement_admin_list),
         )
-        .route(CALCULATOR_SNAPSHOT_PATH, post(post_calculator_snapshot))
-        .route(CALCULATOR_AI_ANALYZE_PATH, post(post_calculator_ai_analyze))
         .route(CHECKIN_STATUS_PATH, post(post_checkin_status))
         .route(CHECKIN_PERFORM_PATH, post(post_checkin_perform))
         .route(QUESTS_STATE_PATH, post(post_quests_state))
@@ -523,6 +597,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             crate::transparency_admin::TRANSPARENCY_ADMIN_DELETE_PATH,
             post(post_transparency_admin_delete),
+        )
+        .route(
+            crate::transparency_admin::TRANSPARENCY_ADMIN_HEALTH_GET_PATH,
+            post(post_transparency_admin_health_get),
+        )
+        .route(
+            crate::transparency_admin::TRANSPARENCY_ADMIN_HEALTH_UPDATE_PATH,
+            post(post_transparency_admin_health_update),
         )
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -730,6 +812,7 @@ async fn post_partner_games_visit(
         &state.cfg,
         &state.kafka,
         body.user_id,
+        body.slug,
         body.now_ms,
     )
     .await
@@ -753,6 +836,7 @@ async fn post_partner_games_heartbeat(
         &state.locks,
         &state.kafka,
         body.user_id,
+        body.slug,
         body.now_ms,
     )
     .await
@@ -775,6 +859,7 @@ async fn post_partner_games_stop(
         &state.cfg,
         &state.kafka,
         body.user_id,
+        body.slug,
         body.now_ms,
     )
     .await
@@ -804,7 +889,7 @@ async fn post_checkin_perform(
     Json(body): Json<CheckinUserRequest>,
 ) -> impl axum::response::IntoResponse {
     let now = body.now_ms.unwrap_or_else(now_ms);
-    match run_checkin_perform(&state.pool, body.user_id, now).await {
+    match run_checkin_perform(&state.pool, &state.http, &state.cfg, body.user_id, now).await {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
     }
@@ -1049,7 +1134,7 @@ md_handler!(post_md_rebuild_rollups, RebuildRollupsRequest, run_rebuild_rollups)
 async fn post_dashboard_stats(
     State(state): State<Arc<AppState>>,
 ) -> impl axum::response::IntoResponse {
-    match run_dashboard_stats(&state.pool).await {
+    match run_dashboard_stats(&state.pool, &state.ranking).await {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
     }
@@ -1464,6 +1549,31 @@ async fn post_transparency_admin_delete(
     }
 }
 
+async fn post_transparency_admin_health_get(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match crate::transparency_admin::run_transparency_health_settings_get(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_transparency_admin_health_update(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    match crate::transparency_admin::run_transparency_health_settings_update(
+        &state.pool,
+        &body,
+        now_ms(),
+    )
+    .await
+    {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
 async fn require_worker_auth(
     State(state): State<Arc<AppState>>,
     request: Request<axum::body::Body>,
@@ -1484,6 +1594,16 @@ async fn require_worker_auth(
         }
     }
     Ok(next.run(request).await)
+}
+
+async fn post_mining_projection(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ProjectionRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_mining_projection(&state.pool, body.user_id, body.scope.as_deref()).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
 }
 
 async fn post_progress(
@@ -2176,6 +2296,167 @@ async fn post_admin_users_delete(
     }
 }
 
+async fn post_admin_save_game_override_finalize(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SaveGameOverrideFinalizeRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_save_game_override_finalize(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_owned_rooms_prepare(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<OwnedRoomsPrepareRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_owned_rooms_prepare(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_owned_rooms_finalize(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<OwnedRoomsFinalizeRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_owned_rooms_finalize(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_wallet_history(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<AdminWalletHistoryRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_admin_wallet_history(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_grant_premium_checkin(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<GrantPremiumCheckinRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_grant_premium_checkin(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_referral_models_list(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match run_referral_models_list(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_referral_models_upsert(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ReferralModelUpsertRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_referral_models_upsert(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_referral_models_delete(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ReferralModelDeleteRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_referral_models_delete(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_access_level_referral_list(
+    State(state): State<Arc<AppState>>,
+) -> impl axum::response::IntoResponse {
+    match run_access_level_referral_list(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_access_level_referral_save(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<AccessLevelReferralSaveRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_access_level_referral_save(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_dormant_mining(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<DormantMiningRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_dormant_mining(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_shop_checkouts(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ShopCheckoutsRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_admin_shop_checkouts(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_purchases_report(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<PurchasesReportRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_admin_purchases_report(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => {
+            tracing::error!("admin purchases report failed: {:?}", e);
+            fail_read(e)
+        }
+    }
+}
+
+async fn post_admin_impersonate_start(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ImpersonateStartRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_impersonate_start(&state.pool, &state.http, &state.cfg, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_impersonate_stop(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ImpersonateStopRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_impersonate_stop(&state.http, &state.cfg, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_admin_user_activity(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<UserActivityRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_user_activity(&state.pool, &body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
 async fn post_support_ticket_for_player(
     State(state): State<Arc<AppState>>,
     Json(body): Json<SupportTicketForPlayerRequest>,
@@ -2415,60 +2696,6 @@ async fn post_announcement_mark_read(
             }
             (status, Json(AnnouncementWriteResponse::from_err(e)))
         }
-    }
-}
-
-async fn post_calculator_snapshot(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<CalculatorSnapshotRequest>,
-) -> (StatusCode, Json<serde_json::Value>) {
-    match run_calculator_snapshot(&state.pool, body.user_id, body.scope.as_deref()).await {
-        Ok(out) => match serde_json::to_value(&out) {
-            Ok(v) => (StatusCode::OK, Json(v)),
-            Err(e) => {
-                warn!(err = %e, "calculator snapshot serialize failed");
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(
-                        serde_json::to_value(&CalculatorSnapshotErrorBody {
-                            ok: false,
-                            error: "serialize failed".into(),
-                            code: "CALCULATOR_IO".into(),
-                        })
-                        .unwrap_or_else(|_| serde_json::json!({ "ok": false })),
-                    ),
-                )
-            }
-        },
-        Err(e) => {
-            warn_if_server_error(&e);
-            let status = status_from_u16(e.http_status);
-            (
-                status,
-                Json(
-                    serde_json::to_value(&e.to_body())
-                        .unwrap_or_else(|_| serde_json::json!({ "ok": false })),
-                ),
-            )
-        }
-    }
-}
-
-async fn post_calculator_ai_analyze(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<CalculatorAiAnalyzeRequest>,
-) -> (StatusCode, Json<serde_json::Value>) {
-    match run_calculator_ai_analyze(
-        &state.pool,
-        &state.http,
-        &state.cfg,
-        body.user_id,
-        body.scope.as_deref(),
-    )
-    .await
-    {
-        Ok(v) => (StatusCode::OK, Json(v)),
-        Err(e) => (status_from_u16(e.http_status), Json(e.to_body())),
     }
 }
 

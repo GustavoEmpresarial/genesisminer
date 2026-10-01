@@ -19,6 +19,7 @@ export const GAME_NAV_LABEL_SHORT_KEYS = [
   'wallet',
   'withdrawal_history',
   'ranking',
+  'calculator',
   'upgrade',
   'transparency',
   'support',

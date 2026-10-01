@@ -117,10 +117,18 @@ export async function createAsicLeasesOnPurchase(
 }
 
 /**
- * Alinha stock com leases timed existentes: trim excessos quando target < COUNT(stock);
- * nunca minta leases (só nascem em shop/credit-catalog/checkin). Persist snapshot só synca qty.
+ * Alinha stock com leases timed: trim quando target < COUNT(stock);
+ * mint só quando `allowMint` (admin merge persist) e target > current.
+ * Snapshot/partial nunca mintam (anti-cheat); shop/credit/checkin mintam fora deste path.
  */
-export async function reconcileTimedAsicStockLeases(client: PoolClient, userId: number, itemId: string, targetQty: number, nowMs: number): Promise<boolean> {
+export async function reconcileTimedAsicStockLeases(
+  client: PoolClient,
+  userId: number,
+  itemId: string,
+  targetQty: number,
+  nowMs: number,
+  allowMint = false
+): Promise<boolean> {
   const cfg = await loadAsicDurationConfig(client, itemId);
   if (!isTimedAsicDuration(cfg)) return false;
 
@@ -128,7 +136,6 @@ export async function reconcileTimedAsicStockLeases(client: PoolClient, userId: 
   const cntRes = await client.query(`SELECT COUNT(*)::int AS n FROM player_asic_leases WHERE user_id = $1 AND item_id = $2 AND status = 'stock' AND expires_at > $3`, [userId, itemId, nowMs]);
   const current = Number(cntRes.rows[0]?.n) || 0;
 
-  // target > current: não mintar — leases só nascem em shop/credit-catalog/checkin; persist snapshot nunca mint.
   if (target < current) {
     const toRemove = current - target;
     const deleted = await client.query(
@@ -151,6 +158,8 @@ export async function reconcileTimedAsicStockLeases(client: PoolClient, userId: 
         [deletedIds, ITEM_INSTANCE_STATUS_CONSUMED]
       );
     }
+  } else if (allowMint && target > current) {
+    await createAsicLeasesOnPurchase(client, userId, itemId, target - current, cfg, nowMs);
   }
 
   await syncTimedAsicStockForItem(client, userId, itemId, nowMs);

@@ -26,7 +26,13 @@ pub use capacity::{
 pub use catalog::{
     normalize_known_1000wh_battery_catalog_id, normalize_stock_catalog_item_id,
     remap_purged_stock_item_id, CANONICAL_1000WH_BATTERY_ID, LEGACY_1000WH_BATTERY_IDS,
-    PURGED_LEGACY_STOCK_IDS,
+    LEGACY_STOCK_ID_ALIASES, PURGED_LEGACY_STOCK_IDS,
+};
+pub use duration::{
+    compute_asic_lease_expires_at, duration_ms_for_config, format_asic_duration_label_pt,
+    is_timed_asic_duration, normalize_asic_duration_config, normalize_asic_duration_kind,
+    normalize_asic_duration_unit, AsicDurationConfig, ASIC_DURATION_KINDS, ASIC_DURATION_UNITS,
+    DAYS_PER_MONTH_APPROX, DAYS_PER_YEAR_APPROX,
 };
 pub use intent::{
     apply_place_rack_from_stock, apply_rack_aux_equip, apply_rack_aux_unequip,

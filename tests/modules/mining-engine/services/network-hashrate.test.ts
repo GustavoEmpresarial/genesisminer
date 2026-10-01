@@ -8,7 +8,7 @@ import {
 describe('effectiveNetworkHashrateForCoin', () => {
   it('usa max(runtime, floor) — alinhado ao yield-cron', () => {
     expect(effectiveNetworkHashrateForCoin('btc', 100, new Map([['btc', 1e12]]))).toBe(1e12);
-    // live < floor: mining usa o floor (calculadora antiga usava live e sobrestimava)
+    // live < floor: mining usa o floor (projeção antiga usava live e sobrestimava)
     expect(effectiveNetworkHashrateForCoin('btc', 1e12, new Map([['btc', 100]]))).toBe(1e12);
   });
 

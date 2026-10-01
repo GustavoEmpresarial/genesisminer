@@ -1,5 +1,5 @@
 /**
- * Taxa USD para moedas de mineração (payback / calculadora / wallet).
+ * Taxa USD para moedas de mineração (payback / mining math / wallet).
  */
 import {
   isNftRoomExclusiveMiningCoinRef,

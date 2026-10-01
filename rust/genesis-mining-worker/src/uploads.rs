@@ -417,6 +417,9 @@ pub async fn run_upload_support_attachment(
             "One or more files exceed the size limit. Reduce size or send fewer attachments.",
         ));
     }
+    if incoming.bytes.len() < MAGIC_BYTES_MIN_LEN {
+        return Err(UploadError::validation("File too small or empty."));
+    }
     let ext = ext_of(&incoming.original_name);
     if !SUPPORT_ALLOWED_EXT.contains(&ext.as_str()) {
         return Err(UploadError::validation(

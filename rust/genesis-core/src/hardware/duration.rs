@@ -106,6 +106,24 @@ pub fn compute_asic_lease_expires_at(cfg: &AsicDurationConfig, from_ms: i64) -> 
     }
 }
 
+/// Node `formatAsicDurationLabelPt` — human label in pt-BR (`"7 dias"`, `"1 mês"`).
+/// Returns `"Permanente"` when `cfg` is not timed.
+pub fn format_asic_duration_label_pt(cfg: &AsicDurationConfig) -> String {
+    if !is_timed_asic_duration(cfg) {
+        return "Permanente".into();
+    }
+    let n = cfg.amount;
+    let (singular, plural) = match cfg.unit.as_deref() {
+        Some("day") => ("dia", "dias"),
+        Some("week") => ("semana", "semanas"),
+        Some("month") => ("mês", "meses"),
+        Some("year") => ("ano", "anos"),
+        _ => return "Permanente".into(),
+    };
+    let unit = if n == 1 { singular } else { plural };
+    format!("{n} {unit}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -172,5 +190,15 @@ mod tests {
             compute_asic_lease_expires_at(&cfg, from_ms),
             from_ms + duration_ms_for_config(&cfg)
         );
+    }
+
+    #[test]
+    fn label_pt_singular_and_plural() {
+        let one = normalize_asic_duration_config(Some(1), Some("day"), None);
+        assert_eq!(format_asic_duration_label_pt(&one), "1 dia");
+        let many = normalize_asic_duration_config(Some(7), Some("day"), None);
+        assert_eq!(format_asic_duration_label_pt(&many), "7 dias");
+        let permanent = normalize_asic_duration_config(Some(0), None, Some("none"));
+        assert_eq!(format_asic_duration_label_pt(&permanent), "Permanente");
     }
 }

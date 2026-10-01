@@ -1,6 +1,6 @@
 /**
- * reconcileTimedAsicStockLeases: nunca mint quando target > COUNT(stock leases);
- * sync escreve qty = COUNT real.
+ * reconcileTimedAsicStockLeases: mint only when allowMint && target > COUNT(stock);
+ * sync writes qty = COUNT real.
  */
 import { describe, expect, it, vi } from 'vitest';
 import type { PoolClient } from 'pg';
@@ -16,8 +16,25 @@ const TRIM_DELETED_LEASE_IDS = [
   'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
 ] as const;
 
+const TIMED_UPGRADE_ROW = {
+  type: 'machine',
+  category: 'asic',
+  id: ITEM_ID,
+  asic_duration_amount: 7,
+  asic_duration_unit: 'day',
+  asic_duration_kind: 'timed'
+};
+
+function isUpgradeLookup(sql: string): boolean {
+  return sql.includes('FROM upgrades WHERE id');
+}
+
+function isStockLeaseCount(sql: string): boolean {
+  return sql.includes('COUNT(*)') && sql.includes("status = 'stock'") && sql.includes('expires_at >');
+}
+
 describe('reconcileTimedAsicStockLeases', () => {
-  it('does not mint leases when target > stock lease count; sync writes qty = count', async () => {
+  it('does not mint leases when allowMint=false and target > stock lease count; sync writes qty = count', async () => {
     const queries: { sql: string; params?: unknown[] }[] = [];
     let stockLeaseCountReads = 0;
 
@@ -26,22 +43,11 @@ describe('reconcileTimedAsicStockLeases', () => {
         const sql = String(sqlRaw);
         queries.push({ sql, params });
 
-        if (sql.includes('FROM upgrades WHERE id')) {
-          return {
-            rows: [
-              {
-                type: 'machine',
-                category: 'asic',
-                id: ITEM_ID,
-                asic_duration_amount: 7,
-                asic_duration_unit: 'day',
-                asic_duration_kind: 'timed'
-              }
-            ]
-          };
+        if (isUpgradeLookup(sql)) {
+          return { rows: [TIMED_UPGRADE_ROW] };
         }
 
-        if (sql.includes('COUNT(*)') && sql.includes("status = 'stock'") && sql.includes('expires_at >')) {
+        if (isStockLeaseCount(sql)) {
           stockLeaseCountReads += 1;
           return { rows: [{ n: STOCK_LEASE_COUNT }] };
         }
@@ -62,7 +68,7 @@ describe('reconcileTimedAsicStockLeases', () => {
       })
     } as unknown as PoolClient;
 
-    const ok = await reconcileTimedAsicStockLeases(client, USER_ID, ITEM_ID, TARGET_QTY, NOW_MS);
+    const ok = await reconcileTimedAsicStockLeases(client, USER_ID, ITEM_ID, TARGET_QTY, NOW_MS, false);
 
     expect(ok).toBe(true);
     expect(queries.some((q) => q.sql.includes('INSERT INTO player_asic_leases'))).toBe(false);
@@ -71,6 +77,55 @@ describe('reconcileTimedAsicStockLeases', () => {
     const stockUpsert = queries.find((q) => q.sql.includes('INSERT INTO stock'));
     expect(stockUpsert).toBeDefined();
     expect(stockUpsert!.params).toEqual([USER_ID, ITEM_ID, STOCK_LEASE_COUNT]);
+  });
+
+  it('mints (target - current) leases when allowMint=true and target > current', async () => {
+    const toMint = TARGET_QTY - STOCK_LEASE_COUNT;
+    let leaseCountPhase = 0;
+    let leaseInserts = 0;
+
+    const client = {
+      query: vi.fn(async (sqlRaw: string, _params?: unknown[]) => {
+        const sql = String(sqlRaw);
+
+        if (isUpgradeLookup(sql)) {
+          return { rows: [TIMED_UPGRADE_ROW] };
+        }
+
+        if (isStockLeaseCount(sql)) {
+          leaseCountPhase += 1;
+          const n = leaseCountPhase === 1 ? STOCK_LEASE_COUNT : TARGET_QTY;
+          return { rows: [{ n }] };
+        }
+
+        if (sql.includes('INSERT INTO player_asic_leases')) {
+          leaseInserts += 1;
+          return { rows: [], rowCount: 1 };
+        }
+
+        if (sql.includes('INSERT INTO item_instances')) {
+          return { rows: [], rowCount: 1 };
+        }
+
+        if (sql.includes('INSERT INTO stock')) {
+          return { rows: [], rowCount: 1 };
+        }
+
+        if (sql.includes('DELETE FROM player_asic_leases')) {
+          throw new Error('unexpected lease DELETE when minting');
+        }
+
+        return { rows: [] };
+      })
+    } as unknown as PoolClient;
+
+    const ok = await reconcileTimedAsicStockLeases(client, USER_ID, ITEM_ID, TARGET_QTY, NOW_MS, true);
+    expect(ok).toBe(true);
+    expect(leaseInserts).toBe(toMint);
+    const stockUpsert = (client.query as ReturnType<typeof vi.fn>).mock.calls.find((c) =>
+      String(c[0]).includes('INSERT INTO stock')
+    );
+    expect(stockUpsert?.[1]).toEqual([USER_ID, ITEM_ID, TARGET_QTY]);
   });
 
   it('deletes excess stock leases when target < current', async () => {
@@ -82,19 +137,8 @@ describe('reconcileTimedAsicStockLeases', () => {
       query: vi.fn(async (sqlRaw: string, params?: unknown[]) => {
         const sql = String(sqlRaw);
 
-        if (sql.includes('FROM upgrades WHERE id')) {
-          return {
-            rows: [
-              {
-                type: 'machine',
-                category: 'asic',
-                id: ITEM_ID,
-                asic_duration_amount: 7,
-                asic_duration_unit: 'day',
-                asic_duration_kind: 'timed'
-              }
-            ]
-          };
+        if (isUpgradeLookup(sql)) {
+          return { rows: [TIMED_UPGRADE_ROW] };
         }
 
         if (sql.includes('COUNT(*)') && sql.includes("status = 'stock'")) {

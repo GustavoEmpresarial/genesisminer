@@ -2,7 +2,7 @@
  * Mining / servers Hub view — room intents + sticky daily check-in (desktop `lg+`).
  * Mobile uses dedicated `checkin` GameView. DECISIONS #81 / #97 · GAME_SHELL.md.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useT } from '../../../shared/i18n';
 import { WalletRoomLockOverlay } from '../../wallet';
 import { DailyCheckinBanner } from '../../checkin';
@@ -41,7 +41,6 @@ import {
 
 type MiningPageProps = {
   userEmail?: string;
-  onOpenCalculator?: () => void;
   /** Push USDC balance to chrome (navbar). */
   onUsdcChange?: (usdc: number) => void;
   /** Refresh GameShell header snapshot (H/s, token powers) after check-in. */
@@ -52,6 +51,8 @@ type MiningPageProps = {
   onOpenWalletConnect?: () => void;
   /** Em gerência no mobile não há banner sticky por defeito — força o banner. */
   isManagingAccount?: boolean;
+  /** Optional CTA → Calculadora tab. */
+  onNavigateCalculator?: () => void;
 };
 
 /** Viewport band below GameShell chrome — overlay is pinned here, not to full ServerRoom height. */
@@ -98,14 +99,15 @@ function applyServerSnapshot(
   setters.setPlacedRacks([...out.placedRacks]);
 }
 
-export function MiningPage({
+export const MiningPage = memo(function MiningPage({
   userEmail,
-  onOpenCalculator,
+
   onUsdcChange,
   onHeaderRefresh,
   hasWallet = true,
   onOpenWalletConnect,
-  isManagingAccount = false
+  isManagingAccount = false,
+  onNavigateCalculator
 }: MiningPageProps) {
   const t = useT();
   const [loading, setLoading] = useState(true);
@@ -487,7 +489,18 @@ export function MiningPage({
         alert('error' in res ? res.error : t('mining.unknownError'));
         return;
       }
-      setPlacedRacks([...res.placedRacks]);
+      if (Array.isArray(res.placedRacks)) {
+        setPlacedRacks([...res.placedRacks]);
+        return;
+      }
+      const selected = coinId || undefined;
+      setPlacedRacks(
+        placedRacksRef.current.map((r) =>
+          normalizePlacedRackRoomId(r.roomId) === roomNorm
+            ? { ...r, selectedCoinId: selected, isOn: selected ? r.isOn : false }
+            : r
+        )
+      );
     },
     [miningCoins, t]
   );
@@ -538,6 +551,17 @@ export function MiningPage({
         />
       </div>
       <div className="flex flex-1 animate-in fade-in zoom-in-95 flex-col space-y-3 p-2 duration-300 sm:space-y-6 sm:p-6">
+        {onNavigateCalculator ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={onNavigateCalculator}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-900/30 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-sky-200 hover:bg-sky-800/40"
+            >
+              {t('calculator.openFromMining')}
+            </button>
+          </div>
+        ) : null}
         <MiningWalletGate hasWallet={hasWallet} onOpenWalletConnect={onOpenWalletConnect}>
           <ServerRoom
             stock={stock}
@@ -557,7 +581,6 @@ export function MiningPage({
             onSetRackCoin={handleSetRackCoin}
             onSetRoomRacksCoin={handleSetRoomRacksCoin}
             onRoomPurchase={handleRoomPurchase}
-            onOpenCalculator={onOpenCalculator}
             nftAsicMinedUsdTotal={nftAsicMinedUsdTotal}
             asicRoomMinedUsdTotal={asicRoomMinedUsdTotal}
             asicLeaseDetails={asicLeaseDetails}
@@ -566,4 +589,4 @@ export function MiningPage({
       </div>
     </div>
   );
-}
+});

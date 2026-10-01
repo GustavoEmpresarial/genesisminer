@@ -64,14 +64,44 @@ export function formatTokenAmount(val: number): string {
 }
 
 export function formatLiveTokenAmount(val: number, _perSec?: number): string {
+  void _perSec;
   return formatTokenAmount(val);
+}
+
+/** Match ShopPage / InventoryView `formatProduction` thresholds. */
+const HASHRATE_SUBUNIT_THRESHOLD = 0.0001;
+const HASHRATE_WHOLE_UNIT_THRESHOLD = 1;
+const HASHRATE_FINE_FRACTION_DIGITS = MINED_COIN_DISPLAY_DECIMALS;
+const HASHRATE_SUBUNIT_MIN_FRACTION_DIGITS = 2;
+const HASHRATE_SUBUNIT_MAX_FRACTION_DIGITS = 4;
+const HASHRATE_COMPACT_MAX_FRACTION_DIGITS = 1;
+const HASHRATE_HEADER_COMPACT_MAX_FRACTION_DIGITS = 2;
+
+/**
+ * Hashrate amount without unit suffix — same rules as Shop `formatProduction`.
+ */
+export function formatHashrateAmount(val: number): string {
+  if (val < HASHRATE_SUBUNIT_THRESHOLD) return val.toFixed(HASHRATE_FINE_FRACTION_DIGITS);
+  if (val < HASHRATE_WHOLE_UNIT_THRESHOLD) {
+    return val.toLocaleString('pt-BR', {
+      minimumFractionDigits: HASHRATE_SUBUNIT_MIN_FRACTION_DIGITS,
+      maximumFractionDigits: HASHRATE_SUBUNIT_MAX_FRACTION_DIGITS
+    });
+  }
+  return Intl.NumberFormat('en-US', {
+    notation: 'compact',
+    maximumFractionDigits: HASHRATE_COMPACT_MAX_FRACTION_DIGITS
+  }).format(val);
 }
 
 /** Hash total no strip do header (legado App.tsx `formatHash`). */
 export function formatHashTotal(val: number): string {
   if (val === 0) return '0 H/s';
-  if (val < 0.0001) return `${val.toFixed(8)} H/s`;
-  return `${Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 }).format(val)} H/s`;
+  if (val < HASHRATE_SUBUNIT_THRESHOLD) return `${val.toFixed(HASHRATE_FINE_FRACTION_DIGITS)} H/s`;
+  return `${Intl.NumberFormat('en-US', {
+    notation: 'compact',
+    maximumFractionDigits: HASHRATE_HEADER_COMPACT_MAX_FRACTION_DIGITS
+  }).format(val)} H/s`;
 }
 
 /**

@@ -8,7 +8,7 @@
 use std::collections::{HashMap, HashSet};
 
 use deadpool_postgres::GenericClient;
-use genesis_core::hardware::catalog::normalize_known_1000wh_battery_catalog_id;
+use genesis_core::hardware::catalog::normalize_stock_catalog_item_id;
 
 use crate::adjust::INSUFFICIENT_STOCK;
 use crate::config::HARDWARE_TX_TIMEOUT_MS;
@@ -111,7 +111,7 @@ async fn set_hardware_tx_timeouts<C: GenericClient>(client: &C) -> anyhow::Resul
 }
 
 fn catalog_item_id(raw: &str) -> anyhow::Result<String> {
-    let item_id = normalize_known_1000wh_battery_catalog_id(Some(raw));
+    let item_id = normalize_stock_catalog_item_id(Some(raw));
     if item_id.is_empty() {
         anyhow::bail!("itemId empty");
     }

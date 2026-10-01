@@ -204,7 +204,7 @@ export function isAsicMachineUpgrade(u: Pick<Upgrade, 'id' | 'category' | 'type'
 }
 
 /** Renomeações acidentais no admin — não contar como ASICs NFT. */
-export const NFT_ROOM_EXCLUDED_MACHINE_IDS = ['gpu_iceberg_v1', 'rally_v3'] as const;
+export const NFT_ROOM_EXCLUDED_MACHINE_IDS = ['gpu_iceberg_v1', 'rally_v3', 'gpu_rally_v1'] as const;
 
 /**
  * Colecionável NFT — id `nft_*` ou categoria com «nft».
@@ -930,5 +930,6 @@ export interface MiningCoin {
   showInExchange: boolean;
   realNetworkHashrate?: number;
   targetDailyUSD?: number;
+  iconUrl?: string | null;
 }
 

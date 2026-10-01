@@ -214,7 +214,17 @@ pub async fn sync_timed_asic_stock_for_item<C: GenericClient>(
     Ok(())
 }
 
-/// Trim excess stock-status leases when `target_qty` < current; never mint.
+/// How many stock leases to mint when reconciling to `target` (0 unless mint allowed and short).
+pub(crate) fn timed_asic_lease_mint_qty(allow_mint: bool, target: i64, current: i64) -> i64 {
+    if allow_mint && target > current {
+        target - current
+    } else {
+        0
+    }
+}
+
+/// Align stock-status leases to `target_qty`: trim when target < current;
+/// mint only when `allow_mint` (admin merge persist) and target > current.
 /// Then sync `stock.qty` from remaining unexpired stock leases.
 pub async fn reconcile_timed_asic_stock_leases<C: GenericClient>(
     client: &C,
@@ -222,6 +232,7 @@ pub async fn reconcile_timed_asic_stock_leases<C: GenericClient>(
     item_id: &str,
     target_qty: i64,
     now_ms: i64,
+    allow_mint: bool,
 ) -> anyhow::Result<bool> {
     let cfg = load_asic_duration_config(client, item_id).await?;
     if !is_timed_asic_duration(&cfg) {
@@ -250,6 +261,11 @@ pub async fn reconcile_timed_asic_stock_leases<C: GenericClient>(
                 ],
             )
             .await?;
+    } else {
+        let to_mint = timed_asic_lease_mint_qty(allow_mint, target, current);
+        if to_mint > 0 {
+            create_asic_leases_on_credit(client, user_id, item_id, to_mint, &cfg, now_ms).await?;
+        }
     }
     sync_timed_asic_stock_for_item(client, user_id, item_id, now_ms).await?;
     Ok(true)
@@ -1087,6 +1103,14 @@ pub async fn clear_rack_slot_machine<C: GenericClient>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn timed_asic_lease_mint_qty_only_when_allowed_and_short() {
+        assert_eq!(timed_asic_lease_mint_qty(true, 5, 2), 3);
+        assert_eq!(timed_asic_lease_mint_qty(false, 5, 2), 0);
+        assert_eq!(timed_asic_lease_mint_qty(true, 2, 5), 0);
+        assert_eq!(timed_asic_lease_mint_qty(true, 3, 3), 0);
+    }
 
     #[test]
     fn no_valid_asics_error_matches_node() {

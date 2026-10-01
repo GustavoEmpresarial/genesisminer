@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use deadpool_postgres::GenericClient;
 use genesis_core::calculator::constants::{ASIC_ROOM_ID, NFT_AUTO_ROOM_ID};
 use genesis_core::calculator::room_id::normalize_placed_rack_room_id;
-use genesis_core::hardware::catalog::normalize_known_1000wh_battery_catalog_id;
+use genesis_core::hardware::catalog::normalize_stock_catalog_item_id;
 use genesis_core::hardware::types::{HardwareState, PlacedRack, StoredBattery, UpgradeRow};
 
 use crate::leases::row_uuid_string;
@@ -35,7 +35,7 @@ pub async fn load_user_stock<C: GenericClient>(
     let mut stock = HashMap::new();
     for row in rows {
         let raw: String = row.get("item_id");
-        let item_id = normalize_known_1000wh_battery_catalog_id(Some(&raw));
+        let item_id = normalize_stock_catalog_item_id(Some(&raw));
         if item_id.is_empty() {
             continue;
         }

@@ -18,10 +18,7 @@ use genesis_core::calculator::nft::{
 };
 use genesis_core::calculator::slot_credits::list_slot_mining_credits;
 use genesis_core::calculator::types::{CalculatorUpgradeLite, CheckinHashEntry, MiningCoinInput};
-use genesis_core::checkin::{
-    is_checkin_frozen_for_mining, DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS,
-    DEFAULT_CHECKIN_PREMIUM_MIN_USDC,
-};
+use genesis_core::checkin::is_checkin_frozen_for_mining;
 use genesis_core::gerente::{ACCOUNT_MANAGER_SHARE, ACCOUNT_MANAGER_STATUS_ACTIVE};
 use genesis_core::mining::effective_network_hashrate_for_coin;
 use genesis_core::mining::{
@@ -495,14 +492,20 @@ async fn compute_progress_inner(
         let mut slots_map: HashMap<String, Vec<Option<String>>> = HashMap::new();
         for s in &slot_rows {
             let rid: String = s.get("rack_id");
-            let mid: String = s.get("machine_item_id");
-            slots_map.entry(rid).or_default().push(Some(mid));
+            let mid: Option<String> = s.get("machine_item_id");
+            let mid = mid
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty());
+            slots_map.entry(rid).or_default().push(mid);
         }
         let mut multi_map: HashMap<String, Vec<Option<String>>> = HashMap::new();
         for m in &multi_rows {
             let rid: String = m.get("rack_id");
-            let mid: String = m.get("multiplier_item_id");
-            multi_map.entry(rid).or_default().push(Some(mid));
+            let mid: Option<String> = m.get("multiplier_item_id");
+            let mid = mid
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty());
+            multi_map.entry(rid).or_default().push(mid);
         }
 
         let empty_slots: Vec<Option<String>> = Vec::new();
@@ -1271,112 +1274,15 @@ pub(crate) struct PremiumWeeklyContext {
 }
 
 /// Resolve premium weekly check-in para freeze de mineração.
-/// Espelha `resolveUserCheckinPremiumContext` / `loadCheckinPremiumPolicy` (premium-policy.ts).
-/// Em falha recuperável de settings/purchases: warn + cai no path 48h (não-premium) —
-/// não inventar freeze premium nem piorar o gap para quem não é premium.
+/// Espelha `resolveUserCheckinPremiumContext` / gasto USDC vitalício (premium-policy.ts).
 pub(crate) async fn resolve_premium_weekly_checkin(
     client: &tokio_postgres::Client,
     user_id: i32,
 ) -> PremiumWeeklyContext {
-    let fallback = PremiumWeeklyContext {
-        premium_weekly: false,
-        interval_days: DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS,
-    };
-
-    let setting_keys: Vec<String> = vec![
-        "checkin_premium_enabled".to_string(),
-        "checkin_premium_min_usdc".to_string(),
-        "checkin_premium_interval_days".to_string(),
-    ];
-    let settings_rows = match client
-        .query(
-            r#"SELECT key, value FROM settings
-                WHERE key = ANY($1)"#,
-            &[&setting_keys],
-        )
-        .await
-    {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!(user_id, err = %e, "progress: premium settings query failed — using 48h grace");
-            return fallback;
-        }
-    };
-
-    let mut enabled_raw: Option<String> = None;
-    let mut min_usdc_raw: Option<String> = None;
-    let mut interval_days_raw: Option<String> = None;
-    for row in &settings_rows {
-        let key: String = row.get("key");
-        let value: String = row.try_get("value").unwrap_or_default();
-        match key.as_str() {
-            "checkin_premium_enabled" => enabled_raw = Some(value),
-            "checkin_premium_min_usdc" => min_usdc_raw = Some(value),
-            "checkin_premium_interval_days" => interval_days_raw = Some(value),
-            _ => {}
-        }
-    }
-
-    // missing/'' → enabled true; senão enabled iff value == "1" (igual TS)
-    let enabled = match enabled_raw.as_deref() {
-        None | Some("") => true,
-        Some(v) => v == "1",
-    };
-
-    let min_parsed = min_usdc_raw
-        .as_deref()
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(DEFAULT_CHECKIN_PREMIUM_MIN_USDC);
-    let min_usdc = if min_parsed.is_finite() && min_parsed >= 0.0 {
-        min_parsed
-    } else {
-        DEFAULT_CHECKIN_PREMIUM_MIN_USDC
-    };
-
-    let days_parsed = interval_days_raw
-        .as_deref()
-        .and_then(|s| s.parse::<i32>().ok())
-        .unwrap_or(DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS);
-    let interval_days = if days_parsed >= 1 {
-        days_parsed
-    } else {
-        DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS
-    };
-
-    if !enabled {
-        return PremiumWeeklyContext {
-            premium_weekly: false,
-            interval_days,
-        };
-    }
-
-    let eligible = match client
-        .query_opt(
-            r#"SELECT 1 FROM admin_upgrade_purchases p
-               INNER JOIN admin_upgrades u ON u.id = p.upgrade_id
-               WHERE p.user_id = $1 AND u.price_usdc >= $2
-               LIMIT 1"#,
-            &[&user_id, &min_usdc],
-        )
-        .await
-    {
-        Ok(row) => row.is_some(),
-        Err(e) => {
-            warn!(
-                user_id,
-                err = %e,
-                "progress: premium purchases query failed — using 48h grace"
-            );
-            return PremiumWeeklyContext {
-                premium_weekly: false,
-                interval_days,
-            };
-        }
-    };
-
+    let ctx = crate::checkin_premium_elig::resolve_premium_weekly_checkin(client, user_id).await;
     PremiumWeeklyContext {
-        premium_weekly: eligible,
-        interval_days,
+        premium_weekly: ctx.premium_weekly,
+        interval_days: ctx.interval_days,
     }
 }
 

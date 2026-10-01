@@ -23,6 +23,15 @@ pub const LEGACY_1000WH_BATTERY_IDS: &[&str] =
 pub const KNOWN_INFINITE_BATTERY_IDS: &[&str] =
     &["battery_estelar", "battery_protostar", "battery_stellar"];
 
+/// Legacy stock SKUs that must fold into a canonical catalog id on load/persist.
+/// - Bare `lucky_whale_statue` predates mult chips; distinct keys silently wiped whale qty.
+/// - `rally_v3` / bare `rally_v1` are retired catalog ids; real machine is `gpu_rally_v1`.
+pub const LEGACY_STOCK_ID_ALIASES: &[(&str, &str)] = &[
+    ("lucky_whale_statue", "mult_lucky_whale_statue"),
+    ("rally_v3", "gpu_rally_v1"),
+    ("rally_v1", "gpu_rally_v1"),
+];
+
 const CHARGER_PREFIX: &str = "charger_";
 
 fn trim_item_id(item_id_raw: Option<&str>) -> String {
@@ -66,10 +75,23 @@ pub fn remap_purged_stock_item_id(item_id_raw: Option<&str>) -> String {
     item_id
 }
 
+fn apply_legacy_stock_id_alias(item_id: &str) -> String {
+    for (from, to) in LEGACY_STOCK_ID_ALIASES {
+        if *from == item_id {
+            return (*to).to_string();
+        }
+    }
+    item_id.to_string()
+}
+
 /// Save-game / DB stock key normalization.
 pub fn normalize_stock_catalog_item_id(item_id_raw: Option<&str>) -> String {
     let legacy = normalize_known_1000wh_battery_catalog_id(item_id_raw);
-    remap_purged_stock_item_id(Some(&legacy))
+    let purged = remap_purged_stock_item_id(Some(&legacy));
+    if purged.is_empty() {
+        return purged;
+    }
+    apply_legacy_stock_id_alias(&purged)
 }
 
 #[cfg(test)]
@@ -121,6 +143,51 @@ mod tests {
         assert_eq!(normalize_stock_catalog_item_id(Some("charger_a2")), "");
         assert_eq!(
             normalize_stock_catalog_item_id(Some("battery_estelar")),
+            CANONICAL_1000WH_BATTERY_ID
+        );
+    }
+
+    #[test]
+    fn normalize_stock_catalog_aliases_bare_lucky_whale_to_mult() {
+        assert_eq!(
+            normalize_stock_catalog_item_id(Some("lucky_whale_statue")),
+            "mult_lucky_whale_statue"
+        );
+    }
+
+    #[test]
+    fn normalize_stock_catalog_keeps_mult_lucky_whale_intact() {
+        assert_eq!(
+            normalize_stock_catalog_item_id(Some("mult_lucky_whale_statue")),
+            "mult_lucky_whale_statue"
+        );
+    }
+
+    #[test]
+    fn normalize_stock_catalog_aliases_retired_rally_ids_to_gpu_rally_v1() {
+        assert_eq!(
+            normalize_stock_catalog_item_id(Some("rally_v3")),
+            "gpu_rally_v1"
+        );
+        assert_eq!(
+            normalize_stock_catalog_item_id(Some("rally_v1")),
+            "gpu_rally_v1"
+        );
+        assert_eq!(
+            normalize_stock_catalog_item_id(Some("gpu_rally_v1")),
+            "gpu_rally_v1"
+        );
+    }
+
+    #[test]
+    fn normalize_stock_catalog_purge_and_battery_unaffected_by_whale_alias() {
+        assert_eq!(
+            normalize_stock_catalog_item_id(Some("small_battery")),
+            CANONICAL_1000WH_BATTERY_ID
+        );
+        assert_eq!(normalize_stock_catalog_item_id(Some("charger_a1")), "");
+        assert_eq!(
+            normalize_stock_catalog_item_id(Some("battery_aa")),
             CANONICAL_1000WH_BATTERY_ID
         );
     }

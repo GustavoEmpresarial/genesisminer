@@ -1,10 +1,11 @@
 //! Persist stock / stored_batteries / placed_racks.
 //!
-//! Merge mode UPSERTs only — never `DELETE FROM stock WHERE NOT (item_id = ANY(...))`
-//! (Grangeiro wipe). After stock writes, timed ASIC leases are reconciled
-//! (trim excess + sync; never mint) and `item_instances` are aligned (qty cache;
-//! timed lease id = instance id). Credit of timed machines creates leases
-//! then syncs stock from lease count.
+//! Merge mode UPSERTs qty>0 and DELETEs explicit qty 0 SKUs — never
+//! `DELETE FROM stock WHERE NOT (item_id = ANY(...))` (omitted SKUs stay).
+//! Partial is UPSERT-only (qty>0). After stock writes, timed ASIC leases are
+//! reconciled (trim excess + sync; never mint) and `item_instances` are aligned
+//! (qty cache; timed lease id = instance id). Credit of timed machines creates
+//! leases then syncs stock from lease count.
 
 use std::collections::{HashMap, HashSet};
 
@@ -12,7 +13,9 @@ use anyhow::Context;
 use deadpool_postgres::GenericClient;
 use genesis_core::calculator::constants::ROOM_INITIAL_ID;
 use genesis_core::calculator::room_id::normalize_placed_rack_room_id;
-use genesis_core::hardware::catalog::normalize_known_1000wh_battery_catalog_id;
+use genesis_core::hardware::catalog::{
+    normalize_known_1000wh_battery_catalog_id, normalize_stock_catalog_item_id,
+};
 use genesis_core::hardware::duration::{
     is_timed_asic_duration, normalize_asic_duration_config, AsicDurationConfig,
 };
@@ -42,6 +45,9 @@ pub const ASIC_LEASE_RECONCILE_PORTED: bool = true;
 const PERSIST_STOCK_UPSERT_SQL: &str = "INSERT INTO stock (user_id, item_id, qty)
                          SELECT $1, unnest($2::text[]), unnest($3::int[])
                          ON CONFLICT (user_id, item_id) DO UPDATE SET qty = EXCLUDED.qty";
+
+const PERSIST_STOCK_DELETE_EXPLICIT_ZERO_SQL: &str =
+    "DELETE FROM stock WHERE user_id = $1 AND item_id = ANY($2::text[])";
 
 const PERSIST_PLACED_RACKS_UPSERT_SQL: &str = "INSERT INTO placed_racks (
                id, user_id, item_id, wiring_id, battery_id, is_on, selected_coin_id, room_id, slot_index,
@@ -325,19 +331,29 @@ async fn persist_stock<C: GenericClient>(
 ) -> anyhow::Result<()> {
     let uid_pg = pg_user_id(uid)?;
     let mut stock_norm: HashMap<String, i32> = HashMap::new();
+    let mut zero_ids: HashSet<String> = HashSet::new();
     for (raw_id, raw_qty) in stock {
-        let item_id = normalize_known_1000wh_battery_catalog_id(Some(raw_id));
+        let item_id = normalize_stock_catalog_item_id(Some(raw_id));
         if item_id.is_empty() {
             continue;
         }
-        let qty = pg_qty((*raw_qty).max(0))?;
-        if qty <= 0 {
+        if *raw_qty < 0 {
             continue;
         }
+        let qty = pg_qty(*raw_qty)?;
+        if qty == 0 {
+            // Merge only: explicit 0 → DELETE that SKU. Snapshot/partial omit zeros.
+            if mode == StockMode::Merge && !stock_norm.contains_key(&item_id) {
+                zero_ids.insert(item_id);
+            }
+            continue;
+        }
+        zero_ids.remove(&item_id);
         *stock_norm.entry(item_id).or_insert(0) += qty;
     }
     let item_ids: Vec<String> = stock_norm.keys().cloned().collect();
     let qtys: Vec<i32> = item_ids.iter().map(|id| stock_norm[id]).collect();
+    let zero_id_list: Vec<String> = zero_ids.iter().cloned().collect();
 
     match mode {
         StockMode::Snapshot => {
@@ -367,22 +383,49 @@ async fn persist_stock<C: GenericClient>(
                 .await
                 .with_context(|| "persist_stock snapshot delete zero")?;
         }
-        StockMode::Merge | StockMode::Partial => {
-            // merge: UPSERT only — never DELETE omitted SKUs (Grangeiro).
+        StockMode::Merge => {
+            // UPSERT positives; explicit qty 0 DELETEs that SKU — never DELETE omitted SKUs.
             if !item_ids.is_empty() {
                 client
                     .execute(PERSIST_STOCK_UPSERT_SQL, &[&uid_pg, &item_ids, &qtys])
                     .await
                     .with_context(|| "persist_stock merge upsert")?;
             }
+            if !zero_id_list.is_empty() {
+                client
+                    .execute(
+                        PERSIST_STOCK_DELETE_EXPLICIT_ZERO_SQL,
+                        &[&uid_pg, &zero_id_list],
+                    )
+                    .await
+                    .with_context(|| "persist_stock merge delete explicit zero")?;
+            }
+        }
+        StockMode::Partial => {
+            // UPSERT only (qty>0) — partners_streamer Partial stays safer without zero-DELETE.
+            if !item_ids.is_empty() {
+                client
+                    .execute(PERSIST_STOCK_UPSERT_SQL, &[&uid_pg, &item_ids, &qtys])
+                    .await
+                    .with_context(|| "persist_stock partial upsert")?;
+            }
         }
     }
 
     let now_ms = current_unix_ms();
+    // Admin merge may mint timed ASIC leases to match target; snapshot/partial never mint (anti-cheat).
+    let allow_lease_mint = mode == StockMode::Merge;
     for (item_id, qty) in &stock_norm {
-        reconcile_timed_asic_stock_leases(client, uid, item_id, i64::from(*qty), now_ms)
-            .await
-            .with_context(|| "persist_stock consume/reconcile")?;
+        reconcile_timed_asic_stock_leases(
+            client,
+            uid,
+            item_id,
+            i64::from(*qty),
+            now_ms,
+            allow_lease_mint,
+        )
+        .await
+        .with_context(|| "persist_stock consume/reconcile")?;
         let cfg = load_asic_duration_config(client, item_id)
             .await
             .with_context(|| "persist_stock consume/reconcile")?;
@@ -390,6 +433,18 @@ async fn persist_stock<C: GenericClient>(
         reconcile_stock_instances_to_qty(client, uid, item_id, i64::from(*qty), allow_qty_mint)
             .await
             .with_context(|| "persist_stock consume/reconcile")?;
+    }
+    if mode == StockMode::Merge {
+        for item_id in &zero_id_list {
+            // Explicit qty 0 — trim only, never mint
+            reconcile_timed_asic_stock_leases(client, uid, item_id, 0, now_ms, false)
+                .await
+                .with_context(|| "persist_stock merge zero reconcile leases")?;
+            // Explicit qty 0 — consume only, never qty-mint
+            reconcile_stock_instances_to_qty(client, uid, item_id, 0, false)
+                .await
+                .with_context(|| "persist_stock merge zero reconcile instances")?;
+        }
     }
     if mode == StockMode::Snapshot {
         let lease_rows = client
@@ -403,7 +458,7 @@ async fn persist_stock<C: GenericClient>(
             let id: String = row.try_get("item_id").unwrap_or_default();
             let id = id.trim();
             if !id.is_empty() && !stock_norm.contains_key(id) {
-                reconcile_timed_asic_stock_leases(client, uid, id, 0, now_ms)
+                reconcile_timed_asic_stock_leases(client, uid, id, 0, now_ms, false)
                     .await
                     .with_context(|| "persist_stock consume/reconcile")?;
                 // qty 0 timed leftover — never mint from qty
@@ -1009,7 +1064,7 @@ pub async fn credit_stock<C: GenericClient>(
     duration_amount: Option<i64>,
     duration_unit: Option<&str>,
 ) -> anyhow::Result<()> {
-    let item_id = normalize_known_1000wh_battery_catalog_id(Some(item_id_raw));
+    let item_id = normalize_stock_catalog_item_id(Some(item_id_raw));
     if item_id.is_empty() || qty_raw <= 0 {
         return Ok(());
     }
@@ -1049,6 +1104,9 @@ mod tests {
         assert_eq!(StockMode::parse(Some("snapshot")), StockMode::Snapshot);
         assert_eq!(StockMode::parse(Some("partial")), StockMode::Partial);
         assert_eq!(StockMode::parse(None), StockMode::Partial);
+        // Merge deletes explicit qty 0 via PERSIST_STOCK_DELETE_EXPLICIT_ZERO_SQL;
+        // Partial stays UPSERT-only (no zero-DELETE). Snapshot still omits zeros from keep-list.
+        assert_ne!(StockMode::Merge, StockMode::Partial);
     }
 
     #[test]

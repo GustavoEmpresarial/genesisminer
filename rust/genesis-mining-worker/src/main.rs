@@ -15,7 +15,6 @@
 //! Support: POST /v1/support/submit|reply|admin-reply + list-mine|get|state|archive|reopen + admin/*
 //! Announcements: POST /v1/announcements/create|update|delete|mark-read + pending|mini-blog|admin-list
 //! Chat reads: POST /v1/chat/history|get|sender|peers|mentions-search|mentions-resolve
-//! Calculator: POST /v1/calculator/snapshot body `{ userId, scope? }`
 
 mod admin_dashboard;
 mod admin_economy_reports;
@@ -23,27 +22,30 @@ mod admin_gate;
 mod admin_mining_dist;
 mod admin_referral;
 mod admin_security;
+mod admin_shop_checkouts;
+mod admin_purchases_report;
 mod admin_users;
 mod announcements;
 mod backup_admin;
 mod backup_pgdump;
 mod backup_sql_loop;
-mod calculator;
-mod calculator_ai;
 mod chat_presence;
 mod chat_purge;
 mod chat_reads;
 mod chat_ttl_loop;
 mod chat_writes;
+mod checkin_premium_elig;
 mod config;
 mod dashboard;
 mod db;
 mod gdrive_backup;
 mod gerente;
 mod gerente_payout;
+mod hardware_client;
 mod http;
 mod idempotency_purge_loop;
 mod kafka;
+mod mining_projection;
 mod partner_games;
 mod partners;
 mod partners_admin;

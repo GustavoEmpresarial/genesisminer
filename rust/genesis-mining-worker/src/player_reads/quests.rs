@@ -14,8 +14,8 @@ use crate::support::LOCK_TIMEOUT_MS;
 use super::{f64_cell, i32_cell, i64_cell, pg_user_id, string_cell, PlayerReadError};
 
 /// Node `PREMIUM_CHECKIN_MIN_PROGRESS`.
-const PREMIUM_CHECKIN_MIN_PROGRESS: i32 = 1;
-const DAILY_CHECKIN_QUEST_ID: &str = "daily_checkin";
+pub(crate) const PREMIUM_CHECKIN_MIN_PROGRESS: i32 = 1;
+pub(crate) const DAILY_CHECKIN_QUEST_ID: &str = "daily_checkin";
 const DAYS_PER_WEEK: i64 = 7;
 const ISO_DATE_LENGTH: usize = 10;
 
@@ -158,7 +158,7 @@ pub(crate) async fn ensure_quest_schema<C: GenericClient>(
     Ok(())
 }
 
-async fn ensure_premium_credit(
+pub(crate) async fn ensure_premium_credit(
     conn: &mut deadpool_postgres::Object,
     user_id: i64,
     now_ms: i64,
@@ -228,30 +228,39 @@ async fn ensure_premium_credit(
     if !enabled {
         return Ok(());
     }
-    let eligible = conn
-        .query_opt(
-            "SELECT 1 FROM admin_upgrade_purchases p
-              INNER JOIN admin_upgrades u ON u.id = p.upgrade_id
-             WHERE p.user_id = $1 AND u.price_usdc >= $2 LIMIT 1",
-            &[&uid, &min_usdc],
-        )
-        .await?
-        .is_some();
+    let eligible =
+        crate::checkin_premium_elig::user_has_premium_usdc_spend(&*conn, uid, min_usdc)
+            .await
+            .unwrap_or(false);
     if !eligible || !is_premium_within_active_window(Some(last_at), now_ms, interval_days) {
         return Ok(());
     }
-    let daily_key = format!("d:{}", utc_day_from_ms(utc_checkin_period_start_ms(now_ms)));
     let tx = conn.transaction().await?;
     tx.batch_execute(&format!("SET LOCAL lock_timeout = {LOCK_TIMEOUT_MS}"))
         .await?;
-    tx.execute(
-        "INSERT INTO user_quest_progress (user_id, quest_id, period_key, progress, completed_at, claimed_at, updated_at)
-         VALUES ($1, $2, $3, 0, NULL, NULL, $4)
-         ON CONFLICT (user_id, quest_id, period_key) DO NOTHING",
-        &[&uid, &DAILY_CHECKIN_QUEST_ID, &daily_key, &now_ms],
-    )
-    .await?;
-    let gate = tx
+    bump_checkin_progress_if_daily_uncounted(&tx, uid, now_ms).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Bump daily + weekly check-in quests once per UTC day. Skips entirely when today's
+/// `daily_checkin` progress is already ≥ `PREMIUM_CHECKIN_MIN_PROGRESS` (same gate as
+/// premium auto-credit — avoids double-counting weekly on status-then-perform).
+pub(crate) async fn bump_checkin_progress_if_daily_uncounted<C: GenericClient>(
+    client: &C,
+    uid: i32,
+    now_ms: i64,
+) -> Result<(), PlayerReadError> {
+    let daily_key = format!("d:{}", utc_day_from_ms(utc_checkin_period_start_ms(now_ms)));
+    client
+        .execute(
+            "INSERT INTO user_quest_progress (user_id, quest_id, period_key, progress, completed_at, claimed_at, updated_at)
+             VALUES ($1, $2, $3, 0, NULL, NULL, $4)
+             ON CONFLICT (user_id, quest_id, period_key) DO NOTHING",
+            &[&uid, &DAILY_CHECKIN_QUEST_ID, &daily_key, &now_ms],
+        )
+        .await?;
+    let gate = client
         .query_opt(
             "SELECT progress FROM user_quest_progress
               WHERE user_id = $1 AND quest_id = $2 AND period_key = $3 FOR UPDATE",
@@ -260,12 +269,9 @@ async fn ensure_premium_credit(
         .await?;
     let already = gate.map(|r| i32_cell(&r, "progress")).unwrap_or(0);
     if already >= PREMIUM_CHECKIN_MIN_PROGRESS {
-        tx.rollback().await?;
         return Ok(());
     }
-    bump_checkin_progress(&tx, uid, now_ms).await?;
-    tx.commit().await?;
-    Ok(())
+    bump_checkin_progress(client, uid, now_ms).await
 }
 
 pub(crate) async fn bump_checkin_progress<C: GenericClient>(
@@ -380,7 +386,7 @@ fn default_defs() -> Vec<Def> {
             period: "daily".into(),
             action_type: "checkin".into(),
             title: "Check-in diário".into(),
-            description: "Faz o check-in do dia (ciclo 00:00 UTC). Com passe premium, conta automaticamente em cada dia da janela activa.".into(),
+            description: "Faz o check-in do dia (ciclo 00:00 UTC). Com check-in premium (depósito USDC acumulado ≥ limite), conta automaticamente em cada dia da janela activa.".into(),
             target_count: 1,
             reward_usdc: 0.05,
             sort_order: 10,
@@ -410,7 +416,7 @@ fn default_defs() -> Vec<Def> {
             period: "weekly".into(),
             action_type: "checkin".into(),
             title: "Check-in da semana".into(),
-            description: "Faz check-in em 5 dias diferentes nesta semana. Com passe premium, cada dia da janela activa conta 1.".into(),
+            description: "Faz check-in em 5 dias diferentes nesta semana. Com check-in premium, cada dia da janela activa conta 1.".into(),
             target_count: 5,
             reward_usdc: 0.5,
             sort_order: 110,

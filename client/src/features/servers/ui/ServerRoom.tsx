@@ -70,7 +70,6 @@ import {
     Box,
     Save,
     Activity,
-    Calculator,
     Coins,
     Battery,
     LayoutGrid
@@ -145,7 +144,6 @@ interface ServerRoomProps {
     /** Saldo USDC (para validar compra de slots no modal). */
     usdc?: number;
     onRoomPurchase?: (newUsdc: number) => void;
-    onOpenCalculator?: () => void;
     /** UUID de instância na rig → id de catálogo (bateria montada a partir de stock). */
     rackBatteryCatalogHints?: Readonly<Record<string, string>>;
     /** USD recuperado por mineração de ASICs na Sala NFT (payback). */
@@ -368,7 +366,6 @@ export const ServerRoom: React.FC<ServerRoomProps> = ({
     userEmail,
     usdc = 0,
     onRoomPurchase,
-    onOpenCalculator,
     rackBatteryCatalogHints,
     nftAsicMinedUsdTotal = 0,
     asicRoomMinedUsdTotal = 0,
@@ -910,14 +907,6 @@ export const ServerRoom: React.FC<ServerRoomProps> = ({
                                 <Activity size={12} />
                                 {formatHashrateDisplay(roomTotalProduction)} H/s
                             </div>
-                            {onOpenCalculator && (
-                                <button
-                                    onClick={onOpenCalculator}
-                                    className="flex min-h-8 items-center gap-1.5 bg-orange-500/10 text-orange-500 px-2.5 py-1 rounded-full text-[11px] font-bold border border-orange-500/20 hover:bg-orange-500/20 transition-colors"
-                                >
-                                    <Calculator size={12} /> {t('servers.room.calculator')}
-                                </button>
-                            )}
                             <div className="text-[11px] text-slate-500 font-mono leading-snug">
                                 {t('servers.room.capacityLine', { placed: roomPlacedCount, capacity: roomCapacity })}{' '}
                                 {currentRoom && roomCapacity < currentRoom.maxCapacity && t('servers.room.maxHint', { max: currentRoom.maxCapacity })}

@@ -219,6 +219,19 @@ pub fn i32_cell(row: &tokio_postgres::Row, col: &str) -> i32 {
     if let Ok(v) = row.try_get::<_, i64>(col) {
         return i32::try_from(v).unwrap_or(0);
     }
+    if let Ok(Some(v)) = row.try_get::<_, Option<i64>>(col) {
+        return i32::try_from(v).unwrap_or(0);
+    }
+    // PG `smallint` → tokio_postgres `i16` (e.g. mining_coins.show_in_exchange).
+    if let Ok(v) = row.try_get::<_, i16>(col) {
+        return i32::from(v);
+    }
+    if let Ok(Some(v)) = row.try_get::<_, Option<i16>>(col) {
+        return i32::from(v);
+    }
+    if let Ok(v) = row.try_get::<_, bool>(col) {
+        return if v { 1 } else { 0 };
+    }
     0
 }
 
@@ -228,6 +241,15 @@ pub fn opt_i32_cell(row: &tokio_postgres::Row, col: &str) -> Option<i32> {
     }
     if let Ok(v) = row.try_get::<_, i32>(col) {
         return Some(v);
+    }
+    if let Ok(v) = row.try_get::<_, Option<i16>>(col) {
+        return v.map(i32::from);
+    }
+    if let Ok(v) = row.try_get::<_, i16>(col) {
+        return Some(i32::from(v));
+    }
+    if let Ok(v) = row.try_get::<_, bool>(col) {
+        return Some(if v { 1 } else { 0 });
     }
     None
 }
@@ -287,4 +309,45 @@ pub fn opt_f64_cell(row: &tokio_postgres::Row, col: &str) -> Option<f64> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    /// `tokio_postgres::Row` needs a live connection; assert the smallint branch stays wired
+    /// (regression: show_in_exchange smallint → always showInExchange=false).
+    #[test]
+    fn i32_cell_source_reads_i16_and_bool() {
+        let src = include_str!("mod.rs");
+        let cell = src
+            .split("pub fn i32_cell")
+            .nth(1)
+            .expect("i32_cell")
+            .split("pub fn opt_i32_cell")
+            .next()
+            .expect("i32_cell body");
+        assert!(
+            cell.contains("try_get::<_, i16>"),
+            "i32_cell must accept PG smallint (i16)"
+        );
+        assert!(
+            cell.contains("try_get::<_, bool>"),
+            "i32_cell must accept bool flags"
+        );
+    }
+
+    #[test]
+    fn opt_i32_cell_source_reads_i16() {
+        let src = include_str!("mod.rs");
+        let cell = src
+            .split("pub fn opt_i32_cell")
+            .nth(1)
+            .expect("opt_i32_cell")
+            .split("pub fn opt_string_cell")
+            .next()
+            .expect("opt_i32_cell body");
+        assert!(
+            cell.contains("try_get::<_, i16>") || cell.contains("try_get::<_, Option<i16>>"),
+            "opt_i32_cell must accept PG smallint (i16)"
+        );
+    }
 }

@@ -395,7 +395,7 @@ async fn catalog_mining_coins_from_client<C: GenericClient>(
                     block_time::double precision AS block_time,
                     price_usd::double precision AS price_usd,
                     target_daily_usd::double precision AS target_daily_usd,
-                    show_in_exchange, nft_room_only
+                    show_in_exchange, nft_room_only, icon_url
                FROM mining_coins ORDER BY name ASC",
             &[],
         )
@@ -428,6 +428,7 @@ async fn catalog_mining_coins_from_client<C: GenericClient>(
                 "targetDailyUSD": f64_cell(r, "target_daily_usd"),
                 "showInExchange": i32_cell(r, "show_in_exchange") != 0,
                 "nftRoomOnly": i32_cell(r, "nft_room_only") == 1,
+                "iconUrl": opt_string_cell(r, "icon_url"),
             })
         })
         .collect::<Vec<_>>()))

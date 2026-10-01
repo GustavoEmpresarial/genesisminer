@@ -388,7 +388,9 @@ export async function postServersRackAuxUnequip(
 export async function postServerRoomRoomCoins(
   roomId: string,
   coinId: string
-): Promise<{ ok: true; serverUpdatedAt: number; placedRacks: PlacedRack[] } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; serverUpdatedAt: number; placedRacks?: PlacedRack[] } | { ok: false; error: string }
+> {
   try {
     const res = await apiFetch(`${base}/server-room/room-coins`, {
       method: 'POST',
@@ -402,11 +404,14 @@ export async function postServerRoomRoomCoins(
     }
     const su = Number(data.serverUpdatedAt);
     if (Number.isFinite(su) && su > 0) setGlobalLastLoadTime(su);
-    return {
+    const ok: { ok: true; serverUpdatedAt: number; placedRacks?: PlacedRack[] } = {
       ok: true,
-      serverUpdatedAt: su,
-      placedRacks: Array.isArray(data.placedRacks) ? (data.placedRacks as PlacedRack[]) : []
+      serverUpdatedAt: su
     };
+    if (Array.isArray(data.placedRacks)) {
+      ok.placedRacks = data.placedRacks as PlacedRack[];
+    }
+    return ok;
   } catch {
     return { ok: false, error: 'Network error' };
   }

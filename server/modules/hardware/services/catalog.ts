@@ -25,6 +25,16 @@ export const LEGACY_1000WH_BATTERY_IDS = new Set(['small_battery', 'battery_prot
 
 export const KNOWN_INFINITE_BATTERY_IDS = new Set(['battery_estelar', 'battery_protostar', 'battery_stellar']);
 
+/**
+ * Legacy stock SKUs → canonical catalog id (1:1 with Rust `LEGACY_STOCK_ID_ALIASES`).
+ * Bare whale / retired RALLY ids fold into live catalog keys.
+ */
+export const LEGACY_STOCK_ID_ALIASES: ReadonlyMap<string, string> = new Map([
+  ['lucky_whale_statue', 'mult_lucky_whale_statue'],
+  ['rally_v3', 'gpu_rally_v1'],
+  ['rally_v1', 'gpu_rally_v1']
+]);
+
 /** Remapeia ids legados de bateria 1000Wh (`small_battery`, `battery_protostar`, `battery_stellar`) para o catálogo canónico `battery_estelar`. */
 export function normalizeKnown1000WhBatteryCatalogId(itemIdRaw: unknown): string {
   const itemId = itemIdRaw == null ? '' : String(itemIdRaw).trim();
@@ -41,10 +51,16 @@ export function remapPurgedStockItemId(itemIdRaw: unknown): string {
   return itemId;
 }
 
+function applyLegacyStockIdAlias(itemId: string): string {
+  return LEGACY_STOCK_ID_ALIASES.get(itemId) ?? itemId;
+}
+
 /** Normalização de chaves de `stock` no save-game e saneamento de BD. */
 export function normalizeStockCatalogItemId(itemIdRaw: unknown): string {
   const legacy = normalizeKnown1000WhBatteryCatalogId(itemIdRaw);
-  return remapPurgedStockItemId(legacy);
+  const purged = remapPurgedStockItemId(legacy);
+  if (!purged) return purged;
+  return applyLegacyStockIdAlias(purged);
 }
 
 /**

@@ -208,7 +208,7 @@ export function isAsicMachineUpgradeRow(up: UpgradeMiningRow | null | undefined)
   return cat.includes('asic');
 }
 
-export const NFT_ROOM_EXCLUDED_MACHINE_IDS = ['gpu_iceberg_v1', 'rally_v3'] as const;
+export const NFT_ROOM_EXCLUDED_MACHINE_IDS = ['gpu_iceberg_v1', 'rally_v3', 'gpu_rally_v1'] as const;
 
 /** O mesmo modelo aparece renomeado com/sem prefixo de família (`gpu_iceberg_v1` = `iceberg_v1`). */
 const MACHINE_FAMILY_ID_PREFIXES = ['gpu_', 'asic_', 'nft_'] as const;

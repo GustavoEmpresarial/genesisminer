@@ -6,7 +6,6 @@ import type { MessageTree } from '../../types';
 export const serversEn: MessageTree = {
   room: {
     defaultTitle: 'MINING RIG ROOM',
-    calculator: 'Calculator',
     capacityLine: 'Capacity: {{placed}} / {{capacity}} Rigs',
     maxHint: '(Max: {{max}})',
     roomLabel: 'Room',
@@ -125,7 +124,6 @@ export const serversEn: MessageTree = {
 export const serversPt: MessageTree = {
   room: {
     defaultTitle: 'SALA DE MINERAÇÃO',
-    calculator: 'Calculadora',
     capacityLine: 'Capacidade: {{placed}} / {{capacity}} Racks',
     maxHint: '(Máx: {{max}})',
     roomLabel: 'Sala',
@@ -244,7 +242,6 @@ export const serversPt: MessageTree = {
 export const serversEs: MessageTree = {
   room: {
     defaultTitle: 'SALA DE MINERÍA',
-    calculator: 'Calculadora',
     capacityLine: 'Capacidad: {{placed}} / {{capacity}} Racks',
     maxHint: '(Máx: {{max}})',
     roomLabel: 'Sala',

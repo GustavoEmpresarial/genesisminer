@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use deadpool_postgres::GenericClient;
-use genesis_core::hardware::catalog::normalize_known_1000wh_battery_catalog_id;
+use genesis_core::hardware::catalog::normalize_stock_catalog_item_id;
 use genesis_core::hardware::duration::is_timed_asic_duration;
 
 use crate::config::{current_unix_ms, HARDWARE_TX_TIMEOUT_MS};
@@ -101,6 +101,7 @@ async fn debit_stock_line<C: GenericClient>(
             item_id,
             i64::from(after),
             current_unix_ms(),
+            false,
         )
         .await?;
         // Timed units are the leases — sync by lease id; never qty-mint.
@@ -143,7 +144,7 @@ pub async fn adjust_stock<C: GenericClient>(
         if line.qty <= 0 {
             continue;
         }
-        let item_id = normalize_known_1000wh_battery_catalog_id(Some(&line.item_id));
+        let item_id = normalize_stock_catalog_item_id(Some(&line.item_id));
         if item_id.is_empty() {
             continue;
         }
@@ -157,7 +158,7 @@ pub async fn adjust_stock<C: GenericClient>(
         if line.qty <= 0 {
             continue;
         }
-        let item_id = normalize_known_1000wh_battery_catalog_id(Some(&line.item_id));
+        let item_id = normalize_stock_catalog_item_id(Some(&line.item_id));
         if item_id.is_empty() {
             continue;
         }

@@ -6,7 +6,7 @@ import type { MiningCoin } from '../types';
 
 export { miningCoinIconSrc };
 
-export type MiningCoinOption = Pick<MiningCoin, 'id' | 'name' | 'isActive' | 'symbol' | 'color'>;
+export type MiningCoinOption = Pick<MiningCoin, 'id' | 'name' | 'isActive' | 'symbol' | 'color' | 'iconUrl'>;
 
 /**
  * Lista de moedas com ícone (cryptocurrency-icons) + texto; menu em `position: fixed` para não ser cortado por modais.

@@ -210,6 +210,24 @@ mod tests {
     }
 
     #[test]
+    fn nft_collectible_excludes_gpu_rally_v1_and_legacy_rally_v3() {
+        assert!(NFT_ROOM_EXCLUDED_MACHINE_IDS.contains(&"gpu_rally_v1"));
+        assert!(NFT_ROOM_EXCLUDED_MACHINE_IDS.contains(&"rally_v3"));
+        assert!(!is_nft_collectible_machine_row(&MachineUpgradeRef {
+            id: "gpu_rally_v1".into(),
+            type_name: "machine".into(),
+            category: "nft".into(),
+            nft_mining_coin_id: Some("coin_a".into()),
+        }));
+        assert!(!is_nft_collectible_machine_row(&MachineUpgradeRef {
+            id: "rally_v3".into(),
+            type_name: "machine".into(),
+            category: "nft".into(),
+            nft_mining_coin_id: Some("coin_a".into()),
+        }));
+    }
+
+    #[test]
     fn rack_power_nft_on_without_selected_coin() {
         let coin_comes_from_machine = true;
         let has_selected_coin = false;

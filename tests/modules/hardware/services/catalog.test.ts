@@ -42,6 +42,26 @@ describe('remapPurgedStockItemId / normalizeStockCatalogItemId', () => {
     expect(normalizeStockCatalogItemId('small_battery')).toBe(CANONICAL_1000WH_BATTERY_ID);
     expect(normalizeStockCatalogItemId('charger_a2')).toBe('');
   });
+
+  it('normalizeStockCatalogItemId aliases bare lucky whale → mult', () => {
+    expect(normalizeStockCatalogItemId('lucky_whale_statue')).toBe('mult_lucky_whale_statue');
+  });
+
+  it('normalizeStockCatalogItemId keeps mult lucky whale intact', () => {
+    expect(normalizeStockCatalogItemId('mult_lucky_whale_statue')).toBe('mult_lucky_whale_statue');
+  });
+
+  it('normalizeStockCatalogItemId aliases retired rally ids → gpu_rally_v1', () => {
+    expect(normalizeStockCatalogItemId('rally_v3')).toBe('gpu_rally_v1');
+    expect(normalizeStockCatalogItemId('rally_v1')).toBe('gpu_rally_v1');
+    expect(normalizeStockCatalogItemId('gpu_rally_v1')).toBe('gpu_rally_v1');
+  });
+
+  it('normalizeStockCatalogItemId whale alias does not alter purge/battery', () => {
+    expect(normalizeStockCatalogItemId('small_battery')).toBe(CANONICAL_1000WH_BATTERY_ID);
+    expect(normalizeStockCatalogItemId('charger_a1')).toBe('');
+    expect(normalizeStockCatalogItemId('battery_aa')).toBe(CANONICAL_1000WH_BATTERY_ID);
+  });
 });
 
 describe('resolvePlacedRackBatteryCatalogId', () => {

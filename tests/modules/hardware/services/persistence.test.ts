@@ -236,3 +236,128 @@ describe('modules/hardware/services/persistence — ensureMountedStoredBatteries
     vi.doUnmock('../../../../server/modules/hardware/services/semantic-sync.js');
   });
 });
+
+describe('modules/hardware/services/persistence — merge qty 0 DELETE', () => {
+  afterEach(() => {
+    vi.doUnmock('../../../../server/modules/mining-engine/services/asic-lease.js');
+    vi.doUnmock('../../../../server/modules/hardware/services/semantic-sync.js');
+  });
+
+  it('merge: qty>0 UPSERT + qty 0 emite DELETE item_id = ANY; omitidos não', async () => {
+    vi.resetModules();
+    const asicLeaseMock = {
+      reconcileTimedAsicStockLeases: vi.fn().mockResolvedValue(undefined),
+      releaseAllEquippedLeasesOnRack: vi.fn().mockResolvedValue(undefined),
+      loadAsicDurationConfig: vi.fn().mockResolvedValue({ amount: 0, unit: null }),
+      isTimedAsicDuration: vi.fn().mockReturnValue(false)
+    };
+    const semanticSyncMock = { syncStoredBatterySemanticsForUser: vi.fn().mockResolvedValue(undefined) };
+    vi.doMock('../../../../server/modules/mining-engine/services/asic-lease.js', () => asicLeaseMock);
+    vi.doMock('../../../../server/modules/hardware/services/semantic-sync.js', () => semanticSyncMock);
+
+    const client = {
+      query: vi.fn(async (_sqlRaw: string, _params?: unknown[]) => ({ rows: [], rowCount: 0 }))
+    };
+
+    const { persistStockStoredBatteriesPlacedRacks } = await import(
+      '../../../../server/modules/hardware/services/persistence.js'
+    );
+
+    await persistStockStoredBatteriesPlacedRacks(
+      client as never,
+      10,
+      {
+        stock: { 'gpu.basic': 5, gone: 0 },
+        stockMode: 'merge'
+      } as never,
+      []
+    );
+
+    const calls = client.query.mock.calls as Array<[string, unknown?]>;
+    const sqlCalls = calls.map((c) => String(c[0]));
+    const upsert = calls.find((c) => String(c[0]).includes('INSERT INTO stock'));
+    expect(upsert).toBeDefined();
+    expect(upsert![1]).toEqual([10, ['gpu.basic'], [5]]);
+
+    const del = calls.find((c) =>
+      /DELETE FROM stock WHERE user_id = \$1 AND item_id = ANY\(\$2::text\[\]\)/.test(String(c[0]))
+    );
+    expect(del).toBeDefined();
+    expect(del![1]).toEqual([10, ['gone']]);
+
+    expect(sqlCalls.some((s) => s.includes('DELETE FROM stock WHERE user_id = $1 AND NOT'))).toBe(
+      false
+    );
+
+    expect(asicLeaseMock.reconcileTimedAsicStockLeases).toHaveBeenCalledWith(
+      client,
+      10,
+      'gpu.basic',
+      5,
+      expect.any(Number),
+      true
+    );
+    expect(asicLeaseMock.reconcileTimedAsicStockLeases).toHaveBeenCalledWith(
+      client,
+      10,
+      'gone',
+      0,
+      expect.any(Number),
+      false
+    );
+  });
+
+  it('partial: qty 0 não emite DELETE por item_id', async () => {
+    vi.resetModules();
+    const asicLeaseMock = {
+      reconcileTimedAsicStockLeases: vi.fn().mockResolvedValue(undefined),
+      releaseAllEquippedLeasesOnRack: vi.fn().mockResolvedValue(undefined),
+      loadAsicDurationConfig: vi.fn().mockResolvedValue({ amount: 0, unit: null }),
+      isTimedAsicDuration: vi.fn().mockReturnValue(false)
+    };
+    const semanticSyncMock = { syncStoredBatterySemanticsForUser: vi.fn().mockResolvedValue(undefined) };
+    vi.doMock('../../../../server/modules/mining-engine/services/asic-lease.js', () => asicLeaseMock);
+    vi.doMock('../../../../server/modules/hardware/services/semantic-sync.js', () => semanticSyncMock);
+
+    const client = {
+      query: vi.fn(async (_sqlRaw: string, _params?: unknown[]) => ({ rows: [], rowCount: 0 }))
+    };
+
+    const { persistStockStoredBatteriesPlacedRacks } = await import(
+      '../../../../server/modules/hardware/services/persistence.js'
+    );
+
+    await persistStockStoredBatteriesPlacedRacks(
+      client as never,
+      10,
+      {
+        stock: { 'gpu.basic': 2, gone: 0 },
+        stockMode: 'partial'
+      } as never,
+      []
+    );
+
+    const calls = client.query.mock.calls as Array<[string, unknown?]>;
+    const del = calls.find((c) =>
+      /DELETE FROM stock WHERE user_id = \$1 AND item_id = ANY\(\$2::text\[\]\)/.test(String(c[0]))
+    );
+    expect(del).toBeUndefined();
+    expect(asicLeaseMock.reconcileTimedAsicStockLeases).toHaveBeenCalledWith(
+      client,
+      10,
+      'gpu.basic',
+      2,
+      expect.any(Number),
+      false
+    );
+    expect(asicLeaseMock.reconcileTimedAsicStockLeases).not.toHaveBeenCalledWith(
+      client,
+      10,
+      'gone',
+      0,
+      expect.any(Number),
+      expect.anything()
+    );
+  });
+});
+

@@ -9,7 +9,7 @@
 
 /**
  * Sala inicial gratuita do admin — todo utilizador tem acesso sem comprar.
- * Fonte única: `modules/servers` e `modules/player-calculator` importam daqui
+ * Fonte única: `modules/servers` e o header/mining-engine importam daqui
  * em vez de redeclararem a string.
  */
 export const ROOM_INITIAL_ID = 'room_initial';

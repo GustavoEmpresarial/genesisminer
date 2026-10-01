@@ -193,9 +193,9 @@ export type GameStateChanges = {
    * - `'snapshot'`: o objeto representa o estoque livre completo do utilizador; linhas em
    *   `stock` ausentes do snapshot são apagadas (corrige duplicação infinita quando um item
    *   chega a qty 0 ao equipar no rack).
-   * - `'merge'`: UPSERT only — **nunca** `DELETE FROM stock WHERE NOT (item_id = ANY(...))`
-   *   (fecha wipe Grangeiro: SKUs omitidos do payload ficam).
-   * - `'partial'` (default): comportamento legado — apenas UPSERT das chaves presentes.
+   * - `'merge'`: UPSERT qty>0; qty 0 explícita DELETE esse SKU; **nunca**
+   *   `DELETE FROM stock WHERE NOT (item_id = ANY(...))` (SKUs omitidos ficam).
+   * - `'partial'` (default): comportamento legado — apenas UPSERT das chaves qty>0.
    */
   stockMode?: 'snapshot' | 'partial' | 'merge';
 };
@@ -518,15 +518,27 @@ export async function persistStockStoredBatteriesPlacedRacks(client: PoolClient,
     const stockMode: 'snapshot' | 'partial' | 'merge' =
       changes.stockMode === 'snapshot' ? 'snapshot' : changes.stockMode === 'merge' ? 'merge' : 'partial';
     const stockNorm = new Map<string, number>();
+    const zeroIdSet = new Set<string>();
     for (const [rawId, rawQty] of Object.entries(stock)) {
       const itemId = normalizeKnown1000WhBatteryCatalogId(rawId);
       if (!itemId) continue;
-      const qty = Math.floor(Number(rawQty) || 0);
-      if (qty <= 0) continue;
+      const n = Number(rawQty);
+      if (!Number.isFinite(n)) continue;
+      const qty = Math.floor(n);
+      if (qty < 0) continue;
+      if (qty === 0) {
+        // Merge only: explicit 0 → DELETE that SKU. Snapshot/partial still omit zeros.
+        if (stockMode === 'merge' && !stockNorm.has(itemId)) {
+          zeroIdSet.add(itemId);
+        }
+        continue;
+      }
+      zeroIdSet.delete(itemId);
       stockNorm.set(itemId, (stockNorm.get(itemId) || 0) + qty);
     }
     const itemIds = [...stockNorm.keys()];
     const qtys = itemIds.map((id) => stockNorm.get(id) || 0);
+    const zeroIds = [...zeroIdSet];
 
     if (stockMode === 'snapshot') {
       if (itemIds.length > 0) {
@@ -543,7 +555,7 @@ export async function persistStockStoredBatteriesPlacedRacks(client: PoolClient,
       }
       await client.query('DELETE FROM stock WHERE user_id = $1 AND qty <= 0', [uid]);
     } else if (stockMode === 'merge') {
-      // UPSERT only — never DELETE omitted SKUs (Grangeiro).
+      // UPSERT positives; explicit qty 0 DELETEs that SKU — never DELETE omitted SKUs.
       if (itemIds.length > 0) {
         await client.query(
           `
@@ -552,6 +564,12 @@ export async function persistStockStoredBatteriesPlacedRacks(client: PoolClient,
             ON CONFLICT (user_id, item_id) DO UPDATE SET qty = EXCLUDED.qty`,
           [uid, itemIds, qtys]
         );
+      }
+      if (zeroIds.length > 0) {
+        await client.query('DELETE FROM stock WHERE user_id = $1 AND item_id = ANY($2::text[])', [
+          uid,
+          zeroIds
+        ]);
       }
     } else if (itemIds.length > 0) {
       await client.query(
@@ -565,15 +583,23 @@ export async function persistStockStoredBatteriesPlacedRacks(client: PoolClient,
 
     const nowMs = Date.now();
     const userIdNum = Number(uid);
+    // Admin merge may mint timed ASIC leases to match target; snapshot/partial never mint (anti-cheat).
+    const allowLeaseMint = stockMode === 'merge';
     for (const [itemId, qty] of stockNorm.entries()) {
-      await reconcileTimedAsicStockLeases(client, userIdNum, itemId, qty, nowMs);
+      await reconcileTimedAsicStockLeases(client, userIdNum, itemId, qty, nowMs, allowLeaseMint);
+    }
+    if (stockMode === 'merge') {
+      for (const itemId of zeroIds) {
+        // Explicit qty 0 — trim only, never mint
+        await reconcileTimedAsicStockLeases(client, userIdNum, itemId, 0, nowMs, false);
+      }
     }
     if (stockMode === 'snapshot') {
       const leaseItems = await client.query(`SELECT DISTINCT item_id FROM player_asic_leases WHERE user_id = $1`, [uid]);
       for (const row of leaseItems.rows as { item_id: string }[]) {
         const id = String(row.item_id || '').trim();
         if (id && !stockNorm.has(id)) {
-          await reconcileTimedAsicStockLeases(client, userIdNum, id, 0, nowMs);
+          await reconcileTimedAsicStockLeases(client, userIdNum, id, 0, nowMs, false);
         }
       }
     }

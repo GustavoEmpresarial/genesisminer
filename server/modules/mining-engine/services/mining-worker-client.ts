@@ -10,7 +10,6 @@
 import { opsConfig } from '../../../core/ops/config.js';
 import { HttpControlledError } from '../../../shared/errors/http-controlled-error.js';
 import { MS_PER_SECOND } from '../../../shared/utils/time.js';
-import type { PlayerCalculatorSnapshot } from '../../player-calculator/services/snapshot-types.js';
 
 /** Default listen port for genesis-mining-worker (Compose / local). Single source for 8091. */
 export const MINING_WORKER_DEFAULT_PORT = 8091;
@@ -106,8 +105,6 @@ const MINING_WORKER_UPLOAD_CHAT_AUDIO_PATH = '/v1/uploads/chat-audio';
 /** Support attachment disk write — fixed contract with the Rust worker. */
 const MINING_WORKER_UPLOAD_SUPPORT_ATTACHMENT_PATH = '/v1/uploads/support-attachment';
 
-/** Calculator snapshot I/O + assemble — fixed contract with the Rust worker. */
-const MINING_WORKER_CALCULATOR_SNAPSHOT_PATH = '/v1/calculator/snapshot';
 const MINING_WORKER_CHECKIN_STATUS_PATH = '/v1/checkin/status';
 const MINING_WORKER_CHECKIN_PERFORM_PATH = '/v1/checkin/perform';
 const MINING_WORKER_QUESTS_STATE_PATH = '/v1/quests/state';
@@ -115,15 +112,11 @@ const MINING_WORKER_HEADER_PATH = '/v1/player-game/header';
 const MINING_WORKER_NAV_PATH = '/v1/player-game/nav';
 const MINING_WORKER_DISPLAY_LABELS_PATH = '/v1/settings/display-labels';
 const MINING_WORKER_PROFILE_STATE_PATH = '/v1/profile/state';
-/** Node `snapshot.ts` `HTTP_FORBIDDEN`. */
-const HTTP_FORBIDDEN = 403;
 /** Node checkin premium cooldown. */
 const HTTP_CONFLICT = 409;
 const HTTP_OK = 200;
 /** Worker `NOT_FOUND` HTTP status. */
 const HTTP_NOT_FOUND = 404;
-/** Node `snapshot.ts` `HTTP_UNPROCESSABLE_ENTITY`. */
-const HTTP_UNPROCESSABLE_ENTITY = 422;
 /** 5xx floor — fail-closed (same as auth-worker `HTTP_SERVER_ERROR_FLOOR`). */
 const HTTP_SERVER_ERROR_FLOOR = 500;
 
@@ -1681,154 +1674,6 @@ export async function callMiningWorkerUploadSupportAttachment(args: {
 function readFiniteNumber(raw: unknown, fallback = 0): number {
   const n = typeof raw === 'number' ? raw : Number(raw);
   return Number.isFinite(n) ? n : fallback;
-}
-
-function readCalculatorRows(raw: unknown): PlayerCalculatorSnapshot['coins'][number]['rows'] {
-  if (!Array.isArray(raw)) return [];
-  const out: PlayerCalculatorSnapshot['coins'][number]['rows'] = [];
-  for (const r of raw) {
-    if (!r || typeof r !== 'object') continue;
-    const o = r as Record<string, unknown>;
-    const label = typeof o.label === 'string' ? o.label : '';
-    if (!label) continue;
-    out.push({
-      label,
-      coins: readFiniteNumber(o.coins),
-      usd: readFiniteNumber(o.usd)
-    });
-  }
-  return out;
-}
-
-function readCalculatorSnapshot(body: Record<string, unknown>): PlayerCalculatorSnapshot | null {
-  if (typeof body.scope !== 'string' || !body.scope.trim()) return null;
-  if (!Array.isArray(body.scopesUi) || !Array.isArray(body.coinComparisons) || !Array.isArray(body.coins)) {
-    return null;
-  }
-  const scopesUi: PlayerCalculatorSnapshot['scopesUi'] = [];
-  for (const x of body.scopesUi) {
-    if (!x || typeof x !== 'object') continue;
-    const o = x as Record<string, unknown>;
-    const id = typeof o.id === 'string' ? o.id.trim() : '';
-    const name = typeof o.name === 'string' ? o.name.trim() : '';
-    if (id && name) scopesUi.push({ id, name });
-  }
-  const coinComparisons: PlayerCalculatorSnapshot['coinComparisons'] = [];
-  for (const x of body.coinComparisons) {
-    if (!x || typeof x !== 'object') continue;
-    const o = x as Record<string, unknown>;
-    const id = typeof o.id === 'string' ? o.id.trim() : '';
-    if (!id) continue;
-    coinComparisons.push({
-      id,
-      symbol: typeof o.symbol === 'string' ? o.symbol : id,
-      name: typeof o.name === 'string' ? o.name : id,
-      priceUSD: readFiniteNumber(o.priceUSD),
-      isActivelyMining: o.isActivelyMining === true,
-      dailyCoins: readFiniteNumber(o.dailyCoins),
-      dailyUsd: readFiniteNumber(o.dailyUsd),
-      projection30Usd: readFiniteNumber(o.projection30Usd),
-      rows: readCalculatorRows(o.rows)
-    });
-  }
-  const coins: PlayerCalculatorSnapshot['coins'] = [];
-  for (const x of body.coins) {
-    if (!x || typeof x !== 'object') continue;
-    const o = x as Record<string, unknown>;
-    const id = typeof o.id === 'string' ? o.id.trim() : '';
-    if (!id) continue;
-    const blockHistory: PlayerCalculatorSnapshot['coins'][number]['blockHistory'] = [];
-    if (Array.isArray(o.blockHistory)) {
-      for (const h of o.blockHistory) {
-        if (!h || typeof h !== 'object') continue;
-        const item = h as Record<string, unknown>;
-        const entryId =
-          typeof item.id === 'string'
-            ? item.id
-            : typeof item.id === 'number' || typeof item.id === 'bigint'
-              ? String(item.id)
-              : '';
-        if (!entryId) continue;
-        blockHistory.push({
-          id: entryId,
-          roomId: typeof item.roomId === 'string' && item.roomId.trim() ? item.roomId.trim() : null,
-          windowStartMs: readFiniteNumber(item.windowStartMs),
-          windowEndMs: readFiniteNumber(item.windowEndMs),
-          creditedBlocks: readFiniteNumber(item.creditedBlocks),
-          amountCoins: readFiniteNumber(item.amountCoins),
-          amountUsd: readFiniteNumber(item.amountUsd),
-          userHashHps: readFiniteNumber(item.userHashHps),
-          networkHashrate: readFiniteNumber(item.networkHashrate),
-          blockReward: readFiniteNumber(item.blockReward),
-          blockTime: readFiniteNumber(item.blockTime)
-        });
-      }
-    }
-    coins.push({
-      id,
-      symbol: typeof o.symbol === 'string' ? o.symbol : id,
-      name: typeof o.name === 'string' ? o.name : id,
-      priceUSD: readFiniteNumber(o.priceUSD),
-      networkHashrate: readFiniteNumber(o.networkHashrate),
-      blockReward: readFiniteNumber(o.blockReward),
-      blockTime: readFiniteNumber(o.blockTime),
-      userPowerHps: readFiniteNumber(o.userPowerHps),
-      dailyCoins: readFiniteNumber(o.dailyCoins),
-      dailyUsd: readFiniteNumber(o.dailyUsd),
-      projection30Usd: readFiniteNumber(o.projection30Usd),
-      nftRoomOnly: o.nftRoomOnly === true,
-      independentPool: o.independentPool === true,
-      rows: readCalculatorRows(o.rows),
-      blockHistory
-    });
-  }
-  return {
-    scope: body.scope.trim(),
-    scopesUi,
-    generalPowerHps: readFiniteNumber(body.generalPowerHps),
-    coinComparisons,
-    coins
-  };
-}
-
-/**
- * Fail-closed calculator snapshot via mining worker (`POST /v1/calculator/snapshot`).
- * Unset URL throws (same as chat/support). 403 FORBIDDEN_SCOPE / 422 INVALID_SCOPE
- * rethrow as `HttpControlledError` — same contract as GET `/api/calculator/me`.
- */
-export async function callMiningWorkerCalculatorSnapshot(
-  userId: number,
-  scope?: string
-): Promise<PlayerCalculatorSnapshot> {
-  const { status, body } = await postMiningWorkerJson(
-    MINING_WORKER_CALCULATOR_SNAPSHOT_PATH,
-    { userId, ...(scope != null ? { scope } : {}) },
-    MINING_WORKER_PROGRESS_TIMEOUT_MS,
-    'calculator snapshot'
-  );
-  const code = readOptionalString(body.code);
-  if (status === HTTP_UNPROCESSABLE_ENTITY || code === 'INVALID_SCOPE') {
-    throw new HttpControlledError(HTTP_UNPROCESSABLE_ENTITY, {
-      error: readOptionalString(body.error) ?? 'Invalid scope parameter.',
-      code: 'INVALID_SCOPE'
-    });
-  }
-  if (status === HTTP_FORBIDDEN || code === 'FORBIDDEN_SCOPE') {
-    throw new HttpControlledError(HTTP_FORBIDDEN, {
-      error: readOptionalString(body.error) ?? 'No access to this room.',
-      code: 'FORBIDDEN_SCOPE'
-    });
-  }
-  if (body.ok !== true) {
-    throw new Error(
-      readOptionalString(body.error) ?? `mining worker calculator snapshot HTTP ${status}`
-    );
-  }
-  const snap = readCalculatorSnapshot(body);
-  if (!snap) {
-    throw new Error('mining worker calculator snapshot invalid body');
-  }
-  return snap;
 }
 
 async function callMiningRead(

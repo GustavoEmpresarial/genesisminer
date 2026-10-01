@@ -175,8 +175,21 @@ pub fn i32_cell(row: &tokio_postgres::Row, col: &str) -> i32 {
     if let Ok(v) = row.try_get::<_, i32>(col) {
         return v;
     }
+    if let Ok(Some(v)) = row.try_get::<_, Option<i32>>(col) {
+        return v;
+    }
     if let Ok(v) = row.try_get::<_, i64>(col) {
         return i32::try_from(v).unwrap_or(0);
+    }
+    // PG `smallint` → `i16` (e.g. mining_coins.show_in_exchange / nft_room_only).
+    if let Ok(v) = row.try_get::<_, i16>(col) {
+        return i32::from(v);
+    }
+    if let Ok(Some(v)) = row.try_get::<_, Option<i16>>(col) {
+        return i32::from(v);
+    }
+    if let Ok(v) = row.try_get::<_, bool>(col) {
+        return if v { 1 } else { 0 };
     }
     0
 }

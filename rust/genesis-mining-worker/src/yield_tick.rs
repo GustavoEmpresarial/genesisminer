@@ -175,14 +175,20 @@ async fn execute_mining_yield_tick(pool: &Pool, cfg: &WorkerConfig) -> anyhow::R
     let mut slots_map: HashMap<String, Vec<Option<String>>> = HashMap::new();
     for s in &slot_rows {
         let rid: String = s.get("rack_id");
-        let mid: String = s.get("machine_item_id");
-        slots_map.entry(rid).or_default().push(Some(mid));
+        let mid: Option<String> = s.get("machine_item_id");
+        let mid = mid
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+        slots_map.entry(rid).or_default().push(mid);
     }
     let mut multi_map: HashMap<String, Vec<Option<String>>> = HashMap::new();
     for m in &multi_rows {
         let rid: String = m.get("rack_id");
-        let mid: String = m.get("multiplier_item_id");
-        multi_map.entry(rid).or_default().push(Some(mid));
+        let mid: Option<String> = m.get("multiplier_item_id");
+        let mid = mid
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty());
+        multi_map.entry(rid).or_default().push(mid);
     }
 
     let mut real_network: HashMap<String, f64> = HashMap::new();

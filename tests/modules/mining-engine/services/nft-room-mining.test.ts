@@ -9,6 +9,7 @@ import {
   listSlotMiningCredits,
   NFT_AUTO_ALLOWED_CHASSIS_ID,
   NFT_AUTO_ROOM_ID,
+  NFT_ROOM_EXCLUDED_MACHINE_IDS,
   nftMiningCoinIdFromUpgrade,
   normalizeMiningCoinSymbolKey,
   rackMultiplierFactor,
@@ -99,7 +100,11 @@ describe('isAsicMachineUpgradeRow / isNftRoomCatalogMachineRow / nftMiningCoinId
   });
 
   it('máquinas excluídas nunca entram no catálogo NFT', () => {
+    expect(NFT_ROOM_EXCLUDED_MACHINE_IDS).toContain('gpu_rally_v1');
+    expect(NFT_ROOM_EXCLUDED_MACHINE_IDS).toContain('rally_v3');
     expect(isNftRoomCatalogMachineRow({ type: 'machine', id: 'iceberg_v1', nft_mining_coin_id: 'coin_a' })).toBe(false);
+    expect(isNftRoomCatalogMachineRow({ type: 'machine', id: 'gpu_rally_v1', nft_mining_coin_id: 'coin_a' })).toBe(false);
+    expect(isNftRoomCatalogMachineRow({ type: 'machine', id: 'rally_v3', nft_mining_coin_id: 'coin_a' })).toBe(false);
   });
 
   it('nftMiningCoinIdFromUpgrade devolve null quando ausente', () => {

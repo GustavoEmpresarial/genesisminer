@@ -180,6 +180,13 @@ pub const YIELD_HISTORY_LOOKBACK_MS: i64 = (YIELD_HISTORY_LOOKBACK_HOURS * MS_PE
 pub const CLOCK_SKEW_ALLOW_MS: i64 = (5 * MS_PER_MINUTE) as i64;
 /// `SET LOCAL statement_timeout` / `lock_timeout` inside progress TX.
 pub const PROGRESS_TX_TIMEOUT_MS: u64 = 5 * MS_PER_SECOND;
+/// Node `WORKER_PROGRESS_TIMEOUT_TX_MULTIPLIER` — HTTP budget headroom for worker RTT.
+pub const WORKER_PROGRESS_TIMEOUT_TX_MULTIPLIER: u64 = 6;
+/// Node `MINING_WORKER_PROGRESS_TIMEOUT_MS` — shared budget for hardware credit HTTP.
+pub const HARDWARE_CREDIT_TIMEOUT_MS: u64 =
+    PROGRESS_TX_TIMEOUT_MS * WORKER_PROGRESS_TIMEOUT_TX_MULTIPLIER;
+
+const _: () = assert!(HARDWARE_CREDIT_TIMEOUT_MS == 30_000);
 /// Canonical mined balance decimals (saque/UI).
 pub const MINED_COIN_AMOUNT_DECIMALS: i32 = 8;
 pub const IDEMPOTENCY_KEY_MAX_LENGTH: usize = 190;
@@ -289,12 +296,10 @@ pub struct WorkerConfig {
     pub partner_avatar_dir: String,
     /// `GENESIS_AUTH_URL` — password hash/verify + refresh revoke. `None` = fail-closed 503.
     pub genesis_auth_url: Option<String>,
-    /// Node `PARTNER_GAMES_MAINTENANCE` — `1`/`true` = hub in maintenance.
+    /// `GENESIS_HARDWARE_URL` — stock/lease credit twin. `None` = fail-closed on credit.
+    pub genesis_hardware_url: Option<String>,
+    /// `PARTNER_GAMES_MAINTENANCE` — `1`/`true` = hub in maintenance (mining-worker SoT).
     pub partner_games_maintenance: bool,
-    /// `ANTHROPIC_API_KEY` — calculator "Analisar com IA". `None` = `AI_NOT_CONFIGURED`.
-    pub anthropic_api_key: Option<String>,
-    /// `CALCULATOR_AI_MODEL` — Anthropic model id for the calculator analysis.
-    pub calculator_ai_model: String,
 }
 
 impl WorkerConfig {
@@ -479,16 +484,11 @@ impl WorkerConfig {
                 .ok()
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
-            partner_games_maintenance: partner_games_maintenance_from_env(),
-            anthropic_api_key: std::env::var("ANTHROPIC_API_KEY")
+            genesis_hardware_url: std::env::var("GENESIS_HARDWARE_URL")
                 .ok()
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
-            calculator_ai_model: std::env::var("CALCULATOR_AI_MODEL")
-                .ok()
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| "claude-sonnet-5".to_string()),
+            partner_games_maintenance: partner_games_maintenance_from_env(),
         })
     }
 

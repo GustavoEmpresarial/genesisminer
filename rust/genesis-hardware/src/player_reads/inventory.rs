@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use deadpool_postgres::{GenericClient, Pool};
 use genesis_core::catalog::TEMP_LEGACY_ID_PREFIX;
 use genesis_core::hardware::catalog::{
-    normalize_known_1000wh_battery_catalog_id, CANONICAL_1000WH_BATTERY_ID, PURGED_LEGACY_STOCK_IDS,
+    normalize_known_1000wh_battery_catalog_id, normalize_stock_catalog_item_id,
+    CANONICAL_1000WH_BATTERY_ID, PURGED_LEGACY_STOCK_IDS,
 };
 use genesis_core::hardware::duration::is_timed_asic_duration;
 use serde::Serialize;
@@ -418,7 +419,13 @@ fn resolve_stackable_rows(
                         }
                     }
                 }
-                if let Some(real) = upgrade_by_id.get(orig_id) {
+                let resolved_orig = normalize_stock_catalog_item_id(Some(orig_id));
+                let lookup_id = if resolved_orig.is_empty() {
+                    orig_id
+                } else {
+                    resolved_orig.as_str()
+                };
+                if let Some(real) = upgrade_by_id.get(lookup_id) {
                     if !real.name.is_empty() {
                         let mut base = map_upgrade_to_stack(stock_key, *qty, real);
                         base.stock_key = stock_key.clone();
