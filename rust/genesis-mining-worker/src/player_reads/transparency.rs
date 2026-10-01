@@ -2,10 +2,11 @@
 
 use deadpool_postgres::{GenericClient, Pool};
 use genesis_core::{
-    compute_transparency_health, PlayerCashFlows, TransparencyHealthEntry,
-    TRANSPARENCY_HEALTH_FLOOR,
+    compute_transparency_health_with, HealthPeriodScope, HealthSettings, PlayerCashFlows,
+    TransparencyHealthEntry,
 };
 use serde_json::{json, Value};
+use tracing::warn;
 
 use super::{f64_cell, i32_cell, i64_cell, now_ms, opt_string, string_cell, PlayerReadError};
 
@@ -31,32 +32,95 @@ pub async fn run_transparency_health(pool: &Pool) -> Result<Value, PlayerReadErr
                     .and_then(|v| v.as_i64())
                     .map(|n| n as f64)
             }),
+            period_ym: e
+                .get("periodYm")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
         });
     }
     let now = now_ms();
-    let cash = load_player_cash_flows(&conn, now).await.unwrap_or_default();
-    let snap = compute_transparency_health(&health_entries, now, &cash);
+    let settings = load_health_settings(&conn).await;
+    let cash = load_player_cash_flows(&conn, now, settings.season_start_ms)
+        .await
+        .unwrap_or_default();
+    let snap = compute_transparency_health_with(&health_entries, now, &cash, &settings);
     let mut body =
         serde_json::to_value(&snap).map_err(|e| PlayerReadError::internal(e.to_string()))?;
     if let Value::Object(ref mut m) = body {
-        m.insert("floor".into(), json!(TRANSPARENCY_HEALTH_FLOOR));
+        m.insert("floor".into(), json!(settings.effective_floor()));
         m.insert("computedAt".into(), json!(now));
     }
+    // Deliberately NOT exposed here: override_enabled / override_value / weights.
+    // This endpoint is public; the admin panel reads them from the admin settings route.
     Ok(body)
 }
 
-/// Season window start for the health cash-flows — `2026-09-01T00:00:00Z`
-/// (matches the client copy: "depósitos on-chain … desde 01/09/2026 00:00 UTC").
-/// `SELECT (extract(epoch FROM timestamptz '2026-09-01 00:00:00+00')*1000)::bigint`.
-const HEALTH_SEASON_START_MS: i64 = 1_788_220_800_000;
+/// Single-row knobs (`id = 1`). Any failure — missing table on an un-migrated DB, bad
+/// row — degrades to the historical defaults and logs, rather than 500-ing a public page.
+pub(crate) async fn load_health_settings<C: GenericClient>(conn: &C) -> HealthSettings {
+    let row = conn
+        .query_opt(
+            "SELECT weight_inflow::float8   AS weight_inflow,
+                    weight_rent::float8     AS weight_rent,
+                    weight_ledger::float8   AS weight_ledger,
+                    floor_score,
+                    season_start_ms,
+                    period_scope,
+                    count_undated,
+                    override_enabled,
+                    override_value
+               FROM transparency_health_settings
+              WHERE id = 1",
+            &[],
+        )
+        .await;
+
+    let row = match row {
+        Ok(Some(r)) => r,
+        Ok(None) => return HealthSettings::default(),
+        Err(e) => {
+            warn!(
+                event = "transparency_health_settings_read_failed",
+                err = %e,
+                "falling back to default health settings"
+            );
+            return HealthSettings::default();
+        }
+    };
+
+    let d = HealthSettings::default();
+    HealthSettings {
+        weight_inflow: row.try_get::<_, f64>("weight_inflow").unwrap_or(d.weight_inflow),
+        weight_rent: row.try_get::<_, f64>("weight_rent").unwrap_or(d.weight_rent),
+        weight_ledger: row.try_get::<_, f64>("weight_ledger").unwrap_or(d.weight_ledger),
+        floor: row.try_get::<_, i32>("floor_score").unwrap_or(d.floor),
+        season_start_ms: row
+            .try_get::<_, i64>("season_start_ms")
+            .unwrap_or(d.season_start_ms),
+        period_scope: row
+            .try_get::<_, String>("period_scope")
+            .ok()
+            .and_then(|s| HealthPeriodScope::parse(&s))
+            .unwrap_or(d.period_scope),
+        count_undated: row.try_get::<_, bool>("count_undated").unwrap_or(d.count_undated),
+        override_enabled: row
+            .try_get::<_, bool>("override_enabled")
+            .unwrap_or(d.override_enabled),
+        override_value: row.try_get::<_, Option<i32>>("override_value").unwrap_or(None),
+    }
+}
+
 /// BRT is UTC-3 — same offset `genesis_core::transparency::health` uses for "day".
 const BRT_OFFSET_MS: i64 = 3 * genesis_core::time::MS_PER_HOUR as i64;
 
-/// On-chain USDC in/out since the season start, plus today's (BRT) slice.
+/// On-chain USDC in/out since `season_start_ms`, plus today's (BRT) slice.
 /// deposits = `user_deposit_history`; withdrawals = paid (`completed`) `withdrawal_requests`.
+/// The window comes from `transparency_health_settings` so it stays in step with the
+/// period scope applied to published entries — mixing the two is what broke the index.
 async fn load_player_cash_flows<C: GenericClient>(
     conn: &C,
     now_ms: i64,
+    season_start_ms: i64,
 ) -> Result<PlayerCashFlows, PlayerReadError> {
     let local = now_ms - BRT_OFFSET_MS;
     let brt_today_start =
@@ -69,7 +133,7 @@ async fn load_player_cash_flows<C: GenericClient>(
                     COALESCE(SUM(amount_usdc) FILTER (WHERE created_at >= $2), 0)::float8 AS day_total
                FROM user_deposit_history
               WHERE created_at >= $1",
-            &[&HEALTH_SEASON_START_MS, &brt_today_start],
+            &[&season_start_ms, &brt_today_start],
         )
         .await?;
     let wd = conn
@@ -78,7 +142,7 @@ async fn load_player_cash_flows<C: GenericClient>(
                     COALESCE(SUM(amount_usdc) FILTER (WHERE created_at >= $2), 0)::float8 AS day_total
                FROM withdrawal_requests
               WHERE status = 'completed' AND created_at >= $1",
-            &[&HEALTH_SEASON_START_MS, &brt_today_start],
+            &[&season_start_ms, &brt_today_start],
         )
         .await?;
 

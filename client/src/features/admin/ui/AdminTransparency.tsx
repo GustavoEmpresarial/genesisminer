@@ -10,8 +10,8 @@ import {
 } from '../../../shared/api/admin-legacy';
 import { getTransparencyHealth, type TransparencyHealthSnapshot } from '../../../shared/api/transparency';
 import { TRANSPARENCY_BODY_MAX, TRANSPARENCY_LINK_MAX, TRANSPARENCY_TITLE_MAX } from '../../../shared/constants/formLimits';
-import { computeTransparencyHealth } from '../../transparency/lib/health';
 import { TransparencyHealthBoard } from '../../transparency/ui/TransparencyHealthBoard';
+import { AdminTransparencyHealthSettings } from './AdminTransparencyHealthSettings';
 import {
   collectPeriodYmOptions,
   currentPeriodYmUtc,
@@ -20,6 +20,9 @@ import {
   normalizePeriodYm,
   sumTransparencySheet
 } from '../../transparency/lib/periodYm';
+
+/** Só estas três alimentam o sub-score "portal"; investment/other são informativos. */
+const LEDGER_CATS: TransparencyCategory[] = ['pool', 'trade', 'expense'];
 
 const CATS: { id: TransparencyCategory; label: string }[] = [
   { id: 'pool', label: 'Pool / tesouraria (entrada)' },
@@ -80,10 +83,9 @@ export const AdminTransparency: React.FC = () => {
 
   const sheetTotals = useMemo(() => sumTransparencySheet(sheetRows), [sheetRows]);
 
-  const healthSnapshot = useMemo(
-    () => healthFromApi ?? computeTransparencyHealth(rows),
-    [healthFromApi, rows]
-  );
+  // Sem recálculo local: o cliente não conhece os pesos, o piso, o âmbito de período nem
+  // um valor fixado à mão, por isso um fallback mostraria um número diferente do real.
+  const healthSnapshot = healthFromApi;
 
   const formatUsdc = useCallback((n: number) => {
     if (!Number.isFinite(n)) return '—';
@@ -223,14 +225,23 @@ export const AdminTransparency: React.FC = () => {
         <div>
           <h2 className="text-xl font-bold text-white">Transparência (jogadores)</h2>
           <p className="text-xs text-slate-500">
-            Planilha mês a mês. «Geral» = comunicados e ativos permanentes. Saúde do jogo continua a usar todos os
-            lançamentos. Depósitos/saques on-chain desde 01/09/2026 00:00 UTC.
+            Planilha mês a mês. «Geral» = comunicados e ativos permanentes. O que entra no índice de saúde
+            (âmbito de período, pesos e piso) configura-se no painel abaixo.
           </p>
         </div>
       </div>
 
+      <AdminTransparencyHealthSettings onSaved={() => void load()} />
+
       {!loading ? (
-        <TransparencyHealthBoard snapshot={healthSnapshot} formatUsdc={formatUsdc} variant="admin" />
+        healthSnapshot ? (
+          <TransparencyHealthBoard snapshot={healthSnapshot} formatUsdc={formatUsdc} variant="admin" />
+        ) : (
+          <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4 text-sm text-slate-400">
+            Índice de saúde indisponível — falha a ler <code>/api/transparency/health</code>. Os
+            lançamentos abaixo continuam editáveis.
+          </div>
+        )
       ) : null}
 
       <div className="bg-slate-800/80 border border-slate-700 rounded-xl p-4 space-y-3">
@@ -430,6 +441,7 @@ export const AdminTransparency: React.FC = () => {
                   <th className="px-3 py-2 font-bold">Título</th>
                   <th className="px-3 py-2 font-bold text-right">USDC</th>
                   <th className="px-3 py-2 font-bold">Link</th>
+                  <th className="px-3 py-2 font-bold">No cálculo</th>
                   <th className="px-3 py-2 font-bold w-28">Ações</th>
                 </tr>
               </thead>
@@ -437,7 +449,7 @@ export const AdminTransparency: React.FC = () => {
                 {sheetRows.map((r) =>
                   editingId === r.id && editDraft ? (
                     <tr key={r.id} className="border-t border-slate-700 bg-slate-900/40 align-top">
-                      <td className="px-2 py-2" colSpan={6}>
+                      <td className="px-2 py-2" colSpan={7}>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                           <select
                             className="bg-slate-950 border border-slate-600 rounded px-2 py-1.5 text-xs text-white"
@@ -533,6 +545,17 @@ export const AdminTransparency: React.FC = () => {
                       </td>
                       <td className="px-3 py-2 text-[11px] text-slate-500 max-w-[160px] truncate">
                         {r.linkUrl || '—'}
+                      </td>
+                      <td className="px-3 py-2">
+                        {LEDGER_CATS.includes(r.category) ? (
+                          <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold bg-emerald-950/60 text-emerald-300 ring-1 ring-emerald-500/30">
+                            entra
+                          </span>
+                        ) : (
+                          <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-bold bg-slate-800 text-slate-500 ring-1 ring-slate-600/40">
+                            fora
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex gap-1">

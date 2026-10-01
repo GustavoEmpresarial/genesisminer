@@ -4,9 +4,11 @@
 mod health;
 
 pub use health::{
-    clamp_health, compute_transparency_health, health_band, is_same_zoned_day,
-    normalize_health_category, score_inflow, score_published_ledger, score_rent, HealthBand,
-    PlayerCashFlows, TransparencyHealthCategory, TransparencyHealthEntry,
-    TransparencyHealthSnapshot, HEALTH_WEIGHT_INFLOW, HEALTH_WEIGHT_LEDGER, HEALTH_WEIGHT_RENT,
-    TRANSPARENCY_HEALTH_CEILING, TRANSPARENCY_HEALTH_FLOOR, TRANSPARENCY_HEALTH_TZ,
+    clamp_health, clamp_health_with, compute_transparency_health, compute_transparency_health_with,
+    entry_in_scope, health_band, is_same_zoned_day, normalize_health_category,
+    normalize_period_ym, period_ym_from_ms, score_inflow, score_published_ledger, score_rent,
+    HealthBand, HealthPeriodScope, HealthSettings, PlayerCashFlows, TransparencyHealthCategory,
+    TransparencyHealthEntry, TransparencyHealthSnapshot, HEALTH_SEASON_START_MS_DEFAULT,
+    HEALTH_WEIGHT_INFLOW, HEALTH_WEIGHT_LEDGER, HEALTH_WEIGHT_RENT, TRANSPARENCY_HEALTH_CEILING,
+    TRANSPARENCY_HEALTH_FLOOR, TRANSPARENCY_HEALTH_TZ,
 };

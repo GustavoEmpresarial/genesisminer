@@ -7,7 +7,9 @@
 use deadpool_postgres::Pool;
 use serde_json::{json, Value};
 
-use crate::player_reads::transparency::map_entry;
+use genesis_core::{HealthPeriodScope, HealthSettings};
+
+use crate::player_reads::transparency::{load_health_settings, map_entry};
 use crate::player_reads::PlayerReadError;
 
 pub const TRANSPARENCY_ADMIN_CREATE_PATH: &str = "/v1/transparency/admin/create";
@@ -398,4 +400,227 @@ mod tests {
         assert_eq!(parse_sort_order(Some(&json!("x"))), 0);
         assert_eq!(parse_sort_order(None), 0);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Health index knobs (`transparency_health_settings`, single row id = 1)
+// ---------------------------------------------------------------------------
+
+pub const TRANSPARENCY_ADMIN_HEALTH_GET_PATH: &str = "/v1/transparency/admin/health-settings/get";
+pub const TRANSPARENCY_ADMIN_HEALTH_UPDATE_PATH: &str =
+    "/v1/transparency/admin/health-settings/update";
+
+/// Weights must add up to a whole; float noise from the UI is tolerated.
+const WEIGHT_SUM_EPSILON: f64 = 1e-3;
+/// Sanity bound for `season_start_ms` — 2020-01-01 .. 2100-01-01.
+const SEASON_MIN_MS: i64 = 1_577_836_800_000;
+const SEASON_MAX_MS: i64 = 4_102_444_800_000;
+
+fn settings_to_json(s: &HealthSettings, updated_at: i64, updated_by: Option<&str>) -> Value {
+    json!({
+        "weightInflow": s.weight_inflow,
+        "weightRent": s.weight_rent,
+        "weightLedger": s.weight_ledger,
+        "floor": s.floor,
+        "seasonStartMs": s.season_start_ms,
+        "periodScope": s.period_scope.as_str(),
+        "countUndated": s.count_undated,
+        "overrideEnabled": s.override_enabled,
+        "overrideValue": s.override_value,
+        "updatedAt": updated_at,
+        "updatedBy": updated_by,
+    })
+}
+
+fn req_f64(m: &serde_json::Map<String, Value>, key: &str, label: &str) -> Result<f64, PlayerReadError> {
+    let v = match m.get(key) {
+        Some(Value::Number(n)) => n.as_f64(),
+        Some(Value::String(s)) => s.trim().replace(',', ".").parse::<f64>().ok(),
+        _ => None,
+    };
+    let n = v.ok_or_else(|| bad(&format!("{label} em falta ou inválido")))?;
+    if !n.is_finite() {
+        return Err(bad(&format!("{label} tem de ser um número finito")));
+    }
+    Ok(n)
+}
+
+fn req_i32(m: &serde_json::Map<String, Value>, key: &str, label: &str) -> Result<i32, PlayerReadError> {
+    let n = req_f64(m, key, label)?;
+    if n.fract() != 0.0 {
+        return Err(bad(&format!("{label} tem de ser inteiro")));
+    }
+    Ok(n as i32)
+}
+
+fn req_bool(m: &serde_json::Map<String, Value>, key: &str, label: &str) -> Result<bool, PlayerReadError> {
+    match m.get(key) {
+        Some(Value::Bool(b)) => Ok(*b),
+        Some(Value::String(s)) => match s.trim() {
+            "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            _ => Err(bad(&format!("{label} inválido"))),
+        },
+        _ => Err(bad(&format!("{label} em falta"))),
+    }
+}
+
+/// Whitelist parse — nothing outside these keys reaches the table, so a stray field in
+/// the request body can never become a column write.
+fn plan_health_settings(body: &Value) -> Result<HealthSettings, PlayerReadError> {
+    let m = obj(body);
+
+    let weight_inflow = req_f64(&m, "weightInflow", "Peso 'quanto entra'")?;
+    let weight_rent = req_f64(&m, "weightRent", "Peso 'rentabilização'")?;
+    let weight_ledger = req_f64(&m, "weightLedger", "Peso 'portal'")?;
+    for (w, label) in [
+        (weight_inflow, "Peso 'quanto entra'"),
+        (weight_rent, "Peso 'rentabilização'"),
+        (weight_ledger, "Peso 'portal'"),
+    ] {
+        if !(0.0..=1.0).contains(&w) {
+            return Err(bad(&format!("{label} tem de estar entre 0 e 1")));
+        }
+    }
+    let sum = weight_inflow + weight_rent + weight_ledger;
+    if (sum - 1.0).abs() > WEIGHT_SUM_EPSILON {
+        return Err(bad(&format!(
+            "Os três pesos têm de somar 1 (somam {sum:.3})"
+        )));
+    }
+
+    let floor = req_i32(&m, "floor", "Piso")?;
+    if !(0..=100).contains(&floor) {
+        return Err(bad("Piso tem de estar entre 0 e 100"));
+    }
+
+    let season_start_ms = req_f64(&m, "seasonStartMs", "Início da temporada")? as i64;
+    if !(SEASON_MIN_MS..=SEASON_MAX_MS).contains(&season_start_ms) {
+        return Err(bad("Início da temporada fora de um intervalo plausível"));
+    }
+
+    let period_scope = match m.get("periodScope").and_then(|v| v.as_str()) {
+        Some(s) => HealthPeriodScope::parse(s)
+            .ok_or_else(|| bad("Âmbito de período inválido (season | all_time | current_month)"))?,
+        None => return Err(bad("Âmbito de período em falta")),
+    };
+
+    let count_undated = req_bool(&m, "countUndated", "Contar lançamentos sem período")?;
+    let override_enabled = req_bool(&m, "overrideEnabled", "Fixar saúde à mão")?;
+
+    let override_value = match m.get("overrideValue") {
+        Some(Value::Null) | None => None,
+        _ => Some(req_i32(&m, "overrideValue", "Valor fixado")?),
+    };
+    if let Some(v) = override_value {
+        if !(0..=100).contains(&v) {
+            return Err(bad("Valor fixado tem de estar entre 0 e 100"));
+        }
+    }
+    if override_enabled && override_value.is_none() {
+        return Err(bad("Para fixar a saúde é preciso indicar o valor"));
+    }
+
+    Ok(HealthSettings {
+        weight_inflow,
+        weight_rent,
+        weight_ledger,
+        floor,
+        season_start_ms,
+        period_scope,
+        count_undated,
+        override_enabled,
+        override_value,
+    })
+}
+
+/// Actor injected by `genesis-api` after `require_admin`; any client-supplied value is
+/// ignored there, so this can be trusted as the operator's id.
+fn actor_of(body: &Value) -> Option<String> {
+    match obj(body).get("actorUserId") {
+        Some(Value::Number(n)) => Some(n.to_string()),
+        Some(Value::String(s)) if !s.trim().is_empty() => Some(s.trim().to_string()),
+        _ => None,
+    }
+}
+
+pub async fn run_transparency_health_settings_get(pool: &Pool) -> Result<Value, PlayerReadError> {
+    let conn = pool.get().await?;
+    let settings = load_health_settings(&conn).await;
+    let meta = conn
+        .query_opt(
+            "SELECT updated_at, updated_by FROM transparency_health_settings WHERE id = 1",
+            &[],
+        )
+        .await
+        .ok()
+        .flatten();
+    let (updated_at, updated_by) = match meta {
+        Some(r) => (
+            r.try_get::<_, i64>("updated_at").unwrap_or(0),
+            r.try_get::<_, Option<String>>("updated_by").unwrap_or(None),
+        ),
+        None => (0, None),
+    };
+    Ok(settings_to_json(&settings, updated_at, updated_by.as_deref()))
+}
+
+pub async fn run_transparency_health_settings_update(
+    pool: &Pool,
+    body: &Value,
+    now_ms: i64,
+) -> Result<Value, PlayerReadError> {
+    let next = plan_health_settings(body)?;
+    let actor = actor_of(body);
+
+    let mut conn = pool.get().await?;
+    let tx = conn.transaction().await?;
+
+    let before = load_health_settings(&tx).await;
+    let before_json = settings_to_json(&before, 0, None);
+
+    tx.execute(
+        "INSERT INTO transparency_health_settings
+            (id, weight_inflow, weight_rent, weight_ledger, floor_score, season_start_ms,
+             period_scope, count_undated, override_enabled, override_value, updated_at, updated_by)
+         VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (id) DO UPDATE SET
+            weight_inflow = EXCLUDED.weight_inflow,
+            weight_rent = EXCLUDED.weight_rent,
+            weight_ledger = EXCLUDED.weight_ledger,
+            floor_score = EXCLUDED.floor_score,
+            season_start_ms = EXCLUDED.season_start_ms,
+            period_scope = EXCLUDED.period_scope,
+            count_undated = EXCLUDED.count_undated,
+            override_enabled = EXCLUDED.override_enabled,
+            override_value = EXCLUDED.override_value,
+            updated_at = EXCLUDED.updated_at,
+            updated_by = EXCLUDED.updated_by",
+        &[
+            &next.weight_inflow,
+            &next.weight_rent,
+            &next.weight_ledger,
+            &next.floor,
+            &next.season_start_ms,
+            &next.period_scope.as_str(),
+            &next.count_undated,
+            &next.override_enabled,
+            &next.override_value,
+            &now_ms,
+            &actor,
+        ],
+    )
+    .await?;
+
+    let after_json = settings_to_json(&next, now_ms, actor.as_deref());
+    tx.execute(
+        "INSERT INTO transparency_health_settings_audit
+            (changed_at, changed_by, before_json, after_json)
+         VALUES ($1, $2, $3, $4)",
+        &[&now_ms, &actor, &before_json, &after_json],
+    )
+    .await?;
+
+    tx.commit().await?;
+    Ok(after_json)
 }

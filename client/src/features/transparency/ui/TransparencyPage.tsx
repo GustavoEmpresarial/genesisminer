@@ -30,7 +30,7 @@ import {
 } from '../../../shared/api/transparency';
 import { dateLocaleFor } from '../../../shared/utils/locale-format';
 import { isSafeHttpsLink } from '../../../shared/utils/safe-https-link';
-import { computeTransparencyHealth, normalizeHealthCategory } from '../lib/health';
+import { normalizeHealthCategory } from '../lib/health';
 import {
   collectPeriodYmOptions,
   currentPeriodYmUtc,
@@ -185,10 +185,9 @@ export function TransparencyPage() {
     return { pool, expense, investment, other, withAmount, totalWeighted, informative };
   }, [filteredItems, sheetTotals]);
 
-  const healthSnapshot = useMemo(
-    () => healthFromApi ?? computeTransparencyHealth(items),
-    [healthFromApi, items]
-  );
+  // Só o servidor conhece pesos, piso, âmbito de período e um eventual valor fixado:
+  // recalcular aqui publicaria um número diferente do oficial.
+  const healthSnapshot = healthFromApi;
 
   const weightByCategory = useMemo(() => {
     const rows: { cat: TransparencyCategory; amount: number; label: string }[] = [];
@@ -395,7 +394,7 @@ export function TransparencyPage() {
         </div>
       )}
 
-      {!loading && !error && (
+      {!loading && !error && healthSnapshot && (
         <TransparencyHealthBoard snapshot={healthSnapshot} formatUsdc={formatUsdc} />
       )}
 
