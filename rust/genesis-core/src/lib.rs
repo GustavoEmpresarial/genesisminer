@@ -34,11 +34,6 @@ pub use auth::{
     UsernameValidation, WalletValidation,
 };
 
-pub use calculator::{
-    compute_snapshot as compute_calculator_snapshot, CalculatorComputeInput,
-    PlayerCalculatorSnapshot,
-};
-
 pub use checkin::{
     can_early_checkin_for_next_period, has_checked_in_current_period, is_checkin_frozen_at_ms,
     is_checkin_frozen_for_mining, is_premium_within_active_window, is_within_active_checkin_window,
@@ -71,9 +66,11 @@ pub use game_nav::{
 };
 
 pub use partner_games::{
-    accept_heartbeat, build_session_event, session_config, HeartbeatDecision, SessionConfig,
-    SessionEvent, SessionReason, CREDITED_MINUTES_PER_HEARTBEAT, EMBED_PATH, HEARTBEAT_INTERVAL_MS,
-    PUBLIC_URL, SESSION_KIND,
+    accept_heartbeat, build_session_event, catalog, game_by_slug, CatalogConfig, HeartbeatDecision,
+    PartnerGame, SessionEvent, SessionReason, BLOCKMINER_EMBED_PATH, BLOCKMINER_PUBLIC_URL,
+    BLOCKMINER_SESSION_KIND, BLOCKMINER_SLUG, CREDITED_MINUTES_PER_HEARTBEAT, EMBED_PATH,
+    HEARTBEAT_INTERVAL_MS, MASTER_LEGENDS_EMBED_PATH, MASTER_LEGENDS_SLUG, PUBLIC_URL,
+    SECTION_OFFICIAL, SECTION_PARTNER, SESSION_KIND,
 };
 
 pub use market::{
@@ -151,9 +148,11 @@ pub use catalog::{
 };
 
 pub use transparency::{
-    clamp_health, compute_transparency_health, health_band, normalize_health_category,
-    score_inflow, score_published_ledger, score_rent, HealthBand, PlayerCashFlows,
-    TransparencyHealthCategory, TransparencyHealthEntry, TransparencyHealthSnapshot,
+    clamp_health, clamp_health_with, compute_transparency_health, compute_transparency_health_with,
+    entry_in_scope, health_band, normalize_health_category, normalize_period_ym,
+    period_ym_from_ms, score_inflow, score_published_ledger, score_rent, HealthBand,
+    HealthPeriodScope, HealthSettings, PlayerCashFlows, TransparencyHealthCategory,
+    TransparencyHealthEntry, TransparencyHealthSnapshot, HEALTH_SEASON_START_MS_DEFAULT,
     HEALTH_WEIGHT_INFLOW, HEALTH_WEIGHT_LEDGER, HEALTH_WEIGHT_RENT, TRANSPARENCY_HEALTH_CEILING,
     TRANSPARENCY_HEALTH_FLOOR,
 };

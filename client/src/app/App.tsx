@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthPage } from '../features/auth';
 import { HomePage, LandingHeader, MaintenancePage, PublicPagesOutlet } from '../features/landing';
 import { AdminShell } from '../features/admin';
@@ -9,13 +9,14 @@ import type { User } from '../shared/types/auth';
 import { getSession, logout } from '../shared/api/auth';
 import { getSiteStatus } from '../shared/api/site-maintenance';
 import { resolveMaintenanceFlag, shouldBlockGameAndLanding } from './siteMaintenanceGate';
+import { decideAdminCtaAction } from './adminExit';
 import { stopImpersonate } from '../shared/api/admin-legacy';
 import { AUTH_REQUIRED_EVENT, isAuthFailureHandling, setSessionHint } from '../shared/api/http';
 import {
-  ADMIN_AFTER_STOP_IMPERSONATE_PATH,
   adminPathFromLocation,
   classifyLocation,
   pathForAuthMode,
+  pathForGameView,
   pathForPublicView,
   pushPath,
   replacePath,
@@ -55,6 +56,7 @@ export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [siteMaintenance, setSiteMaintenance] = useState(false);
+  const adminExitInFlightRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -135,6 +137,14 @@ export function App() {
     window.addEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
     return () => window.removeEventListener(AUTH_REQUIRED_EVENT, onAuthRequired);
   }, []);
+
+  /** Soft enterAdmin sem isAdmin: nunca cair na landing; recuperar para o jogo. */
+  useEffect(() => {
+    if (view === 'admin' && user && !user.isAdmin) {
+      replacePath(pathForGameView('servers'));
+      setView('game');
+    }
+  }, [view, user]);
 
   useEffect(() => {
     const onPopState = () => {
@@ -235,19 +245,29 @@ export function App() {
     setView('admin');
   }, []);
 
-  /** ADMIN no jogo: entra no painel, ou sai da personificação se `isImpersonating`. */
+  /**
+   * ADMIN no jogo: sempre tenta stop-impersonate (não depende só de `isImpersonating`).
+   * ok → hard nav admin; any failed stop + isAdmin → soft enterAdmin (own-game); else alert.
+   */
   const onAdmin = useCallback(async () => {
-    if (user?.isImpersonating) {
+    if (adminExitInFlightRef.current) return;
+    adminExitInFlightRef.current = true;
+    try {
       const res = await stopImpersonate();
-      if (!res.ok) {
-        alert(res.error);
+      const decision = decideAdminCtaAction(res, user);
+      if (decision.action === 'hard_nav') {
+        window.location.assign(decision.path);
         return;
       }
-      window.location.assign(ADMIN_AFTER_STOP_IMPERSONATE_PATH);
-      return;
+      if (decision.action === 'enter_admin') {
+        enterAdmin();
+        return;
+      }
+      alert(decision.error || 'Stop impersonation failed');
+    } finally {
+      adminExitInFlightRef.current = false;
     }
-    enterAdmin();
-  }, [user?.isImpersonating, enterAdmin]);
+  }, [user, enterAdmin]);
 
   const enterGame = useCallback(() => {
     if (shouldBlockGameAndLanding(siteMaintenance, !!user?.isAdmin)) return;
@@ -377,7 +397,8 @@ export function App() {
     return <MaintenancePage onAdminLogin={() => openAuth('login')} showLogin={!user} />;
   }
 
-  if (view === 'game' && user) {
+  // Soft enterAdmin sem isAdmin: render game (effect corrige view/path); nunca landing.
+  if (user && (view === 'game' || (view === 'admin' && !user.isAdmin))) {
     return (
       <GameShell
         user={user}

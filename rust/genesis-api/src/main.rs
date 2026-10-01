@@ -15,6 +15,7 @@ mod admin_quests;
 mod admin_ranking;
 mod admin_referral;
 mod admin_security;
+mod admin_shop;
 mod admin_support;
 mod admin_wallet_ops;
 mod admin_wheel;

@@ -86,6 +86,7 @@ export const en: MessageTree = {
     wallet: 'My Wallet',
     withdrawal_history: 'Withdrawal History',
     ranking: 'Leaderboard',
+    calculator: 'Calculator',
     upgrade: 'Events & Passes',
     transparency: 'Transparency Portal',
     support: 'Support',
@@ -97,7 +98,6 @@ export const en: MessageTree = {
     profile: 'Profile',
     management: 'Management',
     merge: 'Merge',
-    calculator: 'Calculator',
     dashboard: 'Dashboard',
     sectionOps: 'Operations',
     sectionEconomy: 'Economy',
@@ -125,7 +125,6 @@ export const en: MessageTree = {
     skipToMain: 'Skip to main content',
     projectHealthTitle: 'Project health — open transparency',
     backToServers: 'Back to servers',
-    calculatorPending: 'The calculator has not been ported yet. Return to servers to continue.',
     pageNotPorted: 'Navbar and sidebar are active. The «{{view}}» screen has not been ported yet.',
     managingAccountBanner:
       'Management mode — operating {{username}}. Check-in, farm currency, mount/dismount rigs and machines.',
@@ -320,7 +319,7 @@ export const en: MessageTree = {
       daily_checkin: {
         title: 'Daily check-in',
         description:
-          'Complete today’s check-in (00:00 UTC cycle). With a premium pass, each day in the active window counts automatically.'
+          'Complete today’s check-in (00:00 UTC cycle). With premium check-in (accumulated USDC deposited ≥ limit), each day in the active window counts automatically.'
       },
       daily_merge: {
         title: 'Forge 1 merge',
@@ -341,7 +340,7 @@ export const en: MessageTree = {
       weekly_checkin: {
         title: 'Weekly check-in',
         description:
-          'Check in on 5 different days this week. With a premium pass, each day in the active window counts as 1.'
+          'Check in on 5 different days this week. With premium check-in, each day in the active window counts as 1.'
       },
       weekly_merge: {
         title: 'Weekly Forge',
@@ -404,7 +403,10 @@ export const en: MessageTree = {
     invalidResponse: 'Invalid server response.',
     loadError: 'Could not load support.',
     fileTooLarge: '«{{name}}» exceeds the {{mb}} MB limit per file.',
-    tooManyFiles: 'Maximum {{max}} attachments.'
+    tooManyFiles: 'Maximum {{max}} attachments.',
+    fileTypeNotAllowed:
+      '«{{name}}» type not allowed. Use PNG, JPG, GIF, WEBP or MP4/WEBM/MOV video (not HEIC).',
+    fileTooSmall: '«{{name}}» invalid or empty file.'
   },
   checkin: {
     pageEyebrow: 'Operations · Daily',
@@ -425,7 +427,7 @@ export const en: MessageTree = {
     rewardCycle: 'Reward cycle:',
     bonusAccumulated: 'Accumulated bonus:',
     titlePremiumFrozen:
-      'Mining frozen — premium check-in every {{days}} days (pass ≥ {{minUsdc}} USDC).',
+      'Mining frozen — premium check-in every {{days}} days (accumulated deposit ≥ {{minUsdc}} USDC).',
     titlePremiumActive: 'Premium check-in active — mining until ~{{time}}.',
     titleDailyFrozen:
       'Mining frozen — check in to farm again (daily check-in resets at 00:00 UTC).',
@@ -735,7 +737,8 @@ export const en: MessageTree = {
     imageUnavailable: 'Image unavailable',
     dismissAction: 'I read this',
     dismissing: 'Saving…',
-    noticeAria: 'Notice'
+    noticeAria: 'Notice',
+    closeAria: 'Close'
   },
   guide: {
     title: 'Genesis Miner Guide',

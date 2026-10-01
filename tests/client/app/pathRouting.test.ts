@@ -23,6 +23,7 @@ describe('pathRouting — página → URL', () => {
     expect(pathForGameView('black_market')).toBe('/black_market');
     expect(pathForGameView('hardware_store')).toBe('/hardware_store');
     expect(pathForGameView('deposit_history')).toBe('/deposit_history');
+    expect(pathForGameView('reinvestment_history')).toBe('/reinvestment_history');
   });
 
   it('mapeia páginas públicas', () => {
@@ -119,10 +120,12 @@ describe('pathRouting — round-trip game views', () => {
     'withdrawal_history',
     'profile',
     'dashboard',
-    'calculator',
     'merge',
     'management',
-    'deposit_history'
+    'deposit_history',
+    'reinvestment_history',
+    'calculator',
+    'ranking'
   ] as const;
 
   for (const view of samples) {

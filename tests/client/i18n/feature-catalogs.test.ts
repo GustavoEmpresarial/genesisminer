@@ -15,6 +15,7 @@ import { blackMarketEn, blackMarketEs, blackMarketPt } from '../../../client/src
 import { profileEn, profileEs, profilePt } from '../../../client/src/shared/i18n/locales/features/profile.js';
 import { serversEn, serversEs, serversPt } from '../../../client/src/shared/i18n/locales/features/servers.js';
 import { rankingEn, rankingEs, rankingPt } from '../../../client/src/shared/i18n/locales/features/ranking.js';
+import { calculatorEn, calculatorEs, calculatorPt } from '../../../client/src/shared/i18n/locales/features/calculator.js';
 import { partnerGamesEn, partnerGamesEs, partnerGamesPt } from '../../../client/src/shared/i18n/locales/features/partnerGames.js';
 import { roadmapEn, roadmapEs, roadmapPt } from '../../../client/src/shared/i18n/locales/features/roadmap.js';
 import {
@@ -42,6 +43,7 @@ const CATALOGS: Record<AppLocale, MessageTree> = {
     profile: profileEn,
     servers: serversEn,
     ranking: rankingEn,
+    calculator: calculatorEn,
     partnerGames: partnerGamesEn,
     roadmap: roadmapEn
   }),
@@ -56,6 +58,7 @@ const CATALOGS: Record<AppLocale, MessageTree> = {
     profile: profilePt,
     servers: serversPt,
     ranking: rankingPt,
+    calculator: calculatorPt,
     partnerGames: partnerGamesPt,
     roadmap: roadmapPt
   }),
@@ -70,6 +73,7 @@ const CATALOGS: Record<AppLocale, MessageTree> = {
     profile: profileEs,
     servers: serversEs,
     ranking: rankingEs,
+    calculator: calculatorEs,
     partnerGames: partnerGamesEs,
     roadmap: roadmapEs
   })

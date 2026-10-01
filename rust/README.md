@@ -34,7 +34,7 @@ the standalone binary `genesis-mining-worker`.
 | Mining domain math | `GENESIS_MINING_RUST=1` | rede, grelha 10 min, integral yield, history, yield-boundary | residual napi se ainda chamado |
 | Mining engine I/O | `GENESIS_MINING_WORKER_URL` | yield cron + `POST /v1/mining/progress` + ranking HTTP | Express chama HTTP; sem URL → TS fallback |
 | Ranking I/O | (same URL) | refresh loop + `GET /v1/ranking/{public,me,admin}` | Express delega; Node loop noops |
-| Partner Games | `GENESIS_PARTNER_GAMES_RUST=1` | session config + heartbeat gate | Redis last-hb, Kafka publish, Express, UI |
+| Partner Games | mining-worker | multi-game catalog + session by slug + heartbeat gate | Redis last-hb, Kafka publish, genesis-api facade, UI |
 | Market / black-market | `GENESIS_MARKET_RUST=1` | page/tax/reserve helpers + band USD | P2P mutations Prisma, WS |
 | Lucky boxes | `GENESIS_LUCKY_BOXES_RUST=1` | independent + grant-all rolls | open/buy tx Prisma; samples from Node RNG |
 | Wallet helpers | `GENESIS_WALLET_RUST=1` | desk percent + fraction gates | deposits / on-chain RPC ❌ |
@@ -57,7 +57,7 @@ Legenda: ✅ domínio Rust em prod (flag Compose) · 🟡 parcial (math / worker
 | Mining domain math | ✅ | Via napi + worker |
 | Mining engine I/O | ✅ | `genesis-mining-worker` |
 | Ranking | ✅ | Worker HTTP + Kafka `genesis.ranking.snapshot` |
-| Partner Games | ✅ | Config/heartbeat Rust; Redis+Kafka+API Node |
+| Partner Games | ✅ | Catalog + session-by-slug in core/worker; genesis-api facade |
 | Market / black-market | ✅ | Domain helpers Rust; mutations Prisma ❌ |
 | Wheel / loot odds | ✅ | Lucky-box rolls Rust; open tx Node |
 | Offerwall | ❌ | |
@@ -144,7 +144,7 @@ Kafka: tópicos `genesis.mining.progress` + `genesis.ranking.snapshot` + `genesi
 1. ~~**Check-in BRT**~~ → **Check-in UTC 00:00 + grace 48h** (`GENESIS_CHECKIN_RUST=1`) ✅
 2. Affinity de salas / validators
 3. ~~Mining domain math (rede + grelha + accrual + yield boundary)~~ ✅ `GENESIS_MINING_RUST=1`
-4. ~~**Partner Games**~~ ✅ `GENESIS_PARTNER_GAMES_RUST=1`
+4. ~~**Partner Games**~~ ✅ mining-worker catalog + session by slug
 5. ~~Market reserve~~ ✅ `GENESIS_MARKET_RUST=1`
 6. ~~Lucky-box rolls~~ ✅ `GENESIS_LUCKY_BOXES_RUST=1`
 7. ~~Wallet desk helpers~~ ✅ `GENESIS_WALLET_RUST=1` (deposits still Node)

@@ -5,6 +5,8 @@ export const SUPPORT_TICKET_MESSAGE_MAX = 8000;
 /** Por ficheiro / contagem; alinhado com `server/modules/support/services/limits.ts`. */
 export const SUPPORT_ATTACHMENT_MAX_BYTES = 12 * 1024 * 1024;
 export const SUPPORT_ATTACHMENT_MAX_COUNT = 5;
+/** Mirrors worker `MAGIC_BYTES_MIN_LEN` — reject empty / truncated stubs. */
+export const SUPPORT_ATTACHMENT_MIN_BYTES = 12;
 
 /** Contacto guest (pré-login) — alinhado com `SUPPORT_CONTACT_*` no backend. */
 export const SUPPORT_CONTACT_NAME_MAX = 80;
@@ -24,6 +26,10 @@ export const PARTNER_CHANNEL_DESCRIPTION_MAX = 800;
 export const PARTNER_AVATAR_URL_MAX = 800;
 /** Motivo ao recusar envio (`partnerYoutubeController`). */
 export const PARTNER_REJECT_REASON_MAX = 500;
+
+/** Filtros do histórico admin da loja — `SHOP_ITEM_ID_MAX` / `SHOP_SEARCH_MAX` no mining-worker. */
+export const ADMIN_SHOP_ITEM_ID_MAX = 200;
+export const ADMIN_SHOP_SEARCH_MAX = 254;
 
 /** Alinhado com `POST/PUT /api/admin/transparency` em `server.ts`. */
 export const TRANSPARENCY_TITLE_MAX = 300;

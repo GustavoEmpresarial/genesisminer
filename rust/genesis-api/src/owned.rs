@@ -38,9 +38,109 @@ fn is_unported_player_leftover(_method: &Method, _path: &str) -> bool {
 
 /// `true` → reverse-proxy to Express. Admin + unported player leftovers.
 /// Socket.IO is **not** proxied (owned by genesis-api).
+/// Ported `/api/admin/...` routes registered on genesis-api are owned here.
+fn is_ported_admin_route(method: &Method, path: &str) -> bool {
+    (method == Method::POST && is_admin_users_save_game_override(path))
+        || (method == Method::PUT && is_admin_users_rooms(path))
+        || (method == Method::GET && is_admin_users_wallet_history(path))
+        || (method == Method::GET && is_admin_users_reinvestment_history(path))
+        || (method == Method::POST && is_admin_users_grant_premium_checkin(path))
+        || (method == Method::POST && path == "/api/admin/impersonate")
+        || (method == Method::POST && path == "/api/admin/stop-impersonate")
+        || (method == Method::GET && is_admin_user_activity(path))
+        || is_admin_referral_models(method, path)
+        || is_admin_access_level_referral(method, path)
+        || (method == Method::GET && path == "/api/admin/accounts-dormant-mining")
+        || (method == Method::GET && path == "/api/admin/shop/checkouts")
+        || (method == Method::GET && path == "/api/admin/purchases/report")
+}
+
+/// `POST /api/admin/users/:userId/save-game-override` — genesis-api `admin_users`.
+fn is_admin_users_save_game_override(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/api/admin/users/") else {
+        return false;
+    };
+    let Some(id) = rest.strip_suffix("/save-game-override") else {
+        return false;
+    };
+    !id.is_empty() && !id.contains('/')
+}
+
+/// `PUT /api/admin/users/:userId/rooms`.
+fn is_admin_users_rooms(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/api/admin/users/") else {
+        return false;
+    };
+    let Some(id) = rest.strip_suffix("/rooms") else {
+        return false;
+    };
+    !id.is_empty() && !id.contains('/')
+}
+
+/// `GET /api/admin/users/:userId/wallet-history`.
+fn is_admin_users_wallet_history(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/api/admin/users/") else {
+        return false;
+    };
+    let Some(id) = rest.strip_suffix("/wallet-history") else {
+        return false;
+    };
+    !id.is_empty() && !id.contains('/')
+}
+
+/// `POST /api/admin/users/:userId/grant-premium-checkin`.
+fn is_admin_users_grant_premium_checkin(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/api/admin/users/") else {
+        return false;
+    };
+    let Some(id) = rest.strip_suffix("/grant-premium-checkin") else {
+        return false;
+    };
+    !id.is_empty() && !id.contains('/')
+}
+
+/// `GET /api/admin/users/:userId/reinvestment-history`.
+fn is_admin_users_reinvestment_history(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix("/api/admin/users/") else {
+        return false;
+    };
+    let Some(id) = rest.strip_suffix("/reinvestment-history") else {
+        return false;
+    };
+    !id.is_empty() && !id.contains('/')
+}
+
+/// `GET /api/admin/user-activity` (+ optional trailing slash).
+fn is_admin_user_activity(path: &str) -> bool {
+    path == "/api/admin/user-activity"
+}
+
+/// `GET|POST /api/admin/referral-models` and `DELETE /api/admin/referral-models/:id`.
+fn is_admin_referral_models(method: &Method, path: &str) -> bool {
+    if path == "/api/admin/referral-models" {
+        return *method == Method::GET || *method == Method::POST;
+    }
+    if *method != Method::DELETE {
+        return false;
+    }
+    let Some(rest) = path.strip_prefix("/api/admin/referral-models/") else {
+        return false;
+    };
+    !rest.is_empty() && !rest.contains('/')
+}
+
+/// `GET|POST /api/admin/access-level-referral-assignments`.
+fn is_admin_access_level_referral(method: &Method, path: &str) -> bool {
+    path == "/api/admin/access-level-referral-assignments"
+        && (*method == Method::GET || *method == Method::POST)
+}
+
 pub fn should_proxy_express(method: &Method, path: &str) -> bool {
     let path = path.split('?').next().unwrap_or(path);
     if is_socket_io(path) {
+        return false;
+    }
+    if is_ported_admin_route(method, path) {
         return false;
     }
     if is_admin_prefix(path) {
@@ -147,22 +247,120 @@ mod tests {
 
     #[test]
     fn admin_users_prefix_still_proxies() {
-        // Only the leftovers moved; `/api/admin/users/*` stays on Express.
-        assert!(should_proxy_express(
+        // Most `/api/admin/users/*` stays on Express; these profile leftovers are Rust.
+        assert!(!should_proxy_express(
             &Method::GET,
             "/api/admin/users/7/wallet-history"
         ));
-        assert!(should_proxy_express(
+        assert!(is_owned_route(
+            &Method::GET,
+            "/api/admin/users/7/wallet-history"
+        ));
+        assert!(!should_proxy_express(
+            &Method::GET,
+            "/api/admin/users/7/reinvestment-history"
+        ));
+        assert!(is_owned_route(
+            &Method::GET,
+            "/api/admin/users/7/reinvestment-history"
+        ));
+        assert!(!should_proxy_express(
             &Method::POST,
             "/api/admin/impersonate"
         ));
-        assert!(should_proxy_express(
+        assert!(is_owned_route(&Method::POST, "/api/admin/impersonate"));
+        assert!(!should_proxy_express(
+            &Method::POST,
+            "/api/admin/stop-impersonate"
+        ));
+        assert!(is_owned_route(
+            &Method::POST,
+            "/api/admin/stop-impersonate"
+        ));
+        assert!(!should_proxy_express(
             &Method::POST,
             "/api/admin/users/7/save-game-override"
         ));
-        assert!(should_proxy_express(
+        assert!(is_owned_route(
+            &Method::POST,
+            "/api/admin/users/7/save-game-override"
+        ));
+        assert!(!should_proxy_express(
+            &Method::POST,
+            "/api/admin/users/7/grant-premium-checkin"
+        ));
+        assert!(is_owned_route(
+            &Method::POST,
+            "/api/admin/users/7/grant-premium-checkin"
+        ));
+        assert!(!should_proxy_express(
             &Method::PUT,
             "/api/admin/users/7/rooms"
+        ));
+        assert!(is_owned_route(&Method::PUT, "/api/admin/users/7/rooms"));
+        assert!(!should_proxy_express(
+            &Method::GET,
+            "/api/admin/user-activity"
+        ));
+        assert!(is_owned_route(&Method::GET, "/api/admin/user-activity"));
+        // Referral models + assignments + dormant mining are Rust-owned.
+        assert!(!should_proxy_express(
+            &Method::GET,
+            "/api/admin/referral-models"
+        ));
+        assert!(is_owned_route(&Method::GET, "/api/admin/referral-models"));
+        assert!(!should_proxy_express(
+            &Method::POST,
+            "/api/admin/referral-models"
+        ));
+        assert!(!should_proxy_express(
+            &Method::DELETE,
+            "/api/admin/referral-models/3"
+        ));
+        assert!(is_owned_route(
+            &Method::DELETE,
+            "/api/admin/referral-models/3"
+        ));
+        assert!(!should_proxy_express(
+            &Method::GET,
+            "/api/admin/access-level-referral-assignments"
+        ));
+        assert!(!should_proxy_express(
+            &Method::POST,
+            "/api/admin/access-level-referral-assignments"
+        ));
+        assert!(!should_proxy_express(
+            &Method::GET,
+            "/api/admin/accounts-dormant-mining"
+        ));
+        assert!(is_owned_route(
+            &Method::GET,
+            "/api/admin/accounts-dormant-mining"
+        ));
+        assert!(!should_proxy_express(
+            &Method::GET,
+            "/api/admin/shop/checkouts"
+        ));
+        assert!(is_owned_route(
+            &Method::GET,
+            "/api/admin/shop/checkouts"
+        ));
+        assert!(!should_proxy_express(
+            &Method::GET,
+            "/api/admin/purchases/report"
+        ));
+        assert!(is_owned_route(
+            &Method::GET,
+            "/api/admin/purchases/report"
+        ));
+        // Unported admin users sub-routes still proxy.
+        assert!(should_proxy_express(
+            &Method::GET,
+            "/api/admin/users/7/account-trace"
+        ));
+        assert!(should_proxy_express(
+            &Method::GET,
+            "/api/admin/users"
         ));
     }
 

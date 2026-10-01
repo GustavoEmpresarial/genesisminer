@@ -8,6 +8,9 @@ const base = '/api';
 export type PlayerGameMiningCoin = {
   id: string;
   name: string;
+  symbol: string;
+  color?: string;
+  iconUrl?: string | null;
 };
 
 export type PlayerGameHeaderPayload = {
@@ -52,7 +55,17 @@ export async function getPlayerGameHeader(): Promise<PlayerGameHeaderPayload | n
       const id = typeof r.id === 'string' ? r.id.trim() : String(r.id ?? '').trim();
       if (!id) continue;
       const name = typeof r.name === 'string' && r.name.trim() ? r.name.trim() : id;
-      miningCoins.push({ id, name });
+      const symbol =
+        typeof r.symbol === 'string' && r.symbol.trim()
+          ? r.symbol.trim()
+          : name;
+      const color =
+        typeof r.color === 'string' && r.color.trim() ? r.color.trim() : undefined;
+      const iconUrl =
+        typeof r.iconUrl === 'string' && r.iconUrl.trim()
+          ? r.iconUrl.trim()
+          : null;
+      miningCoins.push({ id, name, symbol, color, iconUrl });
     }
     return {
       ok: true,

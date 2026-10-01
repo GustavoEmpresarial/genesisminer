@@ -13,11 +13,6 @@ export type GenesisNativeMerge = {
   mergeSourceCatalogsEquivalentJson?: (leftJson: string, rightJson: string) => boolean;
 };
 
-export type GenesisNativeCalculator = {
-  calculatorPing?: () => string;
-  calculatorComputeSnapshotJson?: (inputJson: string) => string;
-};
-
 export type GenesisNativeAuth = {
   authPing?: () => string;
   authValidateLoginFieldsJson?: (email?: string, password?: string) => string;
@@ -91,12 +86,6 @@ export type GenesisNativeMining = {
   ) => string;
 };
 
-export type GenesisNativePartnerGames = {
-  partnerGamesPing?: () => string;
-  partnerGamesSessionConfigJson?: () => string;
-  partnerGamesAcceptHeartbeatJson?: (lastMs: number | undefined, nowMs: number) => string;
-};
-
 export type GenesisNativeMarket = {
   marketPing?: () => string;
   marketClampPageJson?: (limit?: number, offset?: number) => string;
@@ -135,13 +124,11 @@ export type GenesisNativeCatalog = {
 };
 
 export type GenesisNative = GenesisNativeMerge &
-  GenesisNativeCalculator &
   GenesisNativeAuth &
   GenesisNativeTransparency &
   GenesisNativeCheckin &
   GenesisNativeGameNav &
   GenesisNativeMining &
-  GenesisNativePartnerGames &
   GenesisNativeMarket &
   GenesisNativeLuckyBoxes &
   GenesisNativeWallet &
@@ -181,10 +168,6 @@ export function genesisRustEnabled(): boolean {
   return v === '1' || v === 'true' || v === 'yes';
 }
 
-export function genesisCalculatorRustEnabled(): boolean {
-  const v = String(process.env.GENESIS_CALCULATOR_RUST ?? '').trim().toLowerCase();
-  return v === '1' || v === 'true' || v === 'yes';
-}
 
 export function genesisAuthRustEnabled(): boolean {
   const v = String(process.env.GENESIS_AUTH_RUST ?? '').trim().toLowerCase();
@@ -209,12 +192,6 @@ export function genesisNavRustEnabled(): boolean {
 /** Network math only (2 modelos). Progress/cron I/O stays Node. */
 export function genesisMiningRustEnabled(): boolean {
   const v = String(process.env.GENESIS_MINING_RUST ?? '').trim().toLowerCase();
-  return v === '1' || v === 'true' || v === 'yes';
-}
-
-/** Partner Games (BlockMiner) session config + heartbeat gate. */
-export function genesisPartnerGamesRustEnabled(): boolean {
-  const v = String(process.env.GENESIS_PARTNER_GAMES_RUST ?? '').trim().toLowerCase();
   return v === '1' || v === 'true' || v === 'yes';
 }
 

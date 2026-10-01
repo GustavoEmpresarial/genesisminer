@@ -1,9 +1,9 @@
 //! Napi-rs bindings: merge (phase 1) + auth (login / signup domain).
 
 use genesis_core::{
-    accept_heartbeat, assert_public_signup_email_allowed, build_game_nav_items,
+    assert_public_signup_email_allowed, build_game_nav_items,
     build_signed_email_verification_token, build_signed_password_reset_token,
-    compute_calculator_snapshot, compute_merge_result_stats, compute_transparency_health,
+    compute_merge_result_stats, compute_transparency_health,
     generate_referral_code, get_email_verification_flags, has_checked_in_current_period,
     hash_token_sha256, is_within_active_checkin_window, lockout_status,
     lucky_boxes_roll_grant_all, lucky_boxes_roll_independent,
@@ -20,12 +20,12 @@ use genesis_core::{
     mining_network_hashrate_from_yield_per_hash,
     mining_utc_midnight_ms as core_mining_utc_midnight_ms, normalize_merge_rarity,
     parse_desk_liquidation_percentage_points, parse_signed_email_verification_token,
-    parse_signed_password_reset_token, sanitize_device_fingerprint, session_config,
+    parse_signed_password_reset_token, sanitize_device_fingerprint,
     timing_safe_token_hash_equal, user_requires_email_verification, utc_checkin_period_start_ms,
     utc_day_from_ms, validate_login_email, validate_login_fields_present, validate_login_password,
     validate_optional_polygon_wallet, validate_optional_referral_code_input,
     validate_password_strength_policy, validate_signup_password, validate_signup_username,
-    wallet_fraction_allowed, CalculatorComputeInput, CatalogType, CatalogWriteError,
+    wallet_fraction_allowed, CatalogType, CatalogWriteError,
     CatalogUpgradeWriteRow, GameNavBuildInput, LootBoxItem, MergeRarity, MergeRuntimeSettings,
     MergeSourceCatalog, MiningBuildHistoryRowsOpts, MiningBlockHistoryInsertRow,
     MiningCoinYieldInput, MiningYieldHistPoint, PlayerCashFlows, TransparencyHealthEntry,
@@ -367,21 +367,6 @@ pub fn transparency_compute_health_json(
     Ok(serde_json::to_string(&snap).map_err(|e| Error::from_reason(e.to_string()))?)
 }
 
-// --- Player calculator ---
-
-#[napi]
-pub fn calculator_ping() -> String {
-    "genesis-calculator-ok".into()
-}
-
-#[napi]
-pub fn calculator_compute_snapshot_json(input_json: String) -> Result<String> {
-    let input: CalculatorComputeInput = serde_json::from_str(&input_json)
-        .map_err(|e| Error::from_reason(format!("calculator input JSON invalid: {e}")))?;
-    let snap = compute_calculator_snapshot(&input);
-    Ok(serde_json::to_string(&snap).map_err(|e| Error::from_reason(e.to_string()))?)
-}
-
 // --- Game nav (sidebar allowlist) ---
 
 #[napi]
@@ -580,29 +565,6 @@ pub fn mining_build_yield_boundary_json(
         .map_err(|e| Error::from_reason(format!("realNetwork JSON invalid: {e}")))?;
     let rows = mining_build_yield_history_rows(&coins, &real, effective_at_ms);
     Ok(serde_json::to_string(&rows).map_err(|e| Error::from_reason(e.to_string()))?)
-}
-
-// --- Partner Games (BlockMiner hub session / heartbeat) ---
-
-#[napi]
-pub fn partner_games_ping() -> String {
-    "genesis-partner-games-ok".into()
-}
-
-#[napi]
-pub fn partner_games_session_config_json() -> Result<String> {
-    let cfg = session_config();
-    Ok(serde_json::to_string(&cfg).map_err(|e| Error::from_reason(e.to_string()))?)
-}
-
-#[napi]
-pub fn partner_games_accept_heartbeat_json(
-    last_ms: Option<f64>,
-    now_ms: f64,
-) -> Result<String> {
-    let last = last_ms.map(|v| v as i64);
-    let decision = accept_heartbeat(last, now_ms as i64);
-    Ok(serde_json::to_string(&decision).map_err(|e| Error::from_reason(e.to_string()))?)
 }
 
 // --- Market (black-market / P2P helpers) ---

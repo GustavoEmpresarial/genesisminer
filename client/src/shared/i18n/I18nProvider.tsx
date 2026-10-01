@@ -20,9 +20,9 @@ import { blackMarketEn, blackMarketEs, blackMarketPt } from './locales/features/
 import { profileEn, profileEs, profilePt } from './locales/features/profile';
 import { serversEn, serversEs, serversPt } from './locales/features/servers';
 import { rankingEn, rankingEs, rankingPt } from './locales/features/ranking';
+import { calculatorEn, calculatorEs, calculatorPt } from './locales/features/calculator';
 import { partnerGamesEn, partnerGamesEs, partnerGamesPt } from './locales/features/partnerGames';
 import { roadmapEn, roadmapEs, roadmapPt } from './locales/features/roadmap';
-import { calculatorEn, calculatorEs, calculatorPt } from './locales/features/calculator';
 import {
   DEFAULT_LOCALE,
   htmlLangFor,
@@ -50,9 +50,9 @@ const CATALOGS: Record<AppLocale, MessageTree> = {
     profile: profileEn,
     servers: serversEn,
     ranking: rankingEn,
+    calculator: calculatorEn,
     partnerGames: partnerGamesEn,
     roadmap: roadmapEn,
-    calculator: calculatorEn
   }),
   'pt-BR': mergeCatalog(ptBR, {
     wallet: walletPt,
@@ -65,9 +65,9 @@ const CATALOGS: Record<AppLocale, MessageTree> = {
     profile: profilePt,
     servers: serversPt,
     ranking: rankingPt,
+    calculator: calculatorPt,
     partnerGames: partnerGamesPt,
     roadmap: roadmapPt,
-    calculator: calculatorPt
   }),
   es: mergeCatalog(es, {
     wallet: walletEs,
@@ -80,9 +80,9 @@ const CATALOGS: Record<AppLocale, MessageTree> = {
     profile: profileEs,
     servers: serversEs,
     ranking: rankingEs,
+    calculator: calculatorEs,
     partnerGames: partnerGamesEs,
     roadmap: roadmapEs,
-    calculator: calculatorEs
   })
 };
 
