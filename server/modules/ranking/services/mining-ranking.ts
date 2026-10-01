@@ -59,7 +59,7 @@ async function loadNftMiningRoomIds(): Promise<Set<string>> {
   return ids;
 }
 
-/** Alinhado a `loadAsicMiningRoomIds` do calculator / `resolveAsicRoomIds`. */
+/** Alinhado a `loadAsicMiningRoomIds` / `resolveAsicRoomIds`. */
 async function loadAsicMiningRoomIds(): Promise<Set<string>> {
   const rows = await prisma.rig_rooms.findMany({ select: { id: true, name: true } });
   const ids = new Set<string>();

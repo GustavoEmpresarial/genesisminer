@@ -273,6 +273,18 @@ mod tests {
         }
     }
 
+    fn nft_collectible(id: &str, base: f64, coin: &str) -> CalculatorUpgradeLite {
+        CalculatorUpgradeLite {
+            id: id.into(),
+            upgrade_type: "machine".into(),
+            category: Some("nft".into()),
+            base_production: base,
+            multiplier: None,
+            power_capacity: None,
+            nft_mining_coin_id: Some(coin.into()),
+        }
+    }
+
     #[test]
     fn sum_general_ranking_power_only_positive_finite() {
         let mut m = HashMap::new();
@@ -355,7 +367,10 @@ mod tests {
     fn nft_room_credits_coins_but_not_general() {
         use crate::calculator::constants::NFT_AUTO_ROOM_ID;
         let mut ups = HashMap::new();
-        ups.insert("gpu_1".into(), gpu_upgrade("gpu_1", 10.0));
+        ups.insert(
+            "nft1".into(),
+            nft_collectible("nft_miner_1", 500.0, "gemt"),
+        );
         let racks = vec![RankingRackInput {
             id: "rack_1".into(),
             user_id: 1,
@@ -364,7 +379,7 @@ mod tests {
             item_id: None,
         }];
         let mut slots = HashMap::new();
-        slots.insert("rack_1".into(), vec![Some("gpu_1".into())]);
+        slots.insert("rack_1".into(), vec![Some("nft1".into())]);
         let mut nft = HashSet::new();
         nft.insert(NFT_AUTO_ROOM_ID.into());
         let mut names = HashMap::new();
@@ -380,14 +395,48 @@ mod tests {
             &HashSet::new(),
             &names,
         );
-        // NFT room machines may credit differently; general must stay empty for NFT room.
-        let u = ranking.get(&1);
-        if let Some(u) = u {
-            assert!(
-                sum_general_ranking_power(&u.general_coins) == 0.0,
-                "NFT room must not feed generalCoins"
-            );
-        }
+        let u = ranking.get(&1).expect("user");
+        assert_eq!(u.coins.get("gemt").copied().unwrap_or(0.0), 500.0);
+        assert_eq!(
+            sum_general_ranking_power(&u.general_coins),
+            0.0,
+            "NFT room must not feed generalCoins"
+        );
+    }
+
+    #[test]
+    fn empty_nft_room_ids_canonical_collectible_coins_not_general() {
+        use crate::calculator::constants::NFT_AUTO_ROOM_ID;
+        let mut ups = HashMap::new();
+        ups.insert(
+            "nft1".into(),
+            nft_collectible("nft_miner_1", 250.0, "gemt"),
+        );
+        let racks = vec![RankingRackInput {
+            id: "rack_1".into(),
+            user_id: 1,
+            selected_coin_id: Some("btc".into()),
+            room_id: Some(NFT_AUTO_ROOM_ID.into()),
+            item_id: None,
+        }];
+        let mut slots = HashMap::new();
+        slots.insert("rack_1".into(), vec![Some("nft1".into())]);
+        let mut names = HashMap::new();
+        names.insert(1, "alice".into());
+        let mut ranking = HashMap::new();
+        accumulate_ranking_power_from_racks(
+            &mut ranking,
+            &racks,
+            &slots,
+            &HashMap::new(),
+            &ups,
+            &HashSet::new(),
+            &HashSet::new(),
+            &names,
+        );
+        let u = ranking.get(&1).expect("user");
+        assert_eq!(u.coins.get("gemt").copied().unwrap_or(0.0), 250.0);
+        assert!(u.general_coins.is_empty() || sum_general_ranking_power(&u.general_coins) == 0.0);
     }
 
     #[test]
@@ -426,6 +475,38 @@ mod tests {
             0.0,
             "ASIC room must not feed generalCoins"
         );
+    }
+
+    #[test]
+    fn empty_asic_room_ids_canonical_gpu_coins_not_general() {
+        use crate::calculator::constants::ASIC_ROOM_ID;
+        let mut ups = HashMap::new();
+        ups.insert("gpu_1".into(), gpu_upgrade("gpu_1", 10.0));
+        let racks = vec![RankingRackInput {
+            id: "rack_1".into(),
+            user_id: 1,
+            selected_coin_id: Some("btc".into()),
+            room_id: Some(ASIC_ROOM_ID.into()),
+            item_id: None,
+        }];
+        let mut slots = HashMap::new();
+        slots.insert("rack_1".into(), vec![Some("gpu_1".into())]);
+        let mut names = HashMap::new();
+        names.insert(1, "alice".into());
+        let mut ranking = HashMap::new();
+        accumulate_ranking_power_from_racks(
+            &mut ranking,
+            &racks,
+            &slots,
+            &HashMap::new(),
+            &ups,
+            &HashSet::new(),
+            &HashSet::new(),
+            &names,
+        );
+        let u = ranking.get(&1).expect("user");
+        assert_eq!(u.coins.get("btc").copied().unwrap_or(0.0), 10.0);
+        assert!(u.general_coins.is_empty() || sum_general_ranking_power(&u.general_coins) == 0.0);
     }
 
     #[test]

@@ -20,7 +20,7 @@ use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 use crate::config::{
-    WorkerConfig, RANKING_LOCAL_FALLBACK_TTL_MS, RANKING_REDIS_KEY,
+    WorkerConfig, ASIC_ROOM_ID, NFT_AUTO_ROOM_ID, RANKING_LOCAL_FALLBACK_TTL_MS, RANKING_REDIS_KEY,
     RANKING_SLOW_REFRESH_LOG_THRESHOLD_MS,
 };
 use crate::kafka;
@@ -346,8 +346,16 @@ impl RankingService {
             );
         }
 
-        let nft_room_ids = resolve_nft_auto_room_ids(std::ops::Deref::deref(&*client)).await?;
-        let asic_room_ids = resolve_asic_room_ids(std::ops::Deref::deref(&*client)).await?;
+        let mut nft_room_ids = resolve_nft_auto_room_ids(std::ops::Deref::deref(&*client)).await?;
+        let mut asic_room_ids = resolve_asic_room_ids(std::ops::Deref::deref(&*client)).await?;
+        // Belt-and-suspenders: empty resolver still treats canonical rooms as NFT/ASIC
+        // (credits layer also falls back via is_*_room_for_mining_credits).
+        if nft_room_ids.is_empty() {
+            nft_room_ids.insert(NFT_AUTO_ROOM_ID.to_string());
+        }
+        if asic_room_ids.is_empty() {
+            asic_room_ids.insert(ASIC_ROOM_ID.to_string());
+        }
 
         let user_rows = client
             .query(

@@ -4,57 +4,13 @@
  */
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import {
-  getPublicRanking,
-  type PublicRankingPayload,
-  type PublicRankingUser
-} from '../../../shared/api/ranking';
+import { getPublicRanking, type PublicRankingPayload } from '../../../shared/api/ranking';
 import { useT } from '../../../shared/i18n';
 import { isNftRoomExclusiveMiningCoin } from '../../servers/types';
+import { getSortedRanking } from '../lib/sortPublicRanking';
 
-type RankedUser = PublicRankingUser & { power: number };
-
-function sumGeneralPower(u: PublicRankingUser, data: PublicRankingPayload): number {
-  // generalCoins presente (mesmo {}) = fonte de verdade — não fallback para coins (ASIC-only → 0).
-  if (u.generalCoins != null && typeof u.generalCoins === 'object') {
-    return Object.values(u.generalCoins).reduce((acc, curr) => acc + (Number(curr) || 0), 0);
-  }
-  if (typeof u.generalPower === 'number' && Number.isFinite(u.generalPower)) {
-    return u.generalPower;
-  }
-  return Object.entries(u.coins).reduce((acc, [coinId, curr]) => {
-    const meta = data.coins.find((c) => c.id === coinId);
-    if (meta && isNftRoomExclusiveMiningCoin(meta)) return acc;
-    if (isNftRoomExclusiveMiningCoin(coinId)) return acc;
-    return acc + curr;
-  }, 0);
-}
-
-function getSortedRanking(
-  data: PublicRankingPayload,
-  selectedCoin: string
-): { list: RankedUser[]; activeCoin: string } {
-  const activeCoin = selectedCoin;
-
-  if (activeCoin === 'ALL') {
-    const filtered = data.ranking
-      .map((u) => ({ ...u, power: sumGeneralPower(u, data) }))
-      .filter((u) => u.power > 0)
-      .sort((a, b) => b.power - a.power);
-
-    return { list: filtered, activeCoin: 'ALL' };
-  }
-
-  const result = data.ranking
-    .map((u) => ({
-      ...u,
-      power: u.coins[activeCoin] || 0
-    }))
-    .filter((u) => u.power > 0)
-    .sort((a, b) => b.power - a.power);
-
-  return { list: result, activeCoin };
-}
+export { getSortedRanking, sumGeneralPower } from '../lib/sortPublicRanking';
+export type { RankedUser } from '../lib/sortPublicRanking';
 
 export function RankingPage() {
   const t = useT();
@@ -221,7 +177,7 @@ export function RankingPage() {
               {data.coins
                 .map((c) => {
                   const cUsers = data.ranking
-                    .map((u) => (isGlobal ? u.generalCoins?.[c.id] : undefined) ?? (isGlobal ? 0 : u.coins[c.id] || 0))
+                    .map((u) => u.generalCoins?.[c.id] ?? 0)
                     .filter((p) => p > 0);
                   const cTotal = cUsers.reduce((a, b) => a + b, 0);
                   const cAvg = cUsers.length > 0 ? cTotal / cUsers.length : 0;

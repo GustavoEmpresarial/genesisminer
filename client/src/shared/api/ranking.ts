@@ -17,7 +17,7 @@ export type PublicRankingUser = {
   username: string;
   /** Poder por moeda (inclui Sala NFT / ASIC). */
   coins: Record<string, number>;
-  /** Poder por moeda só de rigs fora da Sala NFT (ranking geral / GPU). */
+  /** Poder por moeda só de rigs fora das salas NFT e ASIC (ranking geral / GPU). */
   generalCoins?: Record<string, number>;
   generalPower?: number;
 };
