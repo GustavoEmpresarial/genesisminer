@@ -35,13 +35,6 @@ import type { User } from '../../../shared/types/auth';
 import { ReferralOverviewPanel } from './ReferralOverviewPanel';
 import { useT } from '../../../shared/i18n';
 
-function utf8MessageToHex(message: string): string {
-  const bytes = new TextEncoder().encode(message);
-  let hex = '';
-  for (let i = 0; i < bytes.length; i++) hex += bytes[i]!.toString(16).padStart(2, '0');
-  return `0x${hex}`;
-}
-
 function maskWalletAddress(addr: string | null | undefined): string {
   if (!addr || typeof addr !== 'string') return '—';
   const a = addr.trim();
@@ -165,15 +158,21 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ user, onUserUpdate }) 
         setMessage({ type: 'error', text: t('profile.installWallet') });
         return;
       }
-      const ch = await postProfileWalletChallenge();
-      if (!ch.ok || !ch.message || !ch.challengeId) {
-        setMessage({ type: 'error', text: ch.error || t('profile.walletLinkStartFailed') });
+      let accounts: string[] | undefined;
+      try {
+        accounts = (await eth.request({ method: 'eth_requestAccounts' })) as string[] | undefined;
+      } catch {
+        setMessage({ type: 'error', text: t('profile.walletAccountsRejected') });
         return;
       }
-      const accounts = (await eth.request({ method: 'eth_requestAccounts' })) as string[] | undefined;
       const addr = accounts && accounts[0];
       if (!addr || !/^0x[a-fA-F0-9]{40}$/.test(addr)) {
         setMessage({ type: 'error', text: t('profile.walletAddressFailed') });
+        return;
+      }
+      const ch = await postProfileWalletChallenge();
+      if (!ch.ok || !ch.message || !ch.challengeId) {
+        setMessage({ type: 'error', text: ch.error || t('profile.walletLinkStartFailed') });
         return;
       }
       try {
@@ -203,12 +202,11 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ user, onUserUpdate }) 
       } catch {
         /* ignore */
       }
-      const msgHex = utf8MessageToHex(ch.message);
       let signature: string;
       try {
         signature = (await eth.request({
           method: 'personal_sign',
-          params: [msgHex, addr]
+          params: [ch.message, addr]
         })) as string;
       } catch {
         setMessage({ type: 'error', text: t('profile.signatureCancelled') });
@@ -231,8 +229,12 @@ export const ProfilePage: React.FC<ProfilePageProps> = ({ user, onUserUpdate }) 
       await reloadProfileState();
       await refreshWalletHistory();
       setMessage({ type: 'success', text: t('profile.walletVerified') });
-    } catch {
-      setMessage({ type: 'error', text: t('profile.authCancelled') });
+    } catch (err) {
+      const short =
+        err instanceof Error && typeof err.message === 'string' && err.message.trim()
+          ? err.message.trim()
+          : t('profile.authCancelled');
+      setMessage({ type: 'error', text: short });
     } finally {
       setWalletBusy(false);
       walletLock.current = false;

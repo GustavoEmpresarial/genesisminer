@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { ExternalLink, Info, X } from 'lucide-react';
+import { useT } from '../../../shared/i18n';
 import { isSafeHttpsLink, normalizeSafeInAppImagePath } from '../../../shared/utils/inAppAnnouncementSafe';
 import { RemoteBannerImage } from '../../mini-blog/ui/RemoteBannerImage';
 
@@ -18,14 +19,17 @@ type Props = {
 };
 
 export const InAppAnnouncementModal: React.FC<Props> = ({ announcement, onDismiss, dismissing }) => {
+  const t = useT();
+  const dismissBlocked = Boolean(dismissing);
+
   useEffect(() => {
-    if (!announcement || dismissing) return;
+    if (!announcement || dismissBlocked) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onDismiss();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [announcement, dismissing, onDismiss]);
+  }, [announcement, dismissBlocked, onDismiss]);
 
   if (!announcement) return null;
 
@@ -33,13 +37,15 @@ export const InAppAnnouncementModal: React.FC<Props> = ({ announcement, onDismis
   const link = rawLink && isSafeHttpsLink(rawLink) ? rawLink : null;
   const imageUrl = normalizeSafeInAppImagePath(announcement.imageUrl);
 
+  const primaryLabel = dismissing ? t('announcements.dismissing') : t('announcements.dismissAction');
+
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
-      aria-label={announcement.title || 'Aviso'}
-      onClick={onDismiss}
+      aria-label={announcement.title || t('announcements.noticeAria')}
+      onClick={dismissBlocked ? undefined : onDismiss}
     >
       <div
         className="flex max-h-[90dvh] w-full max-w-md flex-col overflow-hidden rounded-2xl border border-slate-600/80 bg-slate-900 p-5 shadow-2xl dark:bg-slate-950"
@@ -52,9 +58,9 @@ export const InAppAnnouncementModal: React.FC<Props> = ({ announcement, onDismis
           <button
             type="button"
             onClick={onDismiss}
-            disabled={dismissing}
+            disabled={dismissBlocked}
             className="rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white disabled:opacity-50"
-            aria-label="Fechar"
+            aria-label={t('announcements.closeAria')}
           >
             <X size={18} />
           </button>
@@ -69,7 +75,7 @@ export const InAppAnnouncementModal: React.FC<Props> = ({ announcement, onDismis
                 src={imageUrl}
                 alt={announcement.title}
                 className="max-h-56 w-full object-contain"
-                failureHint="Imagem indisponível"
+                failureHint={t('announcements.imageUnavailable')}
               />
             </div>
           ) : null}
@@ -81,19 +87,21 @@ export const InAppAnnouncementModal: React.FC<Props> = ({ announcement, onDismis
               rel="noopener noreferrer"
               className="mt-4 inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-amber-400 hover:text-amber-300"
             >
-              Saiba mais
+              {t('announcements.learnMore')}
               <ExternalLink size={14} aria-hidden />
             </a>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={onDismiss}
-          disabled={dismissing}
-          className="mt-6 w-full shrink-0 rounded-xl bg-orange-600 py-2.5 text-xs font-black uppercase tracking-widest text-white transition hover:bg-orange-500 disabled:opacity-60"
-        >
-          {dismissing ? 'A guardar…' : 'Li'}
-        </button>
+        <div className="mt-4 shrink-0 border-t border-slate-700/80 pt-4">
+          <button
+            type="button"
+            onClick={onDismiss}
+            disabled={dismissBlocked}
+            className="w-full rounded-xl bg-orange-600 py-2.5 text-xs font-black uppercase tracking-widest text-white transition hover:bg-orange-500 disabled:opacity-60"
+          >
+            {primaryLabel}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -5,6 +5,8 @@ export const profileEn: MessageTree = {
   walletLinkStartFailed: 'Could not start wallet linking.',
   walletAddressFailed: 'Could not get wallet address.',
   signatureCancelled: 'Signature cancelled or failed.',
+  walletAccountsRejected:
+    'MetaMask/wallet rejected the account request or the popup was blocked — try again and approve in the extension.',
   walletVerifyFailed: 'Wallet verification failed.',
   walletVerified: 'Wallet verified and saved to your profile.',
   authCancelled: 'Authentication cancelled or failed.',
@@ -70,6 +72,8 @@ export const profilePt: MessageTree = {
   walletLinkStartFailed: 'Não foi possível iniciar a ligação da carteira.',
   walletAddressFailed: 'Falha ao obter endereço da carteira.',
   signatureCancelled: 'Assinatura cancelada ou falhou.',
+  walletAccountsRejected:
+    'MetaMask/carteira rejeitou o pedido de contas ou o popup foi bloqueado — tente de novo e aprove na extensão.',
   walletVerifyFailed: 'Verificação da carteira falhou.',
   walletVerified: 'Carteira verificada e guardada no perfil.',
   authCancelled: 'Autenticação cancelada ou falhou.',
@@ -135,6 +139,8 @@ export const profileEs: MessageTree = {
   walletLinkStartFailed: 'No se pudo iniciar la vinculación de la billetera.',
   walletAddressFailed: 'No se pudo obtener la dirección de la billetera.',
   signatureCancelled: 'Firma cancelada o fallida.',
+  walletAccountsRejected:
+    'MetaMask/billetera rechazó la solicitud de cuentas o el popup fue bloqueado — inténtalo de nuevo y aprueba en la extensión.',
   walletVerifyFailed: 'La verificación de la billetera falló.',
   walletVerified: 'Billetera verificada y guardada en tu perfil.',
   authCancelled: 'Autenticación cancelada o fallida.',
