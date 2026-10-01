@@ -18,6 +18,7 @@ import { rankingEn, rankingEs, rankingPt } from '../../../client/src/shared/i18n
 import { calculatorEn, calculatorEs, calculatorPt } from '../../../client/src/shared/i18n/locales/features/calculator.js';
 import { partnerGamesEn, partnerGamesEs, partnerGamesPt } from '../../../client/src/shared/i18n/locales/features/partnerGames.js';
 import { roadmapEn, roadmapEs, roadmapPt } from '../../../client/src/shared/i18n/locales/features/roadmap.js';
+import { upgradesEn, upgradesEs, upgradesPt } from '../../../client/src/shared/i18n/locales/features/upgrades.js';
 import {
   persistLocale,
   readPersistedLocale,
@@ -45,7 +46,8 @@ const CATALOGS: Record<AppLocale, MessageTree> = {
     ranking: rankingEn,
     calculator: calculatorEn,
     partnerGames: partnerGamesEn,
-    roadmap: roadmapEn
+    roadmap: roadmapEn,
+    upgrades: upgradesEn
   }),
   'pt-BR': mergeCatalog(ptBR, {
     wallet: walletPt,
@@ -60,7 +62,8 @@ const CATALOGS: Record<AppLocale, MessageTree> = {
     ranking: rankingPt,
     calculator: calculatorPt,
     partnerGames: partnerGamesPt,
-    roadmap: roadmapPt
+    roadmap: roadmapPt,
+    upgrades: upgradesPt
   }),
   es: mergeCatalog(es, {
     wallet: walletEs,
@@ -75,7 +78,8 @@ const CATALOGS: Record<AppLocale, MessageTree> = {
     ranking: rankingEs,
     calculator: calculatorEs,
     partnerGames: partnerGamesEs,
-    roadmap: roadmapEs
+    roadmap: roadmapEs,
+    upgrades: upgradesEs
   })
 };
 
@@ -102,6 +106,7 @@ const FEATURE_ROOTS = [
   'ranking',
   'partnerGames',
   'roadmap',
+  'upgrades',
   'mining',
   'auth',
   'shell'
@@ -135,6 +140,7 @@ describe('feature translations resolve (no raw-key fallback)', () => {
     'ranking.titleGlobal',
     'partnerGames.title',
     'roadmap.title',
+    'upgrades.title',
     'mining.loadingRoom',
     'auth.signIn',
     'shell.leaveManagedAccount'

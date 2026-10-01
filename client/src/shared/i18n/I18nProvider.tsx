@@ -23,6 +23,7 @@ import { rankingEn, rankingEs, rankingPt } from './locales/features/ranking';
 import { calculatorEn, calculatorEs, calculatorPt } from './locales/features/calculator';
 import { partnerGamesEn, partnerGamesEs, partnerGamesPt } from './locales/features/partnerGames';
 import { roadmapEn, roadmapEs, roadmapPt } from './locales/features/roadmap';
+import { upgradesEn, upgradesEs, upgradesPt } from './locales/features/upgrades';
 import {
   DEFAULT_LOCALE,
   htmlLangFor,
@@ -53,6 +54,7 @@ const CATALOGS: Record<AppLocale, MessageTree> = {
     calculator: calculatorEn,
     partnerGames: partnerGamesEn,
     roadmap: roadmapEn,
+    upgrades: upgradesEn,
   }),
   'pt-BR': mergeCatalog(ptBR, {
     wallet: walletPt,
@@ -68,6 +70,7 @@ const CATALOGS: Record<AppLocale, MessageTree> = {
     calculator: calculatorPt,
     partnerGames: partnerGamesPt,
     roadmap: roadmapPt,
+    upgrades: upgradesPt,
   }),
   es: mergeCatalog(es, {
     wallet: walletEs,
@@ -83,6 +86,7 @@ const CATALOGS: Record<AppLocale, MessageTree> = {
     calculator: calculatorEs,
     partnerGames: partnerGamesEs,
     roadmap: roadmapEs,
+    upgrades: upgradesEs,
   })
 };
 
