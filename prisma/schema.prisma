@@ -463,6 +463,8 @@ model game_states {
   checkin_streak           Int     @default(0)
   /** H/s acumulados de recompensa de check-in (bónus permanente de mineração). */
   checkin_bonus_hps        Float   @default(0)
+  /** 1 = check-in premium (intervalo N dias) desbloqueado para sempre (gasto ≥ min ou admin). */
+  checkin_premium_unlocked Int     @default(0)
   /** USD recuperado por mineração de ASICs na Sala NFT (payback). */
   nft_asic_mined_usd_total Float   @default(0)
 
@@ -1410,6 +1412,39 @@ model transparency_entries {
   updated_at  BigInt
 
   @@map("transparency_entries")
+}
+
+/**
+ * Knobs do índice de saúde do portal ("Termómetro financeiro"), linha única (id = 1).
+ * Defaults reproduzem o comportamento histórico — `period_scope = all_time`.
+ */
+model transparency_health_settings {
+  id               Int     @id @default(1)
+  weight_inflow    Float   @default(0.40)
+  weight_rent      Float   @default(0.35)
+  weight_ledger    Float   @default(0.25)
+  floor_score      Int     @default(50)
+  season_start_ms  BigInt  @default(1788220800000)
+  period_scope     String  @default("all_time") @db.VarChar(16)
+  count_undated    Boolean @default(true)
+  override_enabled Boolean @default(false)
+  override_value   Int?
+  updated_at       BigInt  @default(0)
+  updated_by       String? @db.VarChar(128)
+
+  @@map("transparency_health_settings")
+}
+
+/** Rasto interno de quem alterou os knobs acima (métrica financeira pública). */
+model transparency_health_settings_audit {
+  id          BigInt  @id @default(autoincrement())
+  changed_at  BigInt
+  changed_by  String? @db.VarChar(128)
+  before_json Json
+  after_json  Json
+
+  @@index([changed_at(sort: Desc)], map: "idx_transparency_health_audit_at")
+  @@map("transparency_health_settings_audit")
 }
 
 /** Textos de UI editáveis pelo admin (label/valor por chave), sem precisar de deploy. */
