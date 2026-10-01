@@ -7,6 +7,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Briefcase,
   CalendarCheck,
+  Calculator,
   Clapperboard,
   Coins,
   Combine,
@@ -27,7 +28,6 @@ import {
   Trophy,
   User as UserIcon,
   Wallet,
-  Wrench
 } from 'lucide-react';
 import {
   DEFAULT_ALLOWED_PAGES,
@@ -42,9 +42,9 @@ export type GameView =
   | 'profile'
   | 'management'
   | 'merge'
-  | 'calculator'
   | 'dashboard'
-  | 'deposit_history';
+  | 'deposit_history'
+  | 'reinvestment_history';
 
 /** All known game views (for session restore). */
 export const VALID_GAME_VIEWS: readonly GameView[] = [
@@ -52,9 +52,9 @@ export const VALID_GAME_VIEWS: readonly GameView[] = [
   'profile',
   'management',
   'merge',
-  'calculator',
   'dashboard',
-  'deposit_history'
+  'deposit_history',
+  'reinvestment_history'
 ];
 
 export const GAME_LAST_VIEW_SS = 'lastView';
@@ -170,8 +170,7 @@ export function resolveAllowedPages(user: User | null): string[] {
         'offerwall',
         'inventory',
         'lucky_store',
-        'calculator',
-        'checkin'
+              'checkin'
       ].includes(p)
     );
   }
@@ -199,7 +198,6 @@ export function buildGameNavItems(opts: BuildGameNavItemsOpts): GameNavItem[] {
   const allowedPages = resolveAllowedPages(user);
   const has = (page: string) => allowedPages.includes(page);
   const isManagingAccount = !!user.isManagingAccount || !!user.managerMode;
-  const isOperatorAdminOnly = !!(user.isAdmin && !user.isSuperAdmin);
   const managerOnlyKeys = new Set([
     'servers',
     'dashboard',
@@ -209,8 +207,7 @@ export function buildGameNavItems(opts: BuildGameNavItemsOpts): GameNavItem[] {
     'offerwall',
     'inventory',
     'lucky_store',
-    'calculator',
-    'checkin'
+      'checkin'
   ]);
   const nav = (k: GameNavLabelKey) => labelFor(k, t, labelOverrides);
 
@@ -318,11 +315,11 @@ export function buildGameNavItems(opts: BuildGameNavItemsOpts): GameNavItem[] {
     },
     {
       key: 'calculator',
-      label: extraNavLabel(t, 'calculator', 'Calculator'),
-      icon: Wrench,
-      accent: 'yellow',
+      label: nav('calculator'),
+      icon: Calculator,
+      accent: 'sky',
       section: 'economia',
-      allowed: !isOperatorAdminOnly
+      allowed: has('calculator')
     },
     {
       key: 'transparency',

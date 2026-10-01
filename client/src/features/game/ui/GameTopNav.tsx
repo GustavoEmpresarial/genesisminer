@@ -10,7 +10,7 @@ import {
   X,
   Zap
 } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   DiscordCommunityLink,
   TelegramCommunityLink
@@ -19,6 +19,10 @@ import { LanguageSwitcher, useT } from '../../../shared/i18n';
 import type { User } from '../../../shared/types/auth';
 import { MiningCoinGlyph } from '../../../shared/ui/MiningCoinGlyph';
 import { formatLiveTokenAmount, formatTokenAmount } from '../../../shared/utils/locale-format';
+import {
+  estimateLiveCoinBalance,
+  LIVE_BALANCE_TICK_MS
+} from '../lib/liveCoinBalanceEstimate';
 import type { GameView } from '../nav/buildGameNavItems';
 
 export type TopNavTokenRow = {
@@ -31,6 +35,7 @@ export type TopNavTokenRow = {
   /** coins/s estimado — formatação live do saldo no ticker. */
   coinsPerSec?: number;
   color?: string;
+  iconUrl?: string | null;
 };
 
 type GameTopNavProps = {
@@ -48,6 +53,8 @@ type GameTopNavProps = {
   rankDisplay?: string | null;
   /** Tokens strip — catálogo + saldos + H/s por moeda (legado App.tsx). */
   tokenRows?: TopNavTokenRow[];
+  /** Anchor ms for local live balance accrual (server snapshot). */
+  liveAccrualAnchorMs?: number;
   /** Preferência BD (fonte de verdade); localStorage só como cache optimista. */
   persistedHighlightCoinId?: string | null;
   /** Persistência no servidor (fire-and-forget no parent). */
@@ -133,6 +140,7 @@ export function GameTopNav({
   hashDisplay = '—',
   rankDisplay = null,
   tokenRows = [],
+  liveAccrualAnchorMs = 0,
   persistedHighlightCoinId = null,
   onHighlightCoinChange,
   projectHealth = null,
@@ -145,6 +153,7 @@ export function GameTopNav({
   const [highlightedCoinId, setHighlightedCoinId] = useState<string | null>(() =>
     resolveInitialHighlightCoinId(userId, persistedHighlightCoinId)
   );
+  const [balanceTick, setBalanceTick] = useState(0);
   const tokensPanelId = useId();
   const tokensWrapRef = useRef<HTMLDivElement>(null);
 
@@ -152,7 +161,35 @@ export function GameTopNav({
     setHighlightedCoinId(resolveInitialHighlightCoinId(userId, persistedHighlightCoinId));
   }, [userId, persistedHighlightCoinId]);
 
-  const sortedTokens = [...tokenRows].sort((a, b) => {
+  /** Ticker 1s — só re-render do TopNav; saldo = estimativa local (sem poll / WS). */
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setBalanceTick((n) => n + 1);
+    }, LIVE_BALANCE_TICK_MS);
+    return () => {
+      window.clearInterval(id);
+    };
+  }, []);
+
+  const liveTokenRows = useMemo(() => {
+    void balanceTick;
+    const nowMs = Date.now();
+    return tokenRows.map((row) => {
+      const coinsPerSec = row.coinsPerSec || 0;
+      return {
+        ...row,
+        coinsPerSec,
+        balance: estimateLiveCoinBalance({
+          serverBalance: row.balance,
+          coinsPerSec,
+          accrualAnchorMs: liveAccrualAnchorMs,
+          nowMs
+        })
+      };
+    });
+  }, [tokenRows, liveAccrualAnchorMs, balanceTick]);
+
+  const sortedTokens = [...liveTokenRows].sort((a, b) => {
     if (b.power !== a.power) return b.power - a.power;
     return String(a.name).localeCompare(String(b.name), undefined, { sensitivity: 'base' });
   });
@@ -271,7 +308,8 @@ export function GameTopNav({
                         id: highlighted.id,
                         name: highlighted.name,
                         symbol: highlighted.symbol || highlighted.name,
-                        color: highlighted.color
+                        color: highlighted.color,
+                        iconUrl: highlighted.iconUrl
                       }}
                       size={18}
                     />
@@ -341,7 +379,7 @@ export function GameTopNav({
                           }`}
                         >
                           <MiningCoinGlyph
-                            coin={{ id: c.id, name: c.name, symbol: c.symbol || c.name, color: c.color }}
+                            coin={{ id: c.id, name: c.name, symbol: c.symbol || c.name, color: c.color, iconUrl: c.iconUrl }}
                             size={22}
                           />
                           <span

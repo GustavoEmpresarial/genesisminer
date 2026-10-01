@@ -2,6 +2,7 @@
  * Maps `GameView` → page content. Keeps `GameShell` free of a growing ternary.
  * New ported views: add a branch here + document in GAME_SHELL.md / DECISIONS.
  */
+import { useCallback } from 'react';
 import type { User } from '../../../shared/types/auth';
 import type { TranslateFn } from '../../../shared/i18n/I18nProvider';
 import { getWheelState } from '../../../shared/api/wheel';
@@ -9,7 +10,6 @@ import { HubPageFrame } from '../../../shared/ui/HubPageFrame';
 import { GerentePage } from '../../gerente';
 import { ArcadePage, PartnerGamePlayerPage, PartnerGamesPage } from '../../arcade';
 import { BlackMarketPage } from '../../black-market';
-import { CalculatorPage } from '../../calculator';
 import { Dashboard } from '../../dashboard';
 import { InventoryPage } from '../../inventory';
 import { LuckyBoxesPage } from '../../lucky-boxes';
@@ -20,6 +20,7 @@ import { PartnersPage } from '../../partners';
 import { ProfilePage } from '../../profile';
 import { QuestsPage } from '../../quests';
 import { RankingPage } from '../../ranking';
+import { CalculatorPage } from '../../calculator';
 import { RoletaPage } from '../../roleta';
 import { MiningPage } from '../../servers/ui/MiningPage';
 import { CheckinPage } from '../../checkin';
@@ -27,7 +28,12 @@ import { ShopPage } from '../../shop';
 import { SupportPage } from '../../support';
 import { TransparencyPage } from '../../transparency';
 import { UpgradesPage } from '../../upgrades';
-import { WalletPage, WithdrawalHistoryPage, DepositHistoryPage } from '../../wallet';
+import {
+  WalletPage,
+  WithdrawalHistoryPage,
+  DepositHistoryPage,
+  ReinvestmentHistoryPage
+} from '../../wallet';
 import type { GameView } from '../nav/buildGameNavItems';
 import { ROLETA_PREFILL_CODE_SS } from '../../../shared/constants/roletaPrefill';
 
@@ -68,27 +74,32 @@ export function GameViewOutlet({
   onOpenPartnerGame,
   onBackToPartnerHub
 }: GameViewOutletProps) {
+  const onNavigateCalculator = useCallback(() => {
+    onNavigate('calculator');
+  }, [onNavigate]);
+
   if (view === 'servers') {
     return (
       <MiningPage
         userEmail={user.email}
-        onOpenCalculator={() => onNavigate('calculator')}
         onUsdcChange={onUsdcChange}
         onHeaderRefresh={onHeaderRefresh}
         hasWallet={hasWallet !== false}
         onOpenWalletConnect={onOpenWalletConnect}
         isManagingAccount={!!user.isManagingAccount || !!user.managerMode}
+        onNavigateCalculator={onNavigateCalculator}
       />
     );
+  }
+
+  if (view === 'calculator') {
+    return <CalculatorPage />;
   }
 
   if (view === 'checkin') {
     return <CheckinPage onRewardGranted={onHeaderRefresh} />;
   }
 
-  if (view === 'calculator') {
-    return <CalculatorPage onBack={() => onNavigate('servers')} isAdmin={!!user.isAdmin} />;
-  }
 
   if (view === 'transparency') {
     return <TransparencyPage />;
@@ -239,6 +250,10 @@ export function GameViewOutlet({
 
   if (view === 'deposit_history') {
     return <DepositHistoryPage />;
+  }
+
+  if (view === 'reinvestment_history') {
+    return <ReinvestmentHistoryPage />;
   }
 
   if (view === 'ranking') {

@@ -26,7 +26,6 @@ function currentLabel(view: GameView, t: (key: string) => string): string {
   if (view === 'profile') return t('nav.profile');
   if (view === 'management') return t('nav.management');
   if (view === 'merge') return t('nav.merge');
-  if (view === 'calculator') return t('nav.calculator');
   if (view === 'dashboard') return t('nav.dashboard');
   return t('nav.menu');
 }
@@ -38,7 +37,6 @@ function navItemLabel(key: GameView, fallback: string, t: (key: string) => strin
   if (key === 'profile') return t('nav.profile');
   if (key === 'management') return t('nav.management');
   if (key === 'merge') return t('nav.merge');
-  if (key === 'calculator') return t('nav.calculator');
   if (key === 'dashboard') return t('nav.dashboard');
   return fallback;
 }

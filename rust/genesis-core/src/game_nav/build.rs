@@ -26,17 +26,15 @@ pub fn resolve_allowed_pages(is_managing: bool) -> Vec<String> {
 fn item_allowed(key: &str, input: &GameNavBuildInput, allowed_pages: &[String]) -> bool {
     let has = |page: &str| allowed_pages.iter().any(|p| p == page);
     let is_managing = input.is_managing_account || input.manager_mode;
-    let is_operator_admin_only = input.is_admin && !input.is_super_admin;
 
     match key {
         "servers" | "inventory" | "hardware_store" | "upgrade" | "black_market" | "lucky_store"
-        | "wallet" | "ranking" | "transparency" | "mini_blog" | "quests" | "support"
+        | "wallet" | "ranking" | "calculator" | "transparency" | "mini_blog" | "quests" | "support"
         | "offerwall" | "arcade" => has(key),
         "dashboard" => false,
         "profile" => !is_managing,
         "management" => input.account_manager_enabled,
         "merge" => input.merge_enabled && has("merge"),
-        "calculator" => !is_operator_admin_only,
         "partners" | "partner_games" => true,
         "roleta" => has("roleta") && input.show_roleta_in_nav,
         _ => false,
@@ -97,6 +95,7 @@ mod tests {
         assert!(keys.contains(&"transparency"));
         assert!(keys.contains(&"servers"));
         assert!(keys.contains(&"wallet"));
+        assert!(keys.contains(&"calculator"));
         assert!(keys.contains(&"roleta"));
         assert!(!keys.contains(&"dashboard"));
         assert!(keys.contains(&"partner_games"));
@@ -130,15 +129,6 @@ mod tests {
         input.show_roleta_in_nav = false;
         let out = build_game_nav_items(&input);
         assert!(!out.items.iter().any(|i| i.key == "roleta"));
-    }
-
-    #[test]
-    fn operator_admin_hides_calculator() {
-        let mut input = base_input();
-        input.is_admin = true;
-        input.is_super_admin = false;
-        let out = build_game_nav_items(&input);
-        assert!(!out.items.iter().any(|i| i.key == "calculator"));
     }
 
     #[test]

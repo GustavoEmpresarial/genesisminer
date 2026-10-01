@@ -7,12 +7,14 @@ pub const DEFAULT_ALLOWED_PAGES: &[&str] = &[
     "merge",
     "arcade",
     "ranking",
+    "calculator",
     "hardware_store",
     "black_market",
     "lucky_store",
     "wallet",
     "withdrawal_history",
     "deposit_history",
+    "reinvestment_history",
     "upgrade",
     "profile",
     "transparency",
@@ -37,7 +39,6 @@ pub const MANAGER_ONLY_KEYS: &[&str] = &[
     "offerwall",
     "inventory",
     "lucky_store",
-    "calculator",
 ];
 
 pub const SECTION_ORDER: &[GameNavSection] = &[
@@ -118,7 +119,7 @@ pub(crate) const CATALOG: &[CatalogEntry] = &[
     CatalogEntry {
         key: "calculator",
         section: GameNavSection::Economia,
-        accent: GameNavAccent::Yellow,
+        accent: GameNavAccent::Sky,
     },
     CatalogEntry {
         key: "transparency",

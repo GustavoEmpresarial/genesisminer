@@ -20,7 +20,7 @@ import { formatHashTotal, formatUsdcAmount } from '../../../shared/utils/locale-
 import { MiniBlogPage } from '../../mini-blog';
 import { InAppAnnouncementModal, type InAppAnnouncement } from '../../announcements';
 import { PlayerChatWidget } from '../../chat';
-import { ConnectWalletModal, WalletGatePopup, useWalletGate } from '../../wallet';
+import { WalletGatePopup, useWalletGate } from '../../wallet';
 import { GameMobileDrawer } from './GameMobileDrawer';
 import { GameSidebar } from './GameSidebar';
 import { GameTopNav, type TopNavTokenRow } from './GameTopNav';
@@ -34,11 +34,7 @@ import {
 import { GAME_NAV_LABEL_KEYS, type GameNavLabelKey } from '../../../shared/constants/gameNavLabels';
 import { getDisplayLabelsRaw, parseShowRoletaTabNavFromDisplayLabels } from '../../../shared/api/admin-legacy';
 import { gameViewFromPath, partnerGameSlugFromPath, pathForGameView, pathForPartnerGamePlayer, pushPath, replacePath } from '../../../app/pathRouting';
-import {
-  estimateLiveCoinBalance,
-  lastCompletedTenMinuteUtcGrid,
-  LIVE_BALANCE_TICK_MS
-} from '../lib/liveCoinBalanceEstimate';
+import { lastCompletedTenMinuteUtcGrid } from '../lib/liveCoinBalanceEstimate';
 
 function initialGameView(): GameView {
   if (typeof window !== 'undefined') {
@@ -79,8 +75,9 @@ function viewLabel(view: GameView, t: (key: string) => string): string {
   if (view === 'profile') return t('nav.profile');
   if (view === 'management') return t('nav.management');
   if (view === 'merge') return t('nav.merge');
-  if (view === 'calculator') return t('nav.calculator');
   if (view === 'dashboard') return t('nav.dashboard');
+  if (view === 'deposit_history') return t('wallet.depositHistoryTitle');
+  if (view === 'reinvestment_history') return t('wallet.reinvestmentHistoryTitle');
   return String(view);
 }
 
@@ -99,10 +96,8 @@ export function GameShell({
   const [usdc, setUsdc] = useState<number | null>(null);
   const [totalHash, setTotalHash] = useState<number | null>(null);
   const [tokenRows, setTokenRows] = useState<TopNavTokenRow[]>([]);
-  const [estCoinsPerSecByCoinId, setEstCoinsPerSecByCoinId] = useState<Record<string, number>>({});
   const [headerLiveAccrualAnchorMs, setHeaderLiveAccrualAnchorMs] = useState(0);
   const [headerHighlightCoinId, setHeaderHighlightCoinId] = useState<string | null>(null);
-  const [balanceTick, setBalanceTick] = useState(0);
   const [myGlobalRank, setMyGlobalRank] = useState<number | null>(null);
   const [projectHealth, setProjectHealth] = useState<number | null>(null);
   const [projectHealthBand, setProjectHealthBand] = useState<
@@ -133,7 +128,6 @@ export function GameShell({
   const [showRoletaInNav, setShowRoletaInNav] = useState(true);
   const walletGate = useWalletGate(user);
   const [walletPopupDismissed, setWalletPopupDismissed] = useState(false);
-  const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [partnerPlayerSlug, setPartnerPlayerSlug] = useState(() =>
     typeof window !== 'undefined' ? partnerGameSlugFromPath(window.location.pathname) : null
   );
@@ -172,7 +166,6 @@ export function GameShell({
     if (!snap) return;
     setUsdc(snap.usdc);
     setTotalHash(snap.totalHash);
-    setEstCoinsPerSecByCoinId(snap.estCoinsPerSecByCoinId);
     setHeaderLiveAccrualAnchorMs(
       Number.isFinite(snap.liveAccrualAnchorMs) && snap.liveAccrualAnchorMs > 0
         ? snap.liveAccrualAnchorMs
@@ -185,10 +178,12 @@ export function GameShell({
       return {
         id: c.id,
         name: c.name,
-        symbol: c.name,
+        symbol: c.symbol || c.name,
         balance: snap.coinBalances[c.id] || 0,
         power: Number.isFinite(localP) ? localP : 0,
-        coinsPerSec: Number.isFinite(coinsPerSec) ? coinsPerSec : 0
+        coinsPerSec: Number.isFinite(coinsPerSec) ? coinsPerSec : 0,
+        color: c.color,
+        iconUrl: c.iconUrl
       };
     });
     setTokenRows(rows);
@@ -199,33 +194,9 @@ export function GameShell({
     void patchHeaderHighlightCoin(coinId);
   }, []);
 
-  /** Ticker 1s — só re-render; saldo = estimativa local (sem poll / WS). */
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      setBalanceTick((n) => n + 1);
-    }, LIVE_BALANCE_TICK_MS);
-    return () => {
-      window.clearInterval(id);
-    };
+  const onToggleMobileMenu = useCallback(() => {
+    setMobileMenuOpen((v) => !v);
   }, []);
-
-  const liveTokenRows = useMemo(() => {
-    void balanceTick;
-    const nowMs = Date.now();
-    return tokenRows.map((row) => {
-      const coinsPerSec = estCoinsPerSecByCoinId[row.id] || row.coinsPerSec || 0;
-      return {
-        ...row,
-        coinsPerSec,
-        balance: estimateLiveCoinBalance({
-          serverBalance: row.balance,
-          coinsPerSec,
-          accrualAnchorMs: headerLiveAccrualAnchorMs,
-          nowMs
-        })
-      };
-    });
-  }, [tokenRows, estCoinsPerSecByCoinId, headerLiveAccrualAnchorMs, balanceTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -258,6 +229,10 @@ export function GameShell({
   }, [user.id]);
 
   useEffect(() => {
+    if (user.isImpersonating) {
+      setAnnouncementQueue([]);
+      return;
+    }
     let cancelled = false;
     void (async () => {
       const list = await getPendingInAppAnnouncements();
@@ -266,7 +241,7 @@ export function GameShell({
     return () => {
       cancelled = true;
     };
-  }, [user.id]);
+  }, [user.id, user.isImpersonating]);
 
   useEffect(() => {
     let cancelled = false;
@@ -376,6 +351,14 @@ export function GameShell({
     [user.accountManagerEnabled, user.mergeEnabled]
   );
 
+  const onOpenWalletConnect = useCallback(() => {
+    onNavigate('profile');
+  }, [onNavigate]);
+
+  const onLogoClick = useCallback(() => {
+    onNavigate('servers');
+  }, [onNavigate]);
+
   const onOpenPartnerGame = useCallback((slug: string) => {
     pushPath(pathForPartnerGamePlayer(slug));
     setCurrentView('partner_games');
@@ -409,6 +392,7 @@ export function GameShell({
   const currentAnnouncement = announcementQueue[0] ?? null;
 
   const dismissCurrentAnnouncement = useCallback(async () => {
+    if (user.isImpersonating) return;
     const current = announcementQueue[0];
     if (!current) return;
     setDismissingAnnouncement(true);
@@ -416,7 +400,7 @@ export function GameShell({
     setDismissingAnnouncement(false);
     if (!ok) return;
     setAnnouncementQueue((prev) => prev.slice(1));
-  }, [announcementQueue]);
+  }, [announcementQueue, user.isImpersonating]);
 
   const leaveManagedAccount = useCallback(async () => {
     await postAccountManagerLeave();
@@ -443,8 +427,8 @@ export function GameShell({
         user={user}
         currentView={currentView}
         mobileMenuOpen={mobileMenuOpen}
-        onToggleMobileMenu={() => setMobileMenuOpen((v) => !v)}
-        onLogoClick={() => onNavigate('servers')}
+        onToggleMobileMenu={onToggleMobileMenu}
+        onLogoClick={onLogoClick}
         onNavigate={onNavigate}
         onDocs={onDocs}
         onAdmin={onAdmin}
@@ -452,7 +436,8 @@ export function GameShell({
         usdcDisplay={usdcDisplay}
         hashDisplay={hashDisplay}
         rankDisplay={rankDisplay}
-        tokenRows={liveTokenRows}
+        tokenRows={tokenRows}
+        liveAccrualAnchorMs={headerLiveAccrualAnchorMs}
         persistedHighlightCoinId={headerHighlightCoinId}
         onHighlightCoinChange={onHighlightCoinChange}
         projectHealth={projectHealth}
@@ -524,7 +509,7 @@ export function GameShell({
             onSessionRefresh={refreshSessionAndUsdc}
             onUserUpdate={onUserUpdate}
             hasWallet={walletGate.hasWallet}
-            onOpenWalletConnect={() => setWalletModalOpen(true)}
+            onOpenWalletConnect={onOpenWalletConnect}
             onHeaderRefresh={applyHeaderSnapshot}
             partnerGameSlug={partnerPlayerSlug}
             onOpenPartnerGame={onOpenPartnerGame}
@@ -567,7 +552,7 @@ export function GameShell({
       </div>
 
       <InAppAnnouncementModal
-        announcement={currentAnnouncement}
+        announcement={user.isImpersonating ? null : currentAnnouncement}
         onDismiss={() => void dismissCurrentAnnouncement()}
         dismissing={dismissingAnnouncement}
       />
@@ -576,17 +561,11 @@ export function GameShell({
         open={
           !walletGate.hasWallet &&
           currentView !== 'servers' &&
-          !walletPopupDismissed &&
-          !walletModalOpen
+          currentView !== 'profile' &&
+          !walletPopupDismissed
         }
         onDismiss={() => setWalletPopupDismissed(true)}
-        onConnect={() => setWalletModalOpen(true)}
-      />
-
-      <ConnectWalletModal
-        open={walletModalOpen}
-        onClose={() => setWalletModalOpen(false)}
-        onUserUpdate={onUserUpdate}
+        onConnect={() => onNavigate('profile')}
       />
 
       {!user.isImpersonating ? (

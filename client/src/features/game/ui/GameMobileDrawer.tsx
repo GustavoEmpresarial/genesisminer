@@ -31,7 +31,6 @@ function navItemLabel(key: GameView, fallback: string, t: (key: string) => strin
   if (key === 'profile') return t('nav.profile');
   if (key === 'management') return t('nav.management');
   if (key === 'merge') return t('nav.merge');
-  if (key === 'calculator') return t('nav.calculator');
   if (key === 'dashboard') return t('nav.dashboard');
   return fallback;
 }
