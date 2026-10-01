@@ -133,4 +133,6 @@ Não foi alterada. A compra de passe continua a depender do erro que o hardware 
 
 ## Rollback
 
-Ver `docs/deployment/README.md`, secção "Rollback desta branch". Commit de UI: `b864628`. Commit anterior ao saneamento, ainda em `feat/mining-usd-month-distribution`: `14af59c`.
+Ver `docs/deployment/README.md`, secção "Rollback desta branch". Commit de UI: `b864628`. Relatório: `b57f64c`. Commit anterior ao saneamento: `14af59c`.
+
+A branch foi enviada para `origin/chore/saneamento-auditoria`. Não houve pull na VM, nem `docker compose` em `dev.genesisdao.tech`, nem smoke HTTP. Esta máquina não tem a árvore `/root/genesis-current` nem um host SSH configurado. Produção (`genesisdao.tech`) não foi alterada.
