@@ -3,15 +3,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 describe('checkin premium-policy', () => {
-  let settingsRepo: Record<string, any>;
+  let settingsRepo: Record<string, unknown>;
   let stored: Record<string, string>;
-  let prismaMock: Record<string, any>;
-  let queryRawResult: Array<{ ok: number }>;
+  let prismaMock: {
+    prisma: {
+      $queryRaw: ReturnType<typeof vi.fn>;
+      $executeRaw: ReturnType<typeof vi.fn>;
+    };
+  };
+  let queryRawQueue: unknown[][];
 
   beforeEach(() => {
     vi.resetModules();
     stored = {};
-    queryRawResult = [];
+    queryRawQueue = [];
     settingsRepo = {
       getSettingsRecord: vi.fn(async (keys: string[]) => {
         const out: Record<string, string> = {};
@@ -24,7 +29,8 @@ describe('checkin premium-policy', () => {
     };
     prismaMock = {
       prisma: {
-        $queryRaw: vi.fn(async () => queryRawResult)
+        $queryRaw: vi.fn(async () => queryRawQueue.shift() ?? []),
+        $executeRaw: vi.fn(async () => 1)
       }
     };
     vi.doMock('../../../../server/shared/settings/settings-repository.js', () => settingsRepo);
@@ -38,7 +44,7 @@ describe('checkin premium-policy', () => {
   it('loadCheckinPremiumPolicy defaults (enabled=true quando não configurado)', async () => {
     const { loadCheckinPremiumPolicy } = await import('../../../../server/modules/checkin/services/premium-policy.js');
     const policy = await loadCheckinPremiumPolicy();
-    expect(policy).toEqual({ enabled: true, minUsdc: 195, intervalDays: 7 });
+    expect(policy).toEqual({ enabled: true, minUsdc: 100, intervalDays: 7 });
   });
 
   it('saveCheckinPremiumPolicy grava e persiste', async () => {
@@ -80,27 +86,36 @@ describe('checkin premium-policy', () => {
     expect(isPremiumWithinActiveWindow(1000, 1000 + 8 * MS_PER_DAY, 7)).toBe(false);
   });
 
-  it('userHasPremiumUpgradePurchase: true quando existe compra >= limite', async () => {
-    queryRawResult = [{ ok: 1 }];
-    const { userHasPremiumUpgradePurchase } = await import('../../../../server/modules/checkin/services/premium-policy.js');
-    expect(await userHasPremiumUpgradePurchase(1, 195)).toBe(true);
+  it('userHasPremiumUsdcSpend: true quando já unlocked', async () => {
+    queryRawQueue = [[{ ok: 1 }]];
+    const { userHasPremiumUsdcSpend } = await import('../../../../server/modules/checkin/services/premium-policy.js');
+    expect(await userHasPremiumUsdcSpend(1, 100)).toBe(true);
+    expect(prismaMock.prisma.$executeRaw).not.toHaveBeenCalled();
   });
 
-  it('userHasPremiumUpgradePurchase: false quando não há compra', async () => {
-    queryRawResult = [];
-    const { userHasPremiumUpgradePurchase } = await import('../../../../server/modules/checkin/services/premium-policy.js');
-    expect(await userHasPremiumUpgradePurchase(1, 195)).toBe(false);
+  it('userHasPremiumUsdcSpend: true quando gasto >= limite (persiste unlock)', async () => {
+    queryRawQueue = [[], [{ spent: 150 }]];
+    const { userHasPremiumUsdcSpend } = await import('../../../../server/modules/checkin/services/premium-policy.js');
+    expect(await userHasPremiumUsdcSpend(1, 100)).toBe(true);
+    expect(prismaMock.prisma.$executeRaw).toHaveBeenCalled();
   });
 
-  it('resolveUserCheckinPremiumContext: elegível quando policy enabled e comprou upgrade', async () => {
-    queryRawResult = [{ ok: 1 }];
+  it('userHasPremiumUsdcSpend: false quando gasto abaixo do limite', async () => {
+    queryRawQueue = [[], [{ spent: 40 }]];
+    const { userHasPremiumUsdcSpend } = await import('../../../../server/modules/checkin/services/premium-policy.js');
+    expect(await userHasPremiumUsdcSpend(1, 100)).toBe(false);
+    expect(prismaMock.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
+
+  it('resolveUserCheckinPremiumContext: elegível quando policy enabled e spend/unlock', async () => {
+    queryRawQueue = [[{ ok: 1 }]];
     const { resolveUserCheckinPremiumContext } = await import('../../../../server/modules/checkin/services/premium-policy.js');
     const ctx = await resolveUserCheckinPremiumContext(1);
     expect(ctx.eligible).toBe(true);
     expect(ctx.premiumWeeklyCheckin).toBe(true);
   });
 
-  it('resolveUserCheckinPremiumContext: não elegível quando policy desabilitada (não consulta compra)', async () => {
+  it('resolveUserCheckinPremiumContext: não elegível quando policy desabilitada (não consulta spend)', async () => {
     stored.checkin_premium_enabled = '0';
     const { resolveUserCheckinPremiumContext } = await import('../../../../server/modules/checkin/services/premium-policy.js');
     const ctx = await resolveUserCheckinPremiumContext(1);

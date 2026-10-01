@@ -1,8 +1,10 @@
 //! Check-in diário — ciclo UTC 00:00 + grace 48h para mineração.
 //! Espelha `server/modules/checkin/services/checkin.ts` (math pura).
 
+mod reward;
 mod window;
 
+pub use reward::{should_grant_streak_milestone_reward, CHECKIN_REWARD_EVERY_DAYS};
 pub use window::{
     can_early_checkin_for_next_period, has_checked_in_current_period, is_checkin_frozen_at_ms,
     is_checkin_frozen_for_mining, is_early_checkin_timestamp, is_premium_within_active_window,

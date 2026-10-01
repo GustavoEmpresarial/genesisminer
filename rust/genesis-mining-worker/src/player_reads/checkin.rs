@@ -4,19 +4,23 @@ use deadpool_postgres::{GenericClient, Pool};
 use genesis_core::checkin::{
     has_checked_in_current_period, is_premium_within_active_window,
     is_within_active_checkin_window, next_checkin_period_start_ms, premium_interval_ms,
-    utc_day_from_ms, CHECKIN_GRACE_MS, CHECKIN_TIMEZONE, CHECKIN_WINDOW_MS,
-    DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS, DEFAULT_CHECKIN_PREMIUM_MIN_USDC,
+    should_grant_streak_milestone_reward, utc_day_from_ms, CHECKIN_GRACE_MS, CHECKIN_REWARD_EVERY_DAYS,
+    CHECKIN_TIMEZONE, CHECKIN_WINDOW_MS,
+};
+use genesis_core::hardware::duration::{
+    format_asic_duration_label_pt, is_timed_asic_duration, normalize_asic_duration_config,
 };
 use genesis_core::time::MS_PER_SECOND;
+use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::config::WorkerConfig;
+use crate::hardware_client::call_hardware_credit;
 use crate::support::LOCK_TIMEOUT_MS;
 
 use super::{f64_cell, i32_cell, i64_cell, opt_string, pg_user_id, string_cell, PlayerReadError};
 
-/// Node `CHECKIN_REWARD_EVERY_DAYS`.
-const CHECKIN_REWARD_EVERY_DAYS: i32 = 7;
 /// Node `CHECKIN_STREAK_GRACE_MS` = 2 * day.
 const CHECKIN_STREAK_GRACE_MS: i64 = (CHECKIN_WINDOW_MS as i64) * 2;
 /// Node `STATEMENT_TIMEOUT_MS`.
@@ -30,10 +34,15 @@ const REWARD_HASHRATE: &str = "hashrate";
 const EVENT_CHECKIN_RECORDED: &str = "CHECKIN_RECORDED";
 const IDENTITY_USER: &str = "user";
 const CODE_GAME_STATE_NOT_FOUND: &str = "GAME_STATE_NOT_FOUND";
+/// Node streak grant qty — always one temporary machine.
+const STREAK_REWARD_QTY: i64 = 1;
+const UPGRADE_TYPE_MACHINE: &str = "machine";
+const LEASE_STATUS_STOCK: &str = "stock";
 
 const _: () = assert!(CHECKIN_REWARD_EVERY_DAYS == 7);
 const _: () = assert!(CHECKIN_STREAK_GRACE_MS == 2 * CHECKIN_WINDOW_MS as i64);
 const _: () = assert!(CHECKIN_STATEMENT_TIMEOUT_MS == 5_000);
+const _: () = assert!(STREAK_REWARD_QTY == 1);
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,14 +69,34 @@ struct PremiumCtx {
     min_usdc: f64,
 }
 
+#[derive(Debug, Clone)]
+struct StreakGrant {
+    granted: i32,
+    item_id: Option<String>,
+    item_name: Option<String>,
+    expires_at_ms: Option<i64>,
+    duration_label: Option<String>,
+}
+
+impl StreakGrant {
+    const EMPTY: Self = Self {
+        granted: 0,
+        item_id: None,
+        item_name: None,
+        expires_at_ms: None,
+        duration_label: None,
+    };
+}
+
 pub async fn run_checkin_status(
     pool: &Pool,
     user_id: i64,
     now_ms: i64,
 ) -> Result<Value, PlayerReadError> {
+    best_effort_ensure_premium_credit(pool, user_id, now_ms).await;
     let conn = pool.get().await?;
     let uid = pg_user_id(user_id)?;
-    let premium = load_premium(&conn, uid).await?;
+    let premium = load_premium(&*conn, uid).await?;
     let policy = load_reward_policy(&conn).await?;
     let row = conn
         .query_opt(
@@ -100,17 +129,20 @@ pub async fn run_checkin_status(
         false,
         0.0,
         false,
+        &StreakGrant::EMPTY,
     ))
 }
 
 pub async fn run_checkin_perform(
     pool: &Pool,
+    http: &Client,
+    cfg: &WorkerConfig,
     user_id: i64,
     now_ms: i64,
 ) -> Result<Value, PlayerReadError> {
     let mut conn = pool.get().await?;
     let uid = pg_user_id(user_id)?;
-    let premium = load_premium(&conn, uid).await?;
+    let premium = load_premium(&*conn, uid).await?;
     let policy = load_reward_policy(&conn).await?;
     let tx = conn.transaction().await?;
     tx.batch_execute(&format!(
@@ -173,9 +205,13 @@ pub async fn run_checkin_perform(
         )
         .await?;
         tx.commit().await?;
-        // Advance the `checkin` quests (daily + weekly) — best-effort, own tx, so a
-        // quest-table hiccup never fails the check-in. The premium auto-credit path
-        // (`ensure_premium_credit`) gates on daily>=1 so this won't double-count.
+        // Streak machine credit is HTTP to genesis-hardware — after commit so we do not
+        // hold FOR UPDATE across the RTT. Fail-closed empty grant never rolls back check-in.
+        let streak_grant =
+            maybe_grant_streak_reward(pool, http, cfg, user_id, uid, next_streak, &policy, now_ms)
+                .await;
+        // Advance check-in quests (daily + weekly) — best-effort, own tx. Skips when
+        // today's daily progress was already credited (e.g. prior status/quests read).
         best_effort_bump_checkin_quests(pool, uid, now_ms).await;
         return Ok(build_status(
             &day,
@@ -189,6 +225,7 @@ pub async fn run_checkin_perform(
             true,
             grant_amount(&policy, true),
             streak_reset,
+            &streak_grant,
         ));
     }
 
@@ -207,6 +244,7 @@ pub async fn run_checkin_perform(
             false,
             0.0,
             false,
+            &StreakGrant::EMPTY,
         ));
     }
 
@@ -228,6 +266,8 @@ pub async fn run_checkin_perform(
     )
     .await?;
     tx.commit().await?;
+    let streak_grant =
+        maybe_grant_streak_reward(pool, http, cfg, user_id, uid, next_streak, &policy, now_ms).await;
     best_effort_bump_checkin_quests(pool, uid, now_ms).await;
     Ok(build_status(
         &day,
@@ -241,7 +281,20 @@ pub async fn run_checkin_perform(
         true,
         grant_amount(&policy, false),
         streak_reset,
+        &streak_grant,
     ))
+}
+
+/// Best-effort: auto-credit check-in quests during premium window (daily gate ≥1).
+async fn best_effort_ensure_premium_credit(pool: &Pool, user_id: i64, now_ms: i64) {
+    let res = async {
+        let mut conn = pool.get().await?;
+        crate::player_reads::quests::ensure_premium_credit(&mut conn, user_id, now_ms).await
+    }
+    .await;
+    if let Err(e) = res {
+        tracing::warn!(err = %e.error, user_id, "checkin premium quest credit (non-fatal)");
+    }
 }
 
 /// Best-effort: advance `action_type = 'checkin'` quests in a dedicated tx. A
@@ -250,7 +303,8 @@ async fn best_effort_bump_checkin_quests(pool: &Pool, uid: i32, now_ms: i64) {
     let res = async {
         let mut conn = pool.get().await?;
         let tx = conn.transaction().await?;
-        crate::player_reads::quests::bump_checkin_progress(&tx, uid, now_ms).await?;
+        crate::player_reads::quests::bump_checkin_progress_if_daily_uncounted(&tx, uid, now_ms)
+            .await?;
         tx.commit().await?;
         Ok::<(), PlayerReadError>(())
     }
@@ -321,6 +375,158 @@ async fn apply_checkin<C: GenericClient>(
     Ok(())
 }
 
+/// Node `grantCheckinStreakTemporaryItem` when milestone + policy allow.
+async fn maybe_grant_streak_reward(
+    pool: &Pool,
+    http: &Client,
+    cfg: &WorkerConfig,
+    user_id: i64,
+    uid: i32,
+    next_streak: i32,
+    policy: &RewardPolicy,
+    now_ms: i64,
+) -> StreakGrant {
+    if !should_grant_streak_milestone_reward(next_streak) {
+        return StreakGrant::EMPTY;
+    }
+    grant_checkin_streak_temporary_item(pool, http, cfg, user_id, uid, policy, now_ms).await
+}
+
+/// Fail-closed gate after upgrades SELECT — Node missing / non-machine paths.
+fn streak_upgrade_machine_ok(upgrade_type: Option<&str>) -> bool {
+    upgrade_type == Some(UPGRADE_TYPE_MACHINE)
+}
+
+/// Fail-closed grant: policy/upgrade/type/credit issues → empty grant + ERROR log (never
+/// invents granted=1). Runs after check-in commit — same soft posture as Node missing upgrade.
+async fn grant_checkin_streak_temporary_item(
+    pool: &Pool,
+    http: &Client,
+    cfg: &WorkerConfig,
+    user_id: i64,
+    uid: i32,
+    policy: &RewardPolicy,
+    now_ms: i64,
+) -> StreakGrant {
+    if !policy.streak_enabled {
+        return StreakGrant::EMPTY;
+    }
+    let item_id = policy.streak_item_id.trim();
+    if item_id.is_empty() {
+        return StreakGrant::EMPTY;
+    }
+    let duration_cfg = normalize_asic_duration_config(
+        Some(i64::from(policy.streak_amount)),
+        Some(policy.streak_unit.as_str()),
+        None,
+    );
+    if !is_timed_asic_duration(&duration_cfg) {
+        return StreakGrant::EMPTY;
+    }
+
+    let conn = match pool.get().await {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!(user_id, item_id, err = %e, "checkin streak reward — pool");
+            return StreakGrant::EMPTY;
+        }
+    };
+
+    let up = match conn
+        .query_opt(
+            "SELECT id, name, type FROM upgrades WHERE id = $1 AND COALESCE(is_active, 1) <> 0 LIMIT 1",
+            &[&item_id],
+        )
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!(
+                user_id,
+                item_id,
+                err = %e,
+                "checkin streak reward — upgrades query failed"
+            );
+            return StreakGrant::EMPTY;
+        }
+    };
+    let Some(row) = up else {
+        tracing::error!(
+            user_id,
+            item_id,
+            "checkin streak reward — upgrade ausente ou inactivo"
+        );
+        return StreakGrant::EMPTY;
+    };
+    let row_type = string_cell(&row, "type");
+    if !streak_upgrade_machine_ok(Some(row_type.as_str())) {
+        tracing::error!(
+            user_id,
+            item_id,
+            r#type = %row_type,
+            "checkin streak reward — só máquinas (type=machine) com validade"
+        );
+        return StreakGrant::EMPTY;
+    }
+    let item_name = opt_string(&row, "name").unwrap_or_else(|| item_id.to_string());
+
+    if let Err(e) = call_hardware_credit(
+        http,
+        cfg,
+        user_id,
+        item_id,
+        STREAK_REWARD_QTY,
+        Some(duration_cfg.amount),
+        duration_cfg.unit.as_deref(),
+    )
+    .await
+    {
+        tracing::error!(
+            user_id,
+            item_id,
+            err = %e.error,
+            "checkin streak reward — hardware credit failed"
+        );
+        return StreakGrant::EMPTY;
+    }
+
+    let lease = conn
+        .query_opt(
+            "SELECT expires_at FROM player_asic_leases
+              WHERE user_id = $1 AND item_id = $2 AND status = $3 AND expires_at > $4
+              ORDER BY expires_at DESC
+              LIMIT 1",
+            &[&uid, &item_id, &LEASE_STATUS_STOCK, &now_ms],
+        )
+        .await
+        .ok()
+        .flatten();
+    let expires_at_ms = lease.and_then(|r| {
+        let v = i64_cell(&r, "expires_at");
+        if v > 0 {
+            Some(v)
+        } else {
+            None
+        }
+    });
+    let duration_label = format_asic_duration_label_pt(&duration_cfg);
+
+    tracing::info!(
+        user_id,
+        item_id,
+        expires_at_ms,
+        "checkin streak reward granted"
+    );
+
+    StreakGrant {
+        granted: STREAK_REWARD_QTY as i32,
+        item_id: Some(item_id.to_string()),
+        item_name: Some(item_name),
+        expires_at_ms,
+        duration_label: Some(duration_label),
+    }
+}
+
 fn grant_amount(policy: &RewardPolicy, premium: bool) -> f64 {
     if policy.reward_type != REWARD_HASHRATE {
         return 0.0;
@@ -373,6 +579,7 @@ fn build_status(
     performed: bool,
     reward_granted: f64,
     streak_reset: bool,
+    streak_grant: &StreakGrant,
 ) -> Value {
     let cycle = CHECKIN_REWARD_EVERY_DAYS;
     let cycle_progress = if streak == 0 {
@@ -463,85 +670,48 @@ fn build_status(
         obj.insert("performed".into(), json!(performed));
         obj.insert("rewardGranted".into(), json!(reward_granted));
         obj.insert("streakReset".into(), json!(streak_reset));
-        obj.insert("streakRewardGranted".into(), json!(0));
-        obj.insert("streakRewardGrantedItemId".into(), Value::Null);
-        obj.insert("streakRewardGrantedItemName".into(), Value::Null);
-        obj.insert("streakRewardGrantedExpiresAtMs".into(), Value::Null);
-        obj.insert("streakRewardGrantedDurationLabel".into(), Value::Null);
+        obj.insert("streakRewardGranted".into(), json!(streak_grant.granted));
+        obj.insert(
+            "streakRewardGrantedItemId".into(),
+            match &streak_grant.item_id {
+                Some(id) => json!(id),
+                None => Value::Null,
+            },
+        );
+        obj.insert(
+            "streakRewardGrantedItemName".into(),
+            match &streak_grant.item_name {
+                Some(n) => json!(n),
+                None => Value::Null,
+            },
+        );
+        obj.insert(
+            "streakRewardGrantedExpiresAtMs".into(),
+            match streak_grant.expires_at_ms {
+                Some(ms) => json!(ms),
+                None => Value::Null,
+            },
+        );
+        obj.insert(
+            "streakRewardGrantedDurationLabel".into(),
+            match &streak_grant.duration_label {
+                Some(l) => json!(l),
+                None => Value::Null,
+            },
+        );
     }
     body
 }
 
-async fn load_premium<C: GenericClient>(
-    client: &C,
+async fn load_premium(
+    client: &tokio_postgres::Client,
     uid: i32,
 ) -> Result<PremiumCtx, PlayerReadError> {
-    // `resolve_premium_weekly_checkin` needs tokio_postgres::Client; pool object client works if we query here.
-    let setting_keys = vec![
-        "checkin_premium_enabled".to_string(),
-        "checkin_premium_min_usdc".to_string(),
-        "checkin_premium_interval_days".to_string(),
-    ];
-    let rows = client
-        .query(
-            "SELECT key, value FROM settings WHERE key = ANY($1)",
-            &[&setting_keys],
-        )
-        .await?;
-    let mut enabled_raw = None;
-    let mut min_raw = None;
-    let mut days_raw = None;
-    for r in &rows {
-        match string_cell(r, "key").as_str() {
-            "checkin_premium_enabled" => enabled_raw = Some(string_cell(r, "value")),
-            "checkin_premium_min_usdc" => min_raw = Some(string_cell(r, "value")),
-            "checkin_premium_interval_days" => days_raw = Some(string_cell(r, "value")),
-            _ => {}
-        }
-    }
-    let enabled = match enabled_raw.as_deref() {
-        None | Some("") => true,
-        Some(v) => v == "1",
-    };
-    let min_parsed = min_raw
-        .as_deref()
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(DEFAULT_CHECKIN_PREMIUM_MIN_USDC);
-    let min_usdc = if min_parsed.is_finite() && min_parsed >= 0.0 {
-        min_parsed
-    } else {
-        DEFAULT_CHECKIN_PREMIUM_MIN_USDC
-    };
-    let days_parsed = days_raw
-        .as_deref()
-        .and_then(|s| s.parse::<i32>().ok())
-        .unwrap_or(DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS);
-    let interval_days = if days_parsed >= 1 {
-        days_parsed
-    } else {
-        DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS
-    };
-    if !enabled {
-        return Ok(PremiumCtx {
-            premium_weekly: false,
-            interval_days,
-            min_usdc,
-        });
-    }
-    let eligible = client
-        .query_opt(
-            "SELECT 1 FROM admin_upgrade_purchases p
-              INNER JOIN admin_upgrades u ON u.id = p.upgrade_id
-             WHERE p.user_id = $1 AND u.price_usdc >= $2
-             LIMIT 1",
-            &[&uid, &min_usdc],
-        )
-        .await?
-        .is_some();
+    let ctx = crate::checkin_premium_elig::resolve_premium_weekly_checkin(client, uid).await;
     Ok(PremiumCtx {
-        premium_weekly: eligible,
-        interval_days,
-        min_usdc,
+        premium_weekly: ctx.premium_weekly,
+        interval_days: ctx.interval_days,
+        min_usdc: ctx.min_usdc,
     })
 }
 
@@ -611,5 +781,59 @@ fn opt_positive_i64(row: &tokio_postgres::Row, col: &str) -> Option<i64> {
         Some(v)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use genesis_core::checkin::should_grant_streak_milestone_reward;
+
+    #[test]
+    fn should_grant_mirrors_node_every_days() {
+        assert!(should_grant_streak_milestone_reward(CHECKIN_REWARD_EVERY_DAYS));
+        assert!(should_grant_streak_milestone_reward(2 * CHECKIN_REWARD_EVERY_DAYS));
+        assert!(!should_grant_streak_milestone_reward(1));
+        assert!(!should_grant_streak_milestone_reward(0));
+    }
+
+    #[test]
+    fn streak_grant_empty_defaults() {
+        let g = StreakGrant::EMPTY;
+        assert_eq!(g.granted, 0);
+        assert!(g.item_id.is_none());
+        assert!(g.expires_at_ms.is_none());
+    }
+
+    #[test]
+    fn policy_disabled_or_empty_item_skips_before_query() {
+        let disabled = RewardPolicy {
+            reward_type: REWARD_HASHRATE.into(),
+            daily: DEFAULT_DAILY_REWARD,
+            weekly: DEFAULT_WEEKLY_REWARD,
+            item_id: String::new(),
+            streak_enabled: false,
+            streak_item_id: "asic-x".into(),
+            streak_amount: CHECKIN_REWARD_EVERY_DAYS,
+            streak_unit: "day".into(),
+        };
+        assert!(!disabled.streak_enabled);
+        let empty_item = RewardPolicy {
+            streak_enabled: true,
+            streak_item_id: "  ".into(),
+            ..disabled
+        };
+        assert!(empty_item.streak_item_id.trim().is_empty());
+        let cfg = normalize_asic_duration_config(Some(0), Some("day"), None);
+        assert!(!is_timed_asic_duration(&cfg));
+    }
+
+    #[test]
+    fn fail_closed_non_machine_upgrade_type() {
+        assert!(streak_upgrade_machine_ok(Some(UPGRADE_TYPE_MACHINE)));
+        assert!(!streak_upgrade_machine_ok(Some("part")));
+        assert!(!streak_upgrade_machine_ok(Some("battery")));
+        assert!(!streak_upgrade_machine_ok(None));
+        assert!(!streak_upgrade_machine_ok(Some("")));
     }
 }

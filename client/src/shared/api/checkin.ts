@@ -1,4 +1,5 @@
 import { apiFetch } from './http';
+import { DEFAULT_CHECKIN_PREMIUM_MIN_USDC } from '../constants/checkinPremium';
 
 const base = '/api';
 
@@ -104,7 +105,9 @@ function parseCheckinStatusPayload(raw: Record<string, unknown>): CheckinStatusP
         ? Math.max(1, Math.floor(raw.premiumIntervalDays))
         : 7,
     premiumMinUsdc:
-      typeof raw.premiumMinUsdc === 'number' && Number.isFinite(raw.premiumMinUsdc) ? raw.premiumMinUsdc : 195,
+      typeof raw.premiumMinUsdc === 'number' && Number.isFinite(raw.premiumMinUsdc)
+        ? raw.premiumMinUsdc
+        : DEFAULT_CHECKIN_PREMIUM_MIN_USDC,
     nextCheckinAllowedMs:
       typeof raw.nextCheckinAllowedMs === 'number' && Number.isFinite(raw.nextCheckinAllowedMs)
         ? Math.floor(raw.nextCheckinAllowedMs)

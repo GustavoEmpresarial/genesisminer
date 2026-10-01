@@ -1,6 +1,6 @@
 use super::nft::{
-    is_asic_room_for_mining_credits, is_nft_mining_room_id,
-    is_nft_room_exclusive_mining_coin_ref_str,
+    is_asic_room_for_mining_credits, is_nft_room_exclusive_mining_coin_ref_str,
+    is_nft_room_for_mining_credits,
 };
 use super::types::CheckinHashEntry;
 use std::collections::{HashMap, HashSet};
@@ -15,7 +15,7 @@ pub fn sum_non_nft_room_rig_hash_hps(
         if !e.counts_toward_general_power {
             continue;
         }
-        if is_nft_mining_room_id(e.room_id.as_deref(), nft_room_ids) {
+        if is_nft_room_for_mining_credits(e.room_id.as_deref(), Some(nft_room_ids)) {
             continue;
         }
         if is_asic_room_for_mining_credits(e.room_id.as_deref(), asic_room_ids) {
@@ -53,7 +53,7 @@ pub fn effective_hash_with_checkin_bonus(
     if counts_toward_general_power == Some(false) {
         return base;
     }
-    if is_nft_mining_room_id(room_id, nft_room_ids) {
+    if is_nft_room_for_mining_credits(room_id, Some(nft_room_ids)) {
         return base;
     }
     if is_asic_room_for_mining_credits(room_id, asic_room_ids) {

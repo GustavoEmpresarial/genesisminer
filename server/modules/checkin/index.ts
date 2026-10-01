@@ -46,7 +46,7 @@ export {
   premiumIntervalMs,
   resolveUserCheckinPremiumContext,
   saveCheckinPremiumPolicy,
-  userHasPremiumUpgradePurchase
+  userHasPremiumUsdcSpend
 } from './services/premium-policy.js';
 export type { CheckinPremiumPolicy, UserCheckinPremiumContext } from './services/premium-policy.js';
 

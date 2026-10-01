@@ -38,7 +38,7 @@ describe('registerCheckinModuleRoutes', () => {
   beforeEach(() => {
     vi.resetModules();
     premiumPolicy = {
-      loadCheckinPremiumPolicy: vi.fn().mockResolvedValue({ enabled: true, minUsdc: 195, intervalDays: 7 }),
+      loadCheckinPremiumPolicy: vi.fn().mockResolvedValue({ enabled: true, minUsdc: 100, intervalDays: 7 }),
       saveCheckinPremiumPolicy: vi.fn().mockResolvedValue({ enabled: false, minUsdc: 300, intervalDays: 14 })
     };
     rewardPolicy = {
@@ -71,7 +71,7 @@ describe('registerCheckinModuleRoutes', () => {
     const app = await loadApp();
     const res = fakeRes();
     await app.routes['GET /api/admin/checkin-premium-policy']({ headers: {} }, res);
-    expect(res.body).toEqual({ ok: true, enabled: true, minUsdc: 195, intervalDays: 7 });
+    expect(res.body).toEqual({ ok: true, enabled: true, minUsdc: 100, intervalDays: 7 });
   });
 
   it('POST /api/admin/checkin-premium-policy grava e devolve a política actualizada', async () => {

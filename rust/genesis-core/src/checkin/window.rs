@@ -111,7 +111,7 @@ pub fn is_checkin_frozen_at_ms(last_checkin_at_ms: Option<i64>, now_ms: i64) -> 
 // --- Premium weekly check-in (espelha `server/modules/checkin/services/premium-policy.ts`) ---
 
 /// Default de parse quando settings ausentes / inválidos (worker lê settings em prod).
-pub const DEFAULT_CHECKIN_PREMIUM_MIN_USDC: f64 = 195.0;
+pub const DEFAULT_CHECKIN_PREMIUM_MIN_USDC: f64 = 100.0;
 /// Default de parse / fallback quando `interval_days < 1`.
 pub const DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS: i32 = 7;
 
