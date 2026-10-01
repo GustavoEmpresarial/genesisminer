@@ -106,6 +106,8 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      hardware:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       GENESIS_MINING_WORKER: "1"
@@ -116,6 +118,8 @@ services:
       MINING_WORKER_AUTH_TOKEN: ${MINING_WORKER_AUTH_TOKEN:?set MINING_WORKER_AUTH_TOKEN in deploy/.env}
       # gerente/enter|leave flip the session manager-mode flag via genesis-auth.
       GENESIS_AUTH_URL: "http://auth:8091"
+      # Check-in streak machine grant → hardware credit/leases.
+      GENESIS_HARDWARE_URL: "http://hardware:8091"
       # Calculator "Analisar com IA" — unset ⇒ endpoint returns AI_NOT_CONFIGURED.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       CALCULATOR_AI_MODEL: ${CALCULATOR_AI_MODEL:-claude-sonnet-5}
@@ -137,6 +141,8 @@ services:
       # to the shared volume so genesis-api can list/download them.
       BACKUP_DIR: /app/storage/backups
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-3}
+      # Partner Games tab + session API maintenance (1/true = on). Source of truth: mining-worker.
+      PARTNER_GAMES_MAINTENANCE: "0"
       # Off-site copy to Google Drive (optional — idles unless all 4 are set).
       GDRIVE_CLIENT_ID: ${GDRIVE_CLIENT_ID:-}
       GDRIVE_CLIENT_SECRET: ${GDRIVE_CLIENT_SECRET:-}
@@ -351,14 +357,11 @@ services:
       GENESIS_NAV_RUST: "1"
       GENESIS_CHECKIN_RUST: "1"
       GENESIS_MINING_RUST: "1"
-      GENESIS_PARTNER_GAMES_RUST: "1"
       GENESIS_MARKET_RUST: "1"
       GENESIS_LUCKY_BOXES_RUST: "1"
       GENESIS_WALLET_RUST: "1"
       GENESIS_HEADER_RUST: "1"
       GENESIS_CATALOG_RUST: "1"
-      # Partner Games tab + session API maintenance (1/true = on).
-      PARTNER_GAMES_MAINTENANCE: "1"
       # Kafka (Compose Hostinger). Cliente no-op se KAFKA_ENABLED≠1.
       KAFKA_ENABLED: "1"
       KAFKA_BROKERS: "kafka:9092"
