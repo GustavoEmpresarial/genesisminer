@@ -7,11 +7,18 @@ const API_BASE = '/api';
 
 const SUPPORT_PAYLOAD_TOO_LARGE_PT =
   'Os anexos excedem o limite permitido. Cada ficheiro pode ter até 12 MB (até 5 anexos). Tenta comprimir ou enviar menos ficheiros.';
+const SUPPORT_FILE_TYPE_NOT_ALLOWED_PT =
+  'Tipo de ficheiro não permitido. Usa PNG, JPG, GIF, WEBP ou vídeo MP4/WEBM/MOV (não HEIC).';
+const SUPPORT_FILE_TOO_SMALL_PT = 'Ficheiro inválido ou vazio.';
 
 function supportErrorFromJson(res: Response, data: Record<string, unknown>): string {
   if (res.status === 413) return SUPPORT_PAYLOAD_TOO_LARGE_PT;
   const err = data.error;
-  if (typeof err === 'string' && err.trim()) return err;
+  if (typeof err === 'string' && err.trim()) {
+    if (err.includes('File type not allowed')) return SUPPORT_FILE_TYPE_NOT_ALLOWED_PT;
+    if (err.includes('File too small')) return SUPPORT_FILE_TOO_SMALL_PT;
+    return err;
+  }
   return `HTTP ${res.status}`;
 }
 
@@ -163,8 +170,12 @@ export async function submitSupportTicket(payload: {
   fd.set('subject', payload.subject);
   fd.set('message', payload.message);
   fd.set('idempotencyKey', payload.idempotencyKey || newSupportIdempotencyKey());
+  let appended = 0;
   for (const f of payload.files || []) {
-    if (f && f.size > 0) fd.append('files', f);
+    if (f && f.size > 0) {
+      fd.append('files', f);
+      appended += 1;
+    }
   }
   try {
     const res = await apiFetch(`${API_BASE}/support/tickets`, { method: 'POST', body: fd });
@@ -209,8 +220,12 @@ export async function postAdminSupportTicketReply(payload: {
   const fd = new FormData();
   fd.set('ticketId', payload.ticketId);
   fd.set('message', payload.message);
+  let appended = 0;
   for (const f of payload.files || []) {
-    if (f && f.size > 0) fd.append('files', f);
+    if (f && f.size > 0) {
+      fd.append('files', f);
+      appended += 1;
+    }
   }
   try {
     const res = await apiFetch(`${API_BASE}/admin/support-tickets/reply`, { method: 'POST', body: fd });

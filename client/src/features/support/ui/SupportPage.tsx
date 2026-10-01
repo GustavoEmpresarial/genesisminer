@@ -20,6 +20,7 @@ import {
   type MySupportTicketSummary
 } from '../../../shared/api/support';
 import { mapApiErrorToMessage } from '../../../shared/api/client-errors';
+import { SUPPORT_ATTACHMENT_MIN_BYTES } from '../../../shared/constants/formLimits';
 import { useI18n, useT } from '../../../shared/i18n';
 import { HubPanel } from '../../../shared/ui/HubPanel';
 import { formatInstantMs } from '../../../shared/utils/locale-format';
@@ -67,6 +68,14 @@ export function SupportPage({ userEmail, username }: SupportPageProps) {
   );
   const tooManyFiles = useCallback(
     (max: number) => t('support.tooManyFiles', { max: String(max) }),
+    [t]
+  );
+  const fileTypeNotAllowed = useCallback(
+    (name: string) => t('support.fileTypeNotAllowed', { name }),
+    [t]
+  );
+  const fileTooSmall = useCallback(
+    (name: string) => t('support.fileTooSmall', { name }),
     [t]
   );
 
@@ -136,15 +145,18 @@ export function SupportPage({ userEmail, username }: SupportPageProps) {
           picked,
           SUPPORT_ATTACHMENT_MAX_COUNT,
           SUPPORT_ATTACHMENT_MAX_BYTES,
+          SUPPORT_ATTACHMENT_MIN_BYTES,
           fileTooLarge,
-          tooManyFiles
+          tooManyFiles,
+          fileTypeNotAllowed,
+          fileTooSmall
         );
         if (rejectReason) setErr(rejectReason);
         return next;
       });
       e.target.value = '';
     },
-    [fileTooLarge, tooManyFiles]
+    [fileTooLarge, fileTooSmall, fileTypeNotAllowed, tooManyFiles]
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -185,8 +197,11 @@ export function SupportPage({ userEmail, username }: SupportPageProps) {
         picked,
         SUPPORT_ATTACHMENT_MAX_COUNT,
         SUPPORT_ATTACHMENT_MAX_BYTES,
+        SUPPORT_ATTACHMENT_MIN_BYTES,
         fileTooLarge,
-        tooManyFiles
+        tooManyFiles,
+        fileTypeNotAllowed,
+        fileTooSmall
       );
       if (rejectReason) setFollowErr(rejectReason);
       return next;

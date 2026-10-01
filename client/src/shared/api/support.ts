@@ -9,11 +9,18 @@ export const SUPPORT_ATTACHMENT_MAX_COUNT = 5;
 
 const SUPPORT_PAYLOAD_TOO_LARGE =
   'Attachments exceed the allowed limit. Each file can be up to 12 MB (max 5). Try compressing or sending fewer files.';
+const SUPPORT_FILE_TYPE_NOT_ALLOWED_PT =
+  'Tipo de ficheiro não permitido. Usa PNG, JPG, GIF, WEBP ou vídeo MP4/WEBM/MOV (não HEIC).';
+const SUPPORT_FILE_TOO_SMALL_PT = 'Ficheiro inválido ou vazio.';
 
 function supportErrorFromJson(res: Response, data: Record<string, unknown>): string {
   if (res.status === 413) return SUPPORT_PAYLOAD_TOO_LARGE;
   const err = data.error;
-  if (typeof err === 'string' && err.trim()) return err;
+  if (typeof err === 'string' && err.trim()) {
+    if (err.includes('File type not allowed')) return SUPPORT_FILE_TYPE_NOT_ALLOWED_PT;
+    if (err.includes('File too small')) return SUPPORT_FILE_TOO_SMALL_PT;
+    return err;
+  }
   return `HTTP ${res.status}`;
 }
 
