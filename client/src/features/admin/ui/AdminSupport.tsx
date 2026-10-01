@@ -27,12 +27,17 @@ import {
   type SupportTicketAttachment,
   type SupportUserHistoryResponse,
 } from '../../../shared/api/admin-legacy';
-import { SUPPORT_TICKET_MESSAGE_MAX } from '../../../shared/constants/formLimits';
+import { SUPPORT_TICKET_MESSAGE_MAX, SUPPORT_ATTACHMENT_MIN_BYTES, SUPPORT_ATTACHMENT_MAX_BYTES, SUPPORT_ATTACHMENT_MAX_COUNT } from '../../../shared/constants/formLimits';
 import type { GameUserActivityEntry } from '../lib/adminTypes';
 import { ACTIVITY_LOG_FILTER_GROUPS, filterUserActivityLogs, formatAccountCreatedBrt } from '../utils/adminUserActivityLog';
 import { AdminActivityLogTable } from './AdminActivityLogTable';
 import { AdminUserAccountTracePanel } from './AdminUserAccountTracePanel';
 import { safeSupportAttachmentHref } from '../../../shared/utils/supportAttachmentUrls';
+import {
+  SUPPORT_FILE_ACCEPT,
+  isAllowedSupportAttachmentExt,
+  supportAttachmentExt,
+} from '../../support/lib/supportAccept';
 
 export type AdminSupportOpenPlayerPayload = { userId: number; email: string; username: string };
 
@@ -41,8 +46,6 @@ type AdminSupportProps = {
     canOpenPlayerProfile?: boolean;
     onOpenPlayerProfile?: (p: AdminSupportOpenPlayerPayload) => void;
 };
-
-const ACCEPT = 'image/png,image/jpeg,image/jpg,image/gif,image/webp,video/mp4,video/webm,video/quicktime,.mov';
 
 function isVideoAtt(a: { mime?: string; url?: string }) {
   const m = (a.mime || '').toLowerCase();
@@ -413,11 +416,38 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
   const onPickReplyFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files;
     if (!list?.length) return;
+    let rejected = 0;
+    let rejectReason: string | null = null;
+    const accepted: File[] = [];
+    for (let i = 0; i < list.length; i++) {
+      const f = list.item(i);
+      if (!f) continue;
+      if (f.size > SUPPORT_ATTACHMENT_MAX_BYTES) {
+        rejected += 1;
+        rejectReason = `«${f.name}» ultrapassa o limite de ${Math.floor(SUPPORT_ATTACHMENT_MAX_BYTES / (1024 * 1024))} MB por ficheiro.`;
+        continue;
+      }
+      if (f.size < SUPPORT_ATTACHMENT_MIN_BYTES) {
+        rejected += 1;
+        rejectReason = `«${f.name}» ficheiro inválido ou vazio.`;
+        continue;
+      }
+      const ext = supportAttachmentExt(f.name);
+      if (!isAllowedSupportAttachmentExt(ext)) {
+        rejected += 1;
+        rejectReason = `«${f.name}» tipo não permitido. Usa PNG, JPG, GIF, WEBP ou vídeo MP4/WEBM/MOV (não HEIC).`;
+        continue;
+      }
+      accepted.push(f);
+    }
+    // #endregion
+    if (rejectReason) setReplyErr(rejectReason);
+    else setReplyErr(null);
     setReplyFiles((prev) => {
       const next = [...prev];
-      for (let i = 0; i < list.length && next.length < 5; i++) {
-        const f = list.item(i);
-        if (f) next.push(f);
+      for (const f of accepted) {
+        if (next.length >= SUPPORT_ATTACHMENT_MAX_COUNT) break;
+        next.push(f);
       }
       return next;
     });
@@ -632,7 +662,7 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
                 <label className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs cursor-pointer hover:bg-slate-800">
                   <Paperclip size={14} />
                   Anexar foto/vídeo
-                  <input type="file" accept={ACCEPT} multiple className="hidden" onChange={onPickReplyFiles} />
+                  <input type="file" accept={SUPPORT_FILE_ACCEPT} multiple className="hidden" onChange={onPickReplyFiles} />
                 </label>
                 {replyFiles.length > 0 && (
                   <span className="text-[11px] text-slate-500">{replyFiles.length}/5 ficheiros</span>
@@ -1281,7 +1311,7 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
                           <label className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs cursor-pointer hover:bg-slate-800">
                             <Paperclip size={14} />
                             Anexar foto/vídeo
-                            <input type="file" accept={ACCEPT} multiple className="hidden" onChange={onPickReplyFiles} />
+                            <input type="file" accept={SUPPORT_FILE_ACCEPT} multiple className="hidden" onChange={onPickReplyFiles} />
                           </label>
                           {replyFiles.length > 0 && (
                             <span className="text-[11px] text-slate-500">{replyFiles.length}/5 ficheiros</span>

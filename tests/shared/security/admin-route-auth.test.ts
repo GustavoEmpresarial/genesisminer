@@ -171,6 +171,20 @@ describe('resolveAdminRouteRequirement', () => {
     expect(allowsAdminRouteAccess(false, new Set(['reports']), { kind: 'tab', tab: 'transparency' })).toBe(false);
   });
 
+  it('GET/PUT /api/admin/transparency/health-settings são tab transparency', () => {
+    // Knobs do índice de saúde (pesos, piso, âmbito de período, valor fixado).
+    // Um admin sem a tab `transparency` não pode ler nem alterar a métrica pública.
+    for (const method of ['GET', 'PUT'] as const) {
+      expect(resolveAdminRouteRequirement(method, '/api/admin/transparency/health-settings')).toEqual({
+        kind: 'tab',
+        tab: 'transparency'
+      });
+    }
+    expect(allowsAdminRouteAccess(false, new Set(['reports']), { kind: 'tab', tab: 'transparency' })).toBe(false);
+    expect(allowsAdminRouteAccess(false, new Set(), { kind: 'tab', tab: 'transparency' })).toBe(false);
+    expect(allowsAdminRouteAccess(true, new Set(), { kind: 'tab', tab: 'transparency' })).toBe(true);
+  });
+
   it('GET /api/wallet-labels é tab reports; POST é super', () => {
     expect(resolveAdminRouteRequirement('GET', '/api/wallet-labels')).toEqual({ kind: 'tab', tab: 'reports' });
     expect(resolveAdminRouteRequirement('POST', '/api/wallet-labels')).toEqual({ kind: 'super' });
@@ -227,6 +241,44 @@ describe('resolveAdminRouteRequirement', () => {
       expect(allowsAdminRouteAccess(true, new Set(), { kind: 'tab', tab: 'users' })).toBe(true);
     });
 
+    it('GET /api/admin/users/:userId/reinvestment-history é tab users, não super', () => {
+      expect(resolveAdminRouteRequirement('GET', '/api/admin/users/42/reinvestment-history')).toEqual({
+        kind: 'tab',
+        tab: 'users'
+      });
+      expect(allowsAdminRouteAccess(false, new Set(['users']), { kind: 'tab', tab: 'users' })).toBe(true);
+      expect(allowsAdminRouteAccess(false, new Set(['reports']), { kind: 'tab', tab: 'users' })).toBe(false);
+      expect(allowsAdminRouteAccess(true, new Set(), { kind: 'tab', tab: 'users' })).toBe(true);
+    });
+
+    it('GET /api/admin/reinvestment-history é tab reports, não super', () => {
+      expect(resolveAdminRouteRequirement('GET', '/api/admin/reinvestment-history')).toEqual({
+        kind: 'tab',
+        tab: 'reports'
+      });
+      expect(allowsAdminRouteAccess(false, new Set(['reports']), { kind: 'tab', tab: 'reports' })).toBe(true);
+      expect(allowsAdminRouteAccess(false, new Set(['users']), { kind: 'tab', tab: 'reports' })).toBe(false);
+      expect(allowsAdminRouteAccess(true, new Set(), { kind: 'tab', tab: 'reports' })).toBe(true);
+    });
+
+    it('GET /api/admin/shop/checkouts é tab reports, não super', () => {
+      expect(resolveAdminRouteRequirement('GET', '/api/admin/shop/checkouts')).toEqual({
+        kind: 'tab',
+        tab: 'reports'
+      });
+      expect(resolveAdminRouteRequirement('POST', '/api/admin/shop/checkouts')).toEqual({ kind: 'super' });
+      expect(allowsAdminRouteAccess(false, new Set(['reports']), { kind: 'tab', tab: 'reports' })).toBe(true);
+      expect(allowsAdminRouteAccess(false, new Set(['users']), { kind: 'tab', tab: 'reports' })).toBe(false);
+    });
+
+    it('GET /api/admin/purchases/report é tab reports, não super', () => {
+      expect(resolveAdminRouteRequirement('GET', '/api/admin/purchases/report')).toEqual({
+        kind: 'tab',
+        tab: 'reports'
+      });
+      expect(resolveAdminRouteRequirement('POST', '/api/admin/purchases/report')).toEqual({ kind: 'super' });
+    });
+
   it('impersonate é tab users, não super', () => {
     expect(resolveAdminRouteRequirement('POST', '/api/admin/impersonate')).toEqual({ kind: 'tab', tab: 'users' });
   });
@@ -263,6 +315,14 @@ describe('resolveAdminRouteRequirement', () => {
   it('save-game-override exige POST + regex exata', () => {
     expect(resolveAdminRouteRequirement('POST', '/api/admin/users/42/save-game-override')).toEqual({ kind: 'tab', tab: 'users' });
     expect(resolveAdminRouteRequirement('GET', '/api/admin/users/42/save-game-override')).toEqual({ kind: 'super' });
+  });
+
+  it('grant-premium-checkin exige POST + tab users', () => {
+    expect(resolveAdminRouteRequirement('POST', '/api/admin/users/42/grant-premium-checkin')).toEqual({
+      kind: 'tab',
+      tab: 'users'
+    });
+    expect(resolveAdminRouteRequirement('GET', '/api/admin/users/42/grant-premium-checkin')).toEqual({ kind: 'super' });
   });
 
   it('PUT /api/admin/users/:id/rooms é tab users, não super', () => {

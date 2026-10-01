@@ -372,6 +372,9 @@ pub fn resolve_admin_route_requirement(method: &Method, raw_path: &str) -> Admin
     if is_post && admin_user_sub_route(p, "/save-game-override") {
         return Tab(TAB_USERS);
     }
+    if is_post && admin_user_sub_route(p, "/grant-premium-checkin") {
+        return Tab(TAB_USERS);
+    }
     if is_put && admin_user_sub_route(p, "/rooms") {
         return Tab(TAB_USERS);
     }
@@ -379,6 +382,9 @@ pub fn resolve_admin_route_requirement(method: &Method, raw_path: &str) -> Admin
         return Tab(TAB_USERS);
     }
     if is_get && admin_user_sub_route(p, "/wallet-history") {
+        return Tab(TAB_USERS);
+    }
+    if is_get && admin_user_sub_route(p, "/reinvestment-history") {
         return Tab(TAB_USERS);
     }
     if is_get
@@ -396,6 +402,15 @@ pub fn resolve_admin_route_requirement(method: &Method, raw_path: &str) -> Admin
         || p.starts_with("/api/admin/mining-runtime-summary")
         || p.starts_with("/api/admin/etherscan/")
     {
+        return Tab(TAB_REPORTS);
+    }
+    if is_get && p == "/api/admin/reinvestment-history" {
+        return Tab(TAB_REPORTS);
+    }
+    if is_get && p == "/api/admin/shop/checkouts" {
+        return Tab(TAB_REPORTS);
+    }
+    if is_get && p == "/api/admin/purchases/report" {
         return Tab(TAB_REPORTS);
     }
     if p.starts_with("/api/admin/withdrawals") {
@@ -753,6 +768,20 @@ mod tests {
             Tab(TAB_USERS)
         );
         assert_eq!(
+            resolve_admin_route_requirement(
+                &Method::POST,
+                "/api/admin/users/7/grant-premium-checkin"
+            ),
+            Tab(TAB_USERS)
+        );
+        assert_eq!(
+            resolve_admin_route_requirement(
+                &Method::GET,
+                "/api/admin/users/7/grant-premium-checkin"
+            ),
+            Super
+        );
+        assert_eq!(
             resolve_admin_route_requirement(&Method::PUT, "/api/admin/users/7/rooms"),
             Tab(TAB_USERS)
         );
@@ -766,6 +795,22 @@ mod tests {
         );
         assert_eq!(
             resolve_admin_route_requirement(&Method::GET, "/api/admin/withdrawals"),
+            Super
+        );
+        assert_eq!(
+            resolve_admin_route_requirement(&Method::GET, "/api/admin/reinvestment-history"),
+            Tab(TAB_REPORTS)
+        );
+        assert_eq!(
+            resolve_admin_route_requirement(&Method::GET, "/api/admin/shop/checkouts"),
+            Tab(TAB_REPORTS)
+        );
+        assert_eq!(
+            resolve_admin_route_requirement(&Method::GET, "/api/admin/purchases/report"),
+            Tab(TAB_REPORTS)
+        );
+        assert_eq!(
+            resolve_admin_route_requirement(&Method::POST, "/api/admin/shop/checkouts"),
             Super
         );
     }

@@ -1,6 +1,6 @@
 /**
  * Admin mining-coin catalog + economy apply/sync endpoints.
- * Extracted from admin-legacy (AdminEconomy / AdminReports / coin editor).
+ * Extracted from admin-legacy (AdminReports / coin editor).
  */
 import { apiFetch } from './http';
 
@@ -91,6 +91,13 @@ export function normalizeMiningCoinPayload(coin: Record<string, unknown>): Recor
     targetDailyUSD: Math.max(0, targetDailyUSD),
     distributionMode,
     distributionUsdMonth: Math.max(0, distributionUsdMonth),
+    // Explicit booleans so JSON.stringify never omits keys (Rust js::truthy(absent)=false).
+    showInExchange:
+      coin.showInExchange === false || coin.showInExchange === 0 || coin.showInExchange === '0'
+        ? false
+        : true,
+    isActive:
+      coin.isActive === false || coin.isActive === 0 || coin.isActive === '0' ? false : true,
     isInternal: coin.isInternal === true || coin.isInternal === 1 || coin.isInternal === '1',
     iconUrl:
       typeof coin.iconUrl === 'string' && coin.iconUrl.trim() ? coin.iconUrl.trim() : null

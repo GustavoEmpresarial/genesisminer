@@ -72,7 +72,10 @@ export type ApplyAdminSaveGameOverrideResult = {
   serverUpdatedAt: number;
 };
 
-/** Normaliza stock para snapshot: só qty finitas ≥ 0; qty 0 omite (DELETE no snapshot). */
+/**
+ * Normaliza stock admin para merge persist: qty finitas ≥ 0 (inclui 0).
+ * qty 0 é mantida para o merge poder DELETE esse SKU; SKUs omitidos ficam intactos.
+ */
 export function normalizeAdminStockSnapshot(raw: unknown): Record<string, number> {
   const out: Record<string, number> = {};
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
@@ -82,7 +85,6 @@ export function normalizeAdminStockSnapshot(raw: unknown): Record<string, number
     const n = typeof rawQty === 'number' ? rawQty : Number(rawQty);
     if (!Number.isFinite(n) || n < 0) continue;
     const qty = Math.floor(n);
-    if (qty <= 0) continue;
     out[id] = (out[id] || 0) + qty;
   }
   return out;

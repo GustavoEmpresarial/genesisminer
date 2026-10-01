@@ -678,6 +678,113 @@ export function formatActivityEvent(action: string, meta: unknown): ActivityEven
     };
   }
 
+  if (a === 'season_pass_purchase') {
+    const passName = str(m.passName) || 'Passe de Temporada';
+    const price = num(m.priceUsdc);
+    return {
+      category: 'economy',
+      severity: 'info',
+      title: 'Passe de Temporada',
+      summary: `Aquisição: ${passName}${price != null ? ` (${fmtUsdc(price)} USDC)` : ''}`,
+      lines: [
+        `Passe de Época: ${passName}`,
+        str(m.seasonId) ? `Temporada: ${str(m.seasonId)}` : '',
+        price != null ? `Valor: ${fmtUsdc(price)} USDC` : ''
+      ].filter(Boolean),
+      technicalMeta: m
+    };
+  }
+
+  if (a === 'upgrade_package_buy') {
+    const name = str(m.upgradeName) || 'Pacote de Upgrades';
+    const price = num(m.priceUsdc ?? m.totalUsdc);
+    return {
+      category: 'economy',
+      severity: 'success',
+      title: 'Pacote de Upgrades',
+      summary: `Aquisição: ${name}${price != null ? ` (${fmtUsdc(price)} USDC)` : ''}`,
+      lines: [
+        `Pacote: ${name}`,
+        price != null ? `Preço pago: ${fmtUsdc(price)} USDC` : ''
+      ].filter(Boolean),
+      technicalMeta: m
+    };
+  }
+
+  if (a === 'rig_room_slot_purchase') {
+    const room = str(m.roomId);
+    const roomLabel =
+      room === 'room_initial'
+        ? 'Sala Inicial'
+        : room === 'room_vip'
+          ? 'Sala VIP'
+          : room === 'room_gold'
+            ? 'Sala Gold'
+            : room === 'room_founders'
+              ? 'Sala Fundadores'
+              : room === 'room_asics'
+                ? 'Sala ASICs'
+                : room === 'room_extra'
+                  ? 'Sala Extra'
+                  : room === 'room_streamers'
+                    ? 'Sala Streamers'
+                    : room === 'room_nfts'
+                      ? 'Sala NFTs'
+                      : room || 'sala';
+    const slots = num(m.slotsPurchased) ?? 1;
+    const total = num(m.totalPrice ?? m.totalUsdc);
+    return {
+      category: 'economy',
+      severity: 'success',
+      title: 'Expansão de Slots de Sala',
+      summary: `+${slots} Slot(s) na ${roomLabel}${total != null ? ` · ${fmtUsdc(total)} USDC` : ''}`,
+      lines: [
+        `Sala: ${roomLabel}`,
+        `Slots adicionados: +${slots}`,
+        total != null ? `Valor pago: ${fmtUsdc(total)} USDC` : '',
+        m.newUsdc != null ? `Saldo do jogo depois: ${fmtUsdc(m.newUsdc)} USDC` : ''
+      ].filter(Boolean),
+      technicalMeta: m
+    };
+  }
+
+  if (a === 'wheel_spin_paid' || a === 'wheel_spin_free' || /^wheel_spin/.test(a)) {
+    const item = str(m.wonItemName) || str(m.wonItemId) || 'Prémio';
+    const charged = num(m.chargedUsdc ?? m.totalUsdc);
+    const isPaid = a === 'wheel_spin_paid' || (charged != null && charged > 0);
+    return {
+      category: isPaid ? 'economy' : 'boxes',
+      severity: 'success',
+      title: isPaid ? 'Giro Pago na Roleta' : 'Giro na Roleta',
+      summary: isPaid
+        ? `Giro pago (${fmtUsdc(charged)} USDC) → Ganhou: ${item}`
+        : `Giro na roleta → Ganhou: ${item}`,
+      lines: [
+        `Item ganho: ${item}`,
+        isPaid && charged != null ? `Custo do giro: ${fmtUsdc(charged)} USDC` : ''
+      ].filter(Boolean),
+      technicalMeta: m
+    };
+  }
+
+  if (a === 'merge_craft_paid') {
+    const src = str(m.sourceItemName) || 'Item base';
+    const res = str(m.resultItemName) || 'Item fundido';
+    const fee = num(m.feeUsdc ?? m.totalUsdc);
+    return {
+      category: 'economy',
+      severity: 'success',
+      title: 'Fusão de Itens (Merge)',
+      summary: `Fundiu ${src} → ${res} (Taxa: ${fmtUsdc(fee)} USDC)`,
+      lines: [
+        `Origem: ${src}`,
+        `Resultado: ${res}`,
+        fee != null ? `Taxa paga: ${fmtUsdc(fee)} USDC` : ''
+      ].filter(Boolean),
+      technicalMeta: m
+    };
+  }
+
   if (a === 'hardware_buy') {
     return formatHardwareBuy(m);
   }
@@ -763,6 +870,35 @@ export const ACTIVITY_LOG_FILTER_GROUPS: {
   test?: (action: string, display: ActivityEventDisplay) => boolean;
 }[] = [
   { id: 'all', label: 'Todas' },
+  {
+    id: 'money',
+    label: 'Financeiro (Todas)',
+    test: (a, d) =>
+      d.category === 'economy' ||
+      a === 'shop_checkout' ||
+      a === 'season_pass_purchase' ||
+      a === 'upgrade_package_buy' ||
+      a === 'loot_box_buy' ||
+      a === 'wheel_spin_paid' ||
+      a === 'rig_room_slot_purchase' ||
+      a === 'merge_craft_paid' ||
+      /^p2p_/.test(a)
+  },
+  {
+    id: 'purchase',
+    label: 'Só Loja Oficial',
+    test: (a) =>
+      /^(hardware_buy|shop_checkout|shop_checkout_ok|shop_checkout_attempt|shop_checkout_denied|loot_box_buy|rig_room_slot_purchase|exchange_sell)$/i.test(
+        a
+      )
+  },
+  { id: 'season', label: 'Passes de Temporada', test: (a) => a === 'season_pass_purchase' },
+  { id: 'upgrades', label: 'Pacotes / Upgrades VIP', test: (a) => a === 'upgrade_package_buy' },
+  { id: 'p2p_buy', label: 'Compras P2P', test: (a) => a === 'p2p_trade_buy' || a === 'p2p_listing_buy' },
+  { id: 'p2p_sell', label: 'Vendas P2P', test: (a) => a === 'p2p_trade_sell' },
+  { id: 'boxes', label: 'Caixas da Sorte', test: (a, d) => d.category === 'boxes' || /^loot_box_/.test(a) },
+  { id: 'wheel', label: 'Roleta (Giros Pagos & Prêmios)', test: (a) => /^wheel_spin/.test(a) || /^roleta_/.test(a) },
+  { id: 'room_slots', label: 'Expansão de Salas', test: (a) => a === 'rig_room_slot_purchase' },
   { id: 'near_account_creation', label: 'Perto da criação da conta (±5 min)' },
   {
     id: 'losses',
@@ -770,7 +906,7 @@ export const ACTIVITY_LOG_FILTER_GROUPS: {
     test: (_a, d) => d.category === 'inventory' && (d.severity === 'warning' || d.severity === 'danger')
   },
   { id: 'session', label: 'Estado / sessão', test: (_a, d) => d.category === 'session' },
-  { id: 'inventory', label: 'Inventário', test: (_a, d) => d.category === 'inventory' },
+  { id: 'inventory', label: 'Inventário', test: (_a, d) => d.category === 'inventory' || /^merge_/.test(_a) },
   {
     id: 'inventory_moves',
     label: 'Movimentos de stock',
@@ -780,7 +916,7 @@ export const ACTIVITY_LOG_FILTER_GROUPS: {
       /^(stock_delta|inventory_loss_alert)$/.test(a) ||
       /^p2p_listing_(create|cancel|buy)$/.test(a)
   },
-  { id: 'p2p', label: 'Mercado P2P', test: (_a, d) => d.category === 'p2p' },
+  { id: 'p2p', label: 'Mercado P2P', test: (_a, d) => d.category === 'p2p' || /^p2p_/.test(_a) },
   { id: 'auth', label: 'Login / conta', test: (_a, d) => d.category === 'auth' },
   {
     id: 'signup_complete',
@@ -788,21 +924,6 @@ export const ACTIVITY_LOG_FILTER_GROUPS: {
     test: (a) => /^signup_complete$/i.test(a)
   },
   { id: 'deposit', label: 'Depósitos', test: (a) => /deposit/i.test(a) },
-  {
-    id: 'purchase',
-    label: 'Compras / loja',
-    test: (a) =>
-      /^(hardware_buy|shop_checkout_ok|shop_checkout_attempt|shop_checkout_denied|loot_box_buy|rig_room_slot_purchase|exchange_sell)$/i.test(
-        a
-      )
-  },
-  { id: 'boxes', label: 'Caixas', test: (_a, d) => d.category === 'boxes' },
-  { id: 'roleta', label: 'Roleta', test: (a) => /roleta_(roll|claim)|promo_redeem_roleta/i.test(a) },
-  {
-    id: 'promo',
-    label: 'Códigos / promo',
-    test: (a) => /promo_redeem/i.test(a) && !/roleta/i.test(a)
-  },
   { id: 'rigs', label: 'Rigs / salas', test: (_a, d) => d.category === 'rigs' },
   { id: 'client', label: 'Cliente / telemetria', test: (a) => /^client_/i.test(a) },
   { id: 'login', label: 'Login / sessão', test: (_a, d) => d.category === 'auth' }

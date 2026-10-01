@@ -1,12 +1,12 @@
 /**
- * Editor de save do jogador (Estoque / Rigs / Saldos / Caixas / Carteiras / Atividade).
+ * Editor de save do jogador (Estoque / Rigs / Saldos / Caixas / Carteiras / Loja / Atividade).
  * Composição principal: `AdminUsersPage` (estado partilhado com perfil + override API).
  * Stock helpers: `../lib/adminStock`.
  */
 import { adminStockEntriesForEditor, adminStockPayloadForSave, sanitizeAdminStock } from '../lib/adminStock';
 import { isActiveRoomId, roomNameById, type AdminRoomOption } from '../lib/roomCatalog';
 
-export type UserSaveTab = 'stock' | 'racks' | 'balances' | 'boxes' | 'wallets' | 'logs';
+export type UserSaveTab = 'stock' | 'racks' | 'balances' | 'boxes' | 'wallets' | 'logs' | 'shop';
 
 export const USER_SAVE_TABS: UserSaveTab[] = [
   'stock',
@@ -14,11 +14,12 @@ export const USER_SAVE_TABS: UserSaveTab[] = [
   'balances',
   'boxes',
   'wallets',
-  'logs'
+  'logs',
+  'shop'
 ];
 
 export function isUserSaveTabReadonly(tab: UserSaveTab | string): boolean {
-  return tab === 'logs' || tab === 'wallets';
+  return tab === 'logs' || tab === 'wallets' || tab === 'shop';
 }
 
 /** Supported delta for `ApplyAdminSaveGameOverrideInput` from the editor. */

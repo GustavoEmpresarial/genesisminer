@@ -3,9 +3,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
     RefreshCw,
     ExternalLink,
-    Eye,
     Copy,
-    ArrowRight,
     Filter,
     ChevronLeft,
     ChevronRight,
@@ -16,7 +14,7 @@ import {
     Download,
     Search,
     X as CloseIcon,
-    Calculator,
+    Coins,
     LayoutList,
     Wallet,
     Plus,
@@ -25,9 +23,10 @@ import {
     Sparkles,
     Loader2,
     Power,
-    TrendingUp
+    TrendingUp,
+    History,
+    Store
 } from 'lucide-react';
-import { PlayerCalculator } from './PlayerCalculator';
 import { User as UserType, MiningCoin } from '../lib/adminTypes';
 import {
     getWalletLabels,
@@ -40,11 +39,13 @@ import {
     getWeb3Settings
 } from '../../../shared/api/admin-legacy';
 
-import { getDistributionPreview } from '../../../shared/api/admin-economy';
+import { getDistributionPreview, setMiningCoinActive } from '../../../shared/api/admin-economy';
 import { apiFetch } from '../../../shared/api/http';
 import { MiningCoinGlyph } from '../../../shared/ui/MiningCoinGlyph';
 
 import { AdminManualWithdrawals } from './AdminManualWithdrawals';
+import { AdminReinvestmentHistory } from './AdminReinvestmentHistory';
+import { AdminShopCheckouts } from './AdminShopCheckouts';
 import { AdminReferral } from './AdminReferral';
 import { AdminMiningDistribution } from './AdminMiningDistribution';
 
@@ -68,7 +69,7 @@ interface Transaction {
 
 interface AdminReportsProps {
     users?: UserType[];
-    /** Operador admin (não super): só Transações USDC; sem calculadora nem saques manuais. */
+    /** Operador admin (não super): só Transações USDC; sem moedas nem saques manuais. */
     currentUser?: UserType | null;
 }
 
@@ -120,13 +121,35 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
     const [limit] = useState(20);
     const [filterPeriod, setFilterPeriod] = useState<'all' | 'day' | 'year'>('all');
     const [searchTerm, setSearchTerm] = useState(() => localStorage.getItem('adminReportsSearchTerm') || '');
-    const [subtab, setSubtab] = useState<'transactions' | 'calculator' | 'withdrawals' | 'referral' | 'distribution'>(() => (localStorage.getItem('adminReportsSubtab') as any) || 'transactions');
+    const [subtab, setSubtab] = useState<
+        'transactions' | 'coins' | 'withdrawals' | 'reinvestment' | 'shop' | 'referral' | 'distribution'
+    >(() => {
+        const s = localStorage.getItem('adminReportsSubtab');
+        if (s === 'calculator' || s === 'coins') return 'coins';
+        if (
+            s === 'withdrawals' ||
+            s === 'reinvestment' ||
+            s === 'shop' ||
+            s === 'referral' ||
+            s === 'distribution' ||
+            s === 'transactions'
+        )
+            return s;
+        return 'transactions';
+    });
 
     const reportsOperatorRestricted = !!(currentUser?.isAdmin && !currentUser?.isSuperAdmin);
 
     useEffect(() => {
         if (!reportsOperatorRestricted) return;
-        if (subtab === 'calculator' || subtab === 'withdrawals' || subtab === 'referral' || subtab === 'distribution') {
+        if (
+            subtab === 'coins' ||
+            subtab === 'withdrawals' ||
+            subtab === 'reinvestment' ||
+            subtab === 'shop' ||
+            subtab === 'referral' ||
+            subtab === 'distribution'
+        ) {
             setSubtab('transactions');
             localStorage.setItem('adminReportsSubtab', 'transactions');
         }
@@ -148,11 +171,6 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
 
     const [miningCoins, setMiningCoins] = useState<MiningCoin[]>([]);
 
-    type MiningCalcTabMode = 'coins' | 'live';
-    const [miningCalcTabMode, setMiningCalcTabMode] = useState<MiningCalcTabMode>(() => {
-        const s = localStorage.getItem('adminReportsMiningCalcTabMode');
-        return s === 'live' ? 'live' : 'coins';
-    });
     const [editingCoin, setEditingCoin] = useState<Partial<MiningCoin> | null>(null);
     const [isSavingCoin, setIsSavingCoin] = useState(false);
     const [distPreview, setDistPreview] = useState<any>(null);
@@ -208,7 +226,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
             window.clearTimeout(t);
         };
     }, [editingCoin?.id, editingCoin?.distributionMode, editingCoin?.distributionUsdMonth]);
-    const [calcDataLoading, setCalcDataLoading] = useState(false);
+    const [coinsDataLoading, setCoinsDataLoading] = useState(false);
     const [syncingMiningPrices, setSyncingMiningPrices] = useState(false);
     const [coinNotice, setCoinNotice] = useState<{ kind: 'success' | 'error'; message: string } | null>(null);
 
@@ -240,16 +258,16 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
         isInternal: false
     });
 
-    const loadCalcData = async () => {
-        setCalcDataLoading(true);
+    const loadCoinsData = async () => {
+        setCoinsDataLoading(true);
         try {
             const [mc] = await Promise.all([getMiningCoins()]);
             setMiningCoins(Array.isArray(mc) ? mc : []);
         } catch (e) {
-            console.error('Failed to load calc data', e);
+            console.error('Failed to load coins data', e);
             setCoinNotice({ kind: 'error', message: 'Não foi possível carregar as moedas.' });
         } finally {
-            setCalcDataLoading(false);
+            setCoinsDataLoading(false);
         }
     };
 
@@ -258,7 +276,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
         try {
             const res = await syncMiningCoinLivePricesNow();
             if (res.ok) {
-                await loadCalcData();
+                await loadCoinsData();
                 setCoinNotice({
                     kind: 'success',
                     message: `Preços sincronizados com sucesso. Moedas atualizadas: ${res.updated || 0}.`
@@ -299,7 +317,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
 
     useEffect(() => {
         loadLabels();
-        loadCalcData();
+        loadCoinsData();
         void getWeb3Settings().then((s) => {
             const w = s?.depositWallet?.trim();
             if (w && /^0x[a-fA-F0-9]{40}$/.test(w)) {
@@ -311,9 +329,9 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
     }, []);
 
     useEffect(() => {
-        if (subtab !== 'calculator') return;
+        if (subtab !== 'coins') return;
         const timer = window.setInterval(() => {
-            void loadCalcData();
+            void loadCoinsData();
         }, 60_000);
         return () => window.clearInterval(timer);
     }, [subtab]);
@@ -331,7 +349,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                     kind: 'success',
                     message: editingCoin.id ? 'Moeda atualizada com sucesso.' : 'Moeda criada com sucesso.'
                 });
-                await loadCalcData();
+                await loadCoinsData();
                 setEditingCoin(null);
             } else {
                 setCoinNotice({ kind: 'error', message: res.error || 'Erro ao salvar.' });
@@ -353,7 +371,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
             const res = await deleteMiningCoin(id);
             if (res.ok) {
                 setCoinNotice({ kind: 'success', message: 'Moeda desativada.' });
-                await loadCalcData();
+                await loadCoinsData();
                 setEditingCoin((cur) => (cur?.id === id ? null : cur));
             } else {
                 setCoinNotice({ kind: 'error', message: res.error || 'Erro ao excluir.' });
@@ -368,15 +386,15 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
 
     const handleToggleCoinActive = async (coin: MiningCoin) => {
         if (reportsOperatorRestricted) return;
-        const next = { ...coin, isActive: !coin.isActive };
+        const nextActive = !coin.isActive;
         try {
-            const res = await saveMiningCoin(next);
+            const res = await setMiningCoinActive(coin.id, nextActive);
             if (res.ok) {
                 setCoinNotice({
                     kind: 'success',
-                    message: next.isActive ? 'Moeda ativada.' : 'Moeda desativada.'
+                    message: nextActive ? 'Moeda ativada.' : 'Moeda desativada.'
                 });
-                await loadCalcData();
+                await loadCoinsData();
             } else {
                 setCoinNotice({ kind: 'error', message: res.error || 'Não foi possível alterar o estado.' });
             }
@@ -627,13 +645,13 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                     <>
                         <button
                             onClick={() => {
-                                setSubtab('calculator');
-                                localStorage.setItem('adminReportsSubtab', 'calculator');
+                                setSubtab('coins');
+                                localStorage.setItem('adminReportsSubtab', 'coins');
                             }}
-                            className={`px-4 py-2 text-sm font-bold rounded border flex items-center gap-2 transition-all ${subtab === 'calculator' ? 'bg-amber-600/20 text-white border-amber-600/50 shadow-[0_0_10px_rgba(217,119,6,0.1)]' : 'text-slate-400 hover:text-white border-transparent hover:border-slate-700'}`}
+                            className={`px-4 py-2 text-sm font-bold rounded border flex items-center gap-2 transition-all ${subtab === 'coins' ? 'bg-amber-600/20 text-white border-amber-600/50 shadow-[0_0_10px_rgba(217,119,6,0.1)]' : 'text-slate-400 hover:text-white border-transparent hover:border-slate-700'}`}
                         >
-                            <Calculator size={16} />
-                            Moedas & Calculadora
+                            <Coins size={16} />
+                            Moedas
                         </button>
                         <button
                             onClick={() => {
@@ -657,6 +675,26 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                         </button>
                         <button
                             onClick={() => {
+                                setSubtab('reinvestment');
+                                localStorage.setItem('adminReportsSubtab', 'reinvestment');
+                            }}
+                            className={`px-4 py-2 text-sm font-bold rounded border flex items-center gap-2 transition-all ${subtab === 'reinvestment' ? 'bg-amber-600/20 text-white border-amber-600/50 shadow-[0_0_10px_rgba(217,119,6,0.1)]' : 'text-slate-400 hover:text-white border-transparent hover:border-slate-700'}`}
+                        >
+                            <History size={16} />
+                            Reinvestimento USDC
+                        </button>
+                        <button
+                            onClick={() => {
+                                setSubtab('shop');
+                                localStorage.setItem('adminReportsSubtab', 'shop');
+                            }}
+                            className={`px-4 py-2 text-sm font-bold rounded border flex items-center gap-2 transition-all ${subtab === 'shop' ? 'bg-amber-600/20 text-white border-amber-600/50 shadow-[0_0_10px_rgba(217,119,6,0.1)]' : 'text-slate-400 hover:text-white border-transparent hover:border-slate-700'}`}
+                        >
+                            <Store size={16} />
+                            Relatório de compras
+                        </button>
+                        <button
+                            onClick={() => {
                                 setSubtab('referral');
                                 localStorage.setItem('adminReportsSubtab', 'referral');
                             }}
@@ -675,7 +713,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
             </div>
 
 
-            {subtab === 'calculator' && !reportsOperatorRestricted && (
+            {subtab === 'coins' && !reportsOperatorRestricted && (
                 <div className="flex-1 overflow-auto custom-scrollbar flex flex-col gap-6">
                     {coinNotice && (
                         <div
@@ -690,15 +728,6 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                         </div>
                     )}
 
-                    {miningCalcTabMode === 'live' ? (
-                        <PlayerCalculator
-                            onBack={() => {
-                                setMiningCalcTabMode('coins');
-                                localStorage.setItem('adminReportsMiningCalcTabMode', 'coins');
-                            }}
-                        />
-                    ) : (
-                        <>
                             <div className="flex flex-col gap-3 border-b border-slate-700/80 pb-4 sm:flex-row sm:items-start sm:justify-between">
                                 <div>
                                     <h2 className="text-xl font-bold text-white tracking-tight">Configuração de Moedas</h2>
@@ -716,11 +745,11 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={() => void loadCalcData()}
-                                        disabled={calcDataLoading}
+                                        onClick={() => void loadCoinsData()}
+                                        disabled={coinsDataLoading}
                                         className="inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-700 disabled:opacity-50"
                                     >
-                                        <RefreshCw size={14} className={calcDataLoading ? 'animate-spin' : ''} />
+                                        <RefreshCw size={14} className={coinsDataLoading ? 'animate-spin' : ''} />
                                         Atualizar lista
                                     </button>
                                     <button
@@ -731,16 +760,6 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                     >
                                         <RefreshCw size={14} className={syncingMiningPrices ? 'animate-spin' : ''} />
                                         Atualizar preços
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setMiningCalcTabMode('live');
-                                            localStorage.setItem('adminReportsMiningCalcTabMode', 'live');
-                                        }}
-                                        className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white shadow-lg shadow-amber-600/20 hover:bg-amber-500"
-                                    >
-                                        <Eye size={14} /> Ver calculadora
                                     </button>
                                 </div>
                             </div>
@@ -753,7 +772,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                 {editingCoin?.id ? <Pencil size={14} /> : <Plus size={14} />}
                                                 {editingCoin?.id ? 'Editar moeda' : 'Nova moeda'}
                                             </h4>
-                                            {calcDataLoading && <Loader2 size={16} className="animate-spin text-amber-400" aria-hidden />}
+                                            {coinsDataLoading && <Loader2 size={16} className="animate-spin text-amber-400" aria-hidden />}
                                         </div>
 
                                         {!editingCoin ? (
@@ -1033,7 +1052,22 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                         onChange={(e) => setEditingCoin((prev) => ({ ...prev, isInternal: e.target.checked }))}
                                                         className="h-4 w-4 rounded border-slate-700 bg-slate-800"
                                                     />
-                                                    <span className="text-xs text-white">Moeda interna (saldo do jogo, não sacável)</span>
+                                                    <span className="text-xs text-white">Moeda interna (rótulo / saldo do jogo)</span>
+                                                </label>
+                                                <p className="text-[10px] leading-snug text-slate-500">
+                                                    Não controla saque on-chain. Saque real: Web3 → Saque (web3_withdraw_tokens).
+                                                </p>
+
+                                                <label className="flex cursor-pointer items-center gap-2">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editingCoin.showInExchange !== false}
+                                                        onChange={(e) =>
+                                                            setEditingCoin((prev) => ({ ...prev, showInExchange: e.target.checked }))
+                                                        }
+                                                        className="h-4 w-4 rounded border-slate-700 bg-slate-800"
+                                                    />
+                                                    <span className="text-xs text-white">Mostrar na exchange</span>
                                                 </label>
 
                                                 <details className="rounded-lg border border-slate-800 bg-slate-950/40 px-3 py-2 text-sm text-slate-300">
@@ -1131,17 +1165,6 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                                 className="w-full rounded border border-slate-700 bg-slate-800 px-3 py-2 font-mono text-sm text-white outline-none focus:border-amber-500"
                                                             />
                                                         </div>
-                                                        <label className="flex cursor-pointer items-center gap-2">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={editingCoin.showInExchange !== false}
-                                                                onChange={(e) =>
-                                                                    setEditingCoin((prev) => ({ ...prev, showInExchange: e.target.checked }))
-                                                                }
-                                                                className="h-4 w-4 rounded border-slate-700 bg-slate-800"
-                                                            />
-                                                            <span className="text-xs text-white">Mostrar na exchange</span>
-                                                        </label>
                                                     </div>
                                                 </details>
 
@@ -1188,7 +1211,7 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-800/60">
-                                                {miningCoins.length === 0 && !calcDataLoading ? (
+                                                {miningCoins.length === 0 && !coinsDataLoading ? (
                                                     <tr>
                                                         <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
                                                             Nenhuma moeda cadastrada.
@@ -1276,8 +1299,6 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
                                     </div>
                                 </div>
                             </div>
-                        </>
-                    )}
                 </div>
             )}
 
@@ -1291,6 +1312,18 @@ export const AdminReports: React.FC<AdminReportsProps> = ({ users = [], currentU
             {subtab === 'withdrawals' && !reportsOperatorRestricted && (
                 <div className="flex-1 overflow-auto custom-scrollbar">
                     <AdminManualWithdrawals />
+                </div>
+            )}
+
+            {subtab === 'reinvestment' && !reportsOperatorRestricted && (
+                <div className="flex-1 overflow-auto custom-scrollbar">
+                    <AdminReinvestmentHistory />
+                </div>
+            )}
+
+            {subtab === 'shop' && !reportsOperatorRestricted && (
+                <div className="flex-1 overflow-auto custom-scrollbar">
+                    <AdminShopCheckouts />
                 </div>
             )}
 

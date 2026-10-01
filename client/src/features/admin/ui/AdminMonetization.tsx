@@ -23,6 +23,7 @@ import { MonetizationSettings, EconomySettings, PromoCode, LootBox, Upgrade, Adm
 import { ApplixirConfig } from './monetization/ApplixirConfig';
 import { EzoicConfig } from './monetization/EzoicConfig';
 import { apiFetch } from '../../../shared/api/http';
+import { DEFAULT_CHECKIN_PREMIUM_MIN_USDC } from '../../../shared/constants/checkinPremium';
 
 export const AdminMonetization: React.FC = () => {
     const [subTab, setSubTab] = useState<'rewarded' | 'ads' | 'economy' | 'promo' | 'quests'>('rewarded');
@@ -56,7 +57,7 @@ export const AdminMonetization: React.FC = () => {
     const [newCodeForm, setNewCodeForm] = useState({ lootBoxId: '', upgradeId: '', adminUpgradeId: '', type: 'per_player' as 'per_player' | 'global_once', code: '' });
     const [checkinPremium, setCheckinPremium] = useState<CheckinPremiumPolicyPayload>({
         enabled: true,
-        minUsdc: 195,
+        minUsdc: DEFAULT_CHECKIN_PREMIUM_MIN_USDC,
         intervalDays: 7
     });
     const [checkinReward, setCheckinReward] = useState<CheckinRewardPolicyPayload>({
@@ -303,11 +304,12 @@ export const AdminMonetization: React.FC = () => {
                                     <CalendarCheck className="text-sky-400" size={20} />
                                     <div>
                                         <h4 className="text-xs font-bold uppercase tracking-widest text-sky-300">
-                                            Check-in premium (passes ≥ USDC)
+                                            Check-in premium (gasto USDC acumulado ≥ limite)
                                         </h4>
                                         <p className="text-[11px] text-slate-400 mt-0.5">
-                                            Retroativo: quem já comprou pacote na loja Upgrades com preço ≥ limite entra no check-in
-                                            a cada N dias (vitalício).
+                                            Elegível 1× na vida quando o gasto vitalício (loja, merge, passe, upgrades, P2P,
+                                            wheel) ≥ limite — ou via botão admin. Depois fica desbloqueado para sempre.
+                                            Check-in a cada N dias; missões creditam automaticamente na janela activa.
                                         </p>
                                     </div>
                                 </div>

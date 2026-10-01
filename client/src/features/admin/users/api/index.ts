@@ -13,6 +13,7 @@ export {
   saveGameStateAdminOverride,
   getAdminUserWalletHistory,
   impersonateUser,
+  grantPremiumCheckin,
   stopImpersonate,
   getAdminDormantMiningAccounts,
   getAdminUserActivity,
@@ -33,6 +34,8 @@ export {
   type AdminUserWalletHistoryEntry,
   type AdminUserWalletCurrent
 } from '../../../../shared/api/admin-legacy';
+export { getAdminUserReinvestmentHistory } from '../../../../shared/api/admin-users';
+export type { ReinvestmentHistoryEntry } from '../../../../shared/api/wallet';
 
 export { deactivateStreamerRoomByAdminCatalog as deactivateStreamerRoomByAdmin } from './deactivateStreamerRoom';
 export { setAdminUserOwnedRooms } from './ownedRooms';

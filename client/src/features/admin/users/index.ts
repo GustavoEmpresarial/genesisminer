@@ -1,6 +1,7 @@
 /** Admin user management feature — gestão de usuários. */
 export { AdminUsersPage as AdminUsers, AdminUsersPage } from './ui/AdminUsersPage';
 export type { AdminUsersJumpTarget } from './ui/AdminUsersPage';
+export { AdminUserDetailView, type PlayerDetailTab } from './ui/AdminUserDetailView';
 export { AccessLevelsCatalog } from './ui/AccessLevelsCatalog';
 export {
   buildAdminSaveOverrideDelta,

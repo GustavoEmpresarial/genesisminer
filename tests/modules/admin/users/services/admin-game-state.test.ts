@@ -3,7 +3,7 @@ import { EXTRA_ROOM_ID, ROOM_INITIAL_ID } from '../../../../../server/modules/mi
 import { ASIC_ROOM_ID } from '../../../../../server/modules/mining-engine/services/room-kind.js';
 
 describe('normalizeAdminStockSnapshot', () => {
-  it('omite qty inválida / id inválido / n≤0 e só aceita ids SAFE', async () => {
+  it('mantém qty 0; omite qty inválida / id inválido / negativo e só aceita ids SAFE', async () => {
     const { normalizeAdminStockSnapshot } = await import(
       '../../../../../server/modules/admin/users/services/admin-game-state.js'
     );
@@ -17,14 +17,14 @@ describe('normalizeAdminStockSnapshot', () => {
         '': 5,
         nested: { a: 1 }
       })
-    ).toEqual({ 'gpu.basic': 3 });
+    ).toEqual({ 'gpu.basic': 3, 'rack.ok': 0 });
   });
 
-  it('aceita números em string finitos > 0', async () => {
+  it('aceita números em string finitos ≥ 0 (inclui string 0)', async () => {
     const { normalizeAdminStockSnapshot } = await import(
       '../../../../../server/modules/admin/users/services/admin-game-state.js'
     );
-    expect(normalizeAdminStockSnapshot({ a: '4', b: '0', c: 'x' })).toEqual({ a: 4 });
+    expect(normalizeAdminStockSnapshot({ a: '4', b: '0', c: 'x' })).toEqual({ a: 4, b: 0 });
   });
 
   it('não-object → mapa vazio', async () => {
@@ -208,7 +208,7 @@ describe('applyAdminSaveGameOverride', () => {
     expect(callHardwarePersist).toHaveBeenCalledTimes(1);
     expect(callHardwarePersist).toHaveBeenCalledWith({
       userId: 10,
-      stock: { 'gpu.basic': 5 },
+      stock: { 'gpu.basic': 5, gone: 0 },
       stockMode: 'merge'
     });
     expect(

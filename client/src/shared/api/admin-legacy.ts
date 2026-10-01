@@ -1,13 +1,15 @@
 // @ts-nocheck — Admin/legacy API facade: domain modules re-exported where extracted; remainder still lives here.
 import { AccessLevel, GameState, LootBox, SystemNews, Upgrade, User, Web3Settings, MiningCoin, SeasonPass, SeasonPurchase, AdminUpgrade, MarketListing, RigRoom, MonetizationSettings, EconomySettings, SecurityStats, GameUserActivityEntry, TransparencyEntry, TransparencyCategory, DeviceFingerprintPayload, AdminDeviceFingerprintLog, PlacedRack, StoredBattery, P2PMarketTradeHistory, P2PMarketTradeHistoryEntry } from '../../features/admin/lib/adminTypes';
 import { GAME_NAV_LABEL_KEYS, UI_DISPLAY_LABEL_VALUE_MAX } from '../constants/gameNavLabels';
+import { DEFAULT_CHECKIN_PREMIUM_MIN_USDC } from '../constants/checkinPremium';
 import { apiFetch, setSessionHint } from './http';
 export {
   getReferralModels,
   saveReferralModel,
   deleteReferralModel,
   getAccessLevelReferralAssignments,
-  saveAccessLevelReferralAssignments
+  saveAccessLevelReferralAssignments,
+  grantPremiumCheckin
 } from './admin-users';
 
 const base = '/api';
@@ -2808,214 +2810,6 @@ export {
   clearShopCart as clearShopCartApi
 } from './shop';
 
-/** Resposta GET `/api/calculator/me` — projeções calculadas no servidor. */
-export type PlayerCalculatorCoinComparison = {
-  id: string;
-  symbol: string;
-  name: string;
-  priceUSD: number;
-  isActivelyMining: boolean;
-  dailyCoins: number;
-  dailyUsd: number;
-  projection30Usd: number;
-  rows: Array<{ label: string; coins: number; usd: number }>;
-};
-
-export type PlayerCalculatorMeOk = {
-  ok: true;
-  scope: string;
-  scopesUi: { id: string; name: string }[];
-  generalPowerHps: number;
-  coinComparisons: PlayerCalculatorCoinComparison[];
-  coins: Array<{
-    id: string;
-    symbol: string;
-    name: string;
-    priceUSD: number;
-    networkHashrate: number;
-    blockReward: number;
-    blockTime: number;
-    userPowerHps: number;
-    dailyCoins: number;
-    dailyUsd: number;
-    projection30Usd: number;
-    rows: Array<{ label: string; coins: number; usd: number }>;
-    blockHistory: Array<{
-      id: string;
-      roomId: string | null;
-      windowStartMs: number;
-      windowEndMs: number;
-      creditedBlocks: number;
-      amountCoins: number;
-      amountUsd: number;
-      userHashHps: number;
-      networkHashrate: number;
-      blockReward: number;
-      blockTime: number;
-    }>;
-  }>;
-};
-
-function parsePlayerCalculatorRows(raw: unknown): { label: string; coins: number; usd: number }[] {
-  const rows: { label: string; coins: number; usd: number }[] = [];
-  if (!Array.isArray(raw)) return rows;
-  for (const r of raw) {
-    if (!r || typeof r !== 'object') continue;
-    const row = r as Record<string, unknown>;
-    const label = typeof row.label === 'string' ? row.label : '';
-    const coinsN = Number(row.coins);
-    const usdN = Number(row.usd);
-    if (label && Number.isFinite(coinsN) && Number.isFinite(usdN)) rows.push({ label, coins: coinsN, usd: usdN });
-  }
-  return rows;
-}
-
-function parsePlayerCalculatorMeBody(body: Record<string, unknown>): PlayerCalculatorMeOk | null {
-  if (body.ok !== true) return null;
-  const scope = typeof body.scope === 'string' && body.scope.trim() ? body.scope.trim() : 'total';
-  const scopesRaw = body.scopesUi;
-  const scopesUi: { id: string; name: string }[] = [];
-  if (Array.isArray(scopesRaw)) {
-    for (const x of scopesRaw) {
-      if (!x || typeof x !== 'object') continue;
-      const o = x as Record<string, unknown>;
-      const id = typeof o.id === 'string' ? o.id.trim() : '';
-      const name = typeof o.name === 'string' ? o.name.trim() : '';
-      if (id && name) scopesUi.push({ id, name });
-    }
-  }
-  const generalPowerHps = Number(body.generalPowerHps);
-  const coinComparisons: PlayerCalculatorCoinComparison[] = [];
-  if (Array.isArray(body.coinComparisons)) {
-    for (const x of body.coinComparisons) {
-      if (!x || typeof x !== 'object') continue;
-      const o = x as Record<string, unknown>;
-      const id = typeof o.id === 'string' ? o.id.trim() : '';
-      if (!id) continue;
-      coinComparisons.push({
-        id,
-        symbol: typeof o.symbol === 'string' ? o.symbol : id,
-        name: typeof o.name === 'string' ? o.name : id,
-        priceUSD: Number(o.priceUSD),
-        isActivelyMining: Boolean(o.isActivelyMining),
-        dailyCoins: Number(o.dailyCoins),
-        dailyUsd: Number(o.dailyUsd),
-        projection30Usd: Number(o.projection30Usd),
-        rows: parsePlayerCalculatorRows(o.rows)
-      });
-    }
-  }
-  const coinsRaw = body.coins;
-  const coins: PlayerCalculatorMeOk['coins'] = [];
-  if (Array.isArray(coinsRaw)) {
-    for (const x of coinsRaw) {
-      if (!x || typeof x !== 'object') continue;
-      const o = x as Record<string, unknown>;
-      const id = typeof o.id === 'string' ? o.id.trim() : '';
-      if (!id) continue;
-      const rows = parsePlayerCalculatorRows(o.rows);
-      const blockHistory: PlayerCalculatorMeOk['coins'][number]['blockHistory'] = [];
-      if (Array.isArray(o.blockHistory)) {
-        for (const h of o.blockHistory) {
-          if (!h || typeof h !== 'object') continue;
-          const item = h as Record<string, unknown>;
-          const idRaw = item.id;
-          const id = typeof idRaw === 'string' ? idRaw : String(idRaw ?? '').trim();
-          if (!id) continue;
-          blockHistory.push({
-            id,
-            roomId:
-              typeof item.roomId === 'string' && item.roomId.trim()
-                ? item.roomId.trim()
-                : null,
-            windowStartMs: Number(item.windowStartMs),
-            windowEndMs: Number(item.windowEndMs),
-            creditedBlocks: Number(item.creditedBlocks),
-            amountCoins: Number(item.amountCoins),
-            amountUsd: Number(item.amountUsd),
-            userHashHps: Number(item.userHashHps),
-            networkHashrate: Number(item.networkHashrate),
-            blockReward: Number(item.blockReward),
-            blockTime: Number(item.blockTime)
-          });
-        }
-      }
-      coins.push({
-        id,
-        symbol: typeof o.symbol === 'string' ? o.symbol : id,
-        name: typeof o.name === 'string' ? o.name : id,
-        priceUSD: Number(o.priceUSD),
-        networkHashrate: Number(o.networkHashrate),
-        blockReward: Number(o.blockReward),
-        blockTime: Number(o.blockTime),
-        userPowerHps: Number(o.userPowerHps),
-        dailyCoins: Number(o.dailyCoins),
-        dailyUsd: Number(o.dailyUsd),
-        projection30Usd: Number(o.projection30Usd),
-        rows,
-        blockHistory
-      });
-    }
-  }
-  return {
-    ok: true,
-    scope,
-    scopesUi,
-    generalPowerHps: Number.isFinite(generalPowerHps) ? generalPowerHps : 0,
-    coinComparisons,
-    coins
-  };
-}
-
-/**
- * Calculadora de mineração (servidor): hashrate efectivo por moeda, ganhos e tabela de projeções.
- * `scope`: `total` ou id de sala pertencente ao jogador.
- */
-export async function getPlayerCalculatorMe(
-  scope: string,
-  signal?: AbortSignal
-): Promise<PlayerCalculatorMeOk | { ok: false; status: number; error?: string; code?: string }> {
-  const s = !scope || String(scope).trim() === '' ? 'total' : String(scope).trim();
-  const params = new URLSearchParams({ scope: s });
-  try {
-    const res = await apiFetch(
-      `${base}/calculator/me?${params.toString()}&t=${Date.now()}`,
-      { headers: { 'Content-Type': 'application/json' }, signal },
-      true
-    );
-    if (res.status === 429) {
-      return { ok: false, status: 429, error: 'Demasiados pedidos. Aguarda um minuto.', code: 'RATE_LIMIT' };
-    }
-    if (!res.ok) {
-      let error: string | undefined;
-      let code: string | undefined;
-      try {
-        const j = (await res.json()) as { error?: unknown; code?: unknown };
-        if (typeof j?.error === 'string' && j.error.trim()) error = j.error.trim();
-        if (typeof j?.code === 'string' && j.code.trim()) code = j.code.trim();
-      } catch {
-        /* ignore */
-      }
-      return { ok: false, status: res.status, error, code };
-    }
-    let body: Record<string, unknown>;
-    try {
-      body = (await res.json()) as Record<string, unknown>;
-    } catch {
-      return { ok: false, status: 502, error: 'Resposta inválida do servidor.' };
-    }
-    const parsed = parsePlayerCalculatorMeBody(body);
-    if (!parsed) return { ok: false, status: 502, error: 'Resposta inválida do servidor.' };
-    return parsed;
-  } catch (e) {
-    if (e instanceof DOMException && e.name === 'AbortError') {
-      return { ok: false, status: 0, error: 'aborted', code: 'ABORTED' };
-    }
-    console.error('[APIService] getPlayerCalculatorMe failed', e);
-    return { ok: false, status: 500, error: 'Erro de rede ao carregar a calculadora.' };
-  }
-}
-
 export async function getMarketListings(): Promise<MarketListing[]> {
   try {
     const res = await apiFetch(`${base}/market/listings?t=${Date.now()}`);
@@ -3525,6 +3319,8 @@ export type UpgradesStatePackagePreview = {
   catalogId: string;
   quantity: number;
   label: string;
+  imageUrl: string | null;
+  baseProduction: number;
 };
 
 export type UpgradesStatePackage = {
@@ -3924,7 +3720,9 @@ export async function saveGameStateAdminOverride(
 export async function postServerRoomRoomCoins(
   roomId: string,
   coinId: string
-): Promise<{ ok: true; serverUpdatedAt: number; placedRacks: PlacedRack[] } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; serverUpdatedAt: number; placedRacks?: PlacedRack[] } | { ok: false; error: string }
+> {
   try {
     const res = await apiFetch(`${base}/server-room/room-coins`, {
       method: 'POST',
@@ -3938,11 +3736,14 @@ export async function postServerRoomRoomCoins(
     }
     const su = Number(data.serverUpdatedAt);
     if (Number.isFinite(su) && su > 0) globalLastLoadTime = su;
-    return {
+    const ok: { ok: true; serverUpdatedAt: number; placedRacks?: PlacedRack[] } = {
       ok: true,
-      serverUpdatedAt: su,
-      placedRacks: Array.isArray(data.placedRacks) ? (data.placedRacks as PlacedRack[]) : []
+      serverUpdatedAt: su
     };
+    if (Array.isArray(data.placedRacks)) {
+      ok.placedRacks = data.placedRacks as PlacedRack[];
+    }
+    return ok;
   } catch {
     return { ok: false, error: 'Network error' };
   }
@@ -5801,7 +5602,7 @@ function parseCheckinStatusPayload(raw: Record<string, unknown>): CheckinStatusP
     premiumMinUsdc:
       typeof raw.premiumMinUsdc === 'number' && Number.isFinite(raw.premiumMinUsdc)
         ? raw.premiumMinUsdc
-        : 195,
+        : DEFAULT_CHECKIN_PREMIUM_MIN_USDC,
     nextCheckinAllowedMs:
       typeof raw.nextCheckinAllowedMs === 'number' && Number.isFinite(raw.nextCheckinAllowedMs)
         ? Math.floor(raw.nextCheckinAllowedMs)
@@ -5857,7 +5658,7 @@ export async function getAdminCheckinPremiumPolicy(): Promise<CheckinPremiumPoli
           ? raw.minUsdc
           : typeof raw.min_usdc === 'number'
             ? raw.min_usdc
-            : 195,
+            : DEFAULT_CHECKIN_PREMIUM_MIN_USDC,
       intervalDays:
         typeof raw.intervalDays === 'number'
           ? Math.max(1, Math.floor(raw.intervalDays))
@@ -6662,6 +6463,130 @@ export async function adminDeleteTransparencyEntry(id: number): Promise<{ ok: bo
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return { ok: false, error: (data as { error?: string }).error || `HTTP ${res.status}` };
     return { ok: true };
+  } catch (e: unknown) {
+    return { ok: false, error: e?.message || 'Erro de rede' };
+  }
+}
+
+/** Âmbito dos lançamentos publicados que entram no índice de saúde. */
+export type TransparencyHealthPeriodScope = 'season' | 'all_time' | 'current_month';
+
+/** Knobs do "Termómetro financeiro" (linha única no servidor). */
+export interface TransparencyHealthSettings {
+  weightInflow: number;
+  weightRent: number;
+  weightLedger: number;
+  floor: number;
+  seasonStartMs: number;
+  periodScope: TransparencyHealthPeriodScope;
+  countUndated: boolean;
+  overrideEnabled: boolean;
+  overrideValue: number | null;
+  updatedAt: number;
+  updatedBy: string | null;
+}
+
+/** Defaults = comportamento histórico (all_time, 40/35/25, piso 50). */
+export const TRANSPARENCY_HEALTH_SETTINGS_DEFAULTS: TransparencyHealthSettings = {
+  weightInflow: 0.4,
+  weightRent: 0.35,
+  weightLedger: 0.25,
+  floor: 50,
+  seasonStartMs: 1788220800000,
+  periodScope: 'all_time',
+  countUndated: true,
+  overrideEnabled: false,
+  overrideValue: null,
+  updatedAt: 0,
+  updatedBy: null
+};
+
+const TRANSPARENCY_HEALTH_SCOPES: readonly TransparencyHealthPeriodScope[] = [
+  'season',
+  'all_time',
+  'current_month'
+];
+
+/**
+ * Coerção defensiva campo a campo (molde de `parseMergeAdminSettings`): uma resposta
+ * parcial ou corrompida não pode rebentar o formulário nem gravar lixo de volta.
+ */
+export function parseTransparencyHealthSettings(
+  data: unknown,
+  fallback: TransparencyHealthSettings = TRANSPARENCY_HEALTH_SETTINGS_DEFAULTS
+): TransparencyHealthSettings {
+  const d = (data ?? {}) as Record<string, unknown>;
+  const num = (v: unknown, def: number): number => {
+    // `Number(null)` e `Number('')` são 0 — um peso em falta viraria 0 e zerava um
+    // componente do índice em silêncio. Só número ou string não-vazia contam.
+    if (typeof v === 'number') return Number.isFinite(v) ? v : def;
+    if (typeof v === 'string' && v.trim() !== '') {
+      const n = Number(v.trim().replace(',', '.'));
+      return Number.isFinite(n) ? n : def;
+    }
+    return def;
+  };
+  const bool = (v: unknown, def: boolean): boolean => (typeof v === 'boolean' ? v : def);
+  const scope = TRANSPARENCY_HEALTH_SCOPES.includes(d.periodScope as TransparencyHealthPeriodScope)
+    ? (d.periodScope as TransparencyHealthPeriodScope)
+    : fallback.periodScope;
+  const overrideRaw = d.overrideValue;
+  const overrideValue =
+    overrideRaw === null || overrideRaw === undefined
+      ? null
+      : Math.round(num(overrideRaw, fallback.overrideValue ?? 0));
+
+  return {
+    weightInflow: num(d.weightInflow, fallback.weightInflow),
+    weightRent: num(d.weightRent, fallback.weightRent),
+    weightLedger: num(d.weightLedger, fallback.weightLedger),
+    floor: Math.round(num(d.floor, fallback.floor)),
+    seasonStartMs: num(d.seasonStartMs, fallback.seasonStartMs),
+    periodScope: scope,
+    countUndated: bool(d.countUndated, fallback.countUndated),
+    overrideEnabled: bool(d.overrideEnabled, fallback.overrideEnabled),
+    overrideValue,
+    updatedAt: num(d.updatedAt, fallback.updatedAt),
+    updatedBy: typeof d.updatedBy === 'string' ? d.updatedBy : null
+  };
+}
+
+export async function getAdminTransparencyHealthSettings(): Promise<
+  { ok: true; settings: TransparencyHealthSettings } | { ok: false; error?: string }
+> {
+  try {
+    const res = await apiFetch(`${base}/admin/transparency/health-settings`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: (data as { error?: string }).error || `HTTP ${res.status}` };
+    return { ok: true, settings: parseTransparencyHealthSettings(data) };
+  } catch (e: unknown) {
+    return { ok: false, error: e?.message || 'Erro de rede' };
+  }
+}
+
+export async function putAdminTransparencyHealthSettings(
+  settings: TransparencyHealthSettings
+): Promise<{ ok: true; settings: TransparencyHealthSettings } | { ok: false; error?: string }> {
+  try {
+    const res = await apiFetch(`${base}/admin/transparency/health-settings`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      // Só os campos que o servidor aceita; `updatedAt`/`updatedBy` são dele.
+      body: JSON.stringify({
+        weightInflow: settings.weightInflow,
+        weightRent: settings.weightRent,
+        weightLedger: settings.weightLedger,
+        floor: settings.floor,
+        seasonStartMs: settings.seasonStartMs,
+        periodScope: settings.periodScope,
+        countUndated: settings.countUndated,
+        overrideEnabled: settings.overrideEnabled,
+        overrideValue: settings.overrideEnabled ? settings.overrideValue : null
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return { ok: false, error: (data as { error?: string }).error || `HTTP ${res.status}` };
+    return { ok: true, settings: parseTransparencyHealthSettings(data, settings) };
   } catch (e: unknown) {
     return { ok: false, error: e?.message || 'Erro de rede' };
   }

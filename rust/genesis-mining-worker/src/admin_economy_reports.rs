@@ -1,4 +1,4 @@
-//! Admin economy read reports for the "Moedas & Calculadora" panel:
+//! Admin economy read reports for the "Moedas" panel:
 //! `GET /api/admin/economy-stats` (per-coin real active miners + hashrate from
 //! `placed_racks`) and `GET /api/admin/mining-runtime-summary` (last yield-tick
 //! snapshot from `app_cache.network_stats`).

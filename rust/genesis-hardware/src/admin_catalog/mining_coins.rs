@@ -97,7 +97,7 @@ const UPSERT_SQL: &str = "INSERT INTO mining_coins
        distribution_mode = EXCLUDED.distribution_mode,
        distribution_usd_month = EXCLUDED.distribution_usd_month,
        is_internal = EXCLUDED.is_internal,
-       icon_url = EXCLUDED.icon_url";
+       icon_url = COALESCE(EXCLUDED.icon_url, mining_coins.icon_url)";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MiningCoinRow {
@@ -154,6 +154,47 @@ pub fn coin_entries(payload: &Value) -> Vec<&Value> {
     entries.into_iter().filter(|v| v.is_object()).collect()
 }
 
+fn default_known_local_icon_slug(symbol: &str, name: &str, id: &str) -> Option<&'static str> {
+    for raw in [symbol, name, id] {
+        let mut s = raw.trim().to_ascii_lowercase();
+        if s.is_empty() {
+            continue;
+        }
+        for suffix in [
+            "_interno", "-interno", " interno", "_int", "-int", " int", "_nft", "-nft",
+            " nft", "_gpu", "-gpu", " gpu", "_airdrop", "-airdrop",
+        ] {
+            if let Some(stripped) = s.strip_suffix(suffix) {
+                s = stripped.to_string();
+                break;
+            }
+        }
+        let clean: String = s.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+        let slug = match clean.as_str() {
+            "btc" | "bitcoin" => "btc",
+            "eth" | "ethereum" | "ether" => "eth",
+            "bnb" | "binance" | "binancecoin" => "bnb",
+            "sol" | "solana" => "sol",
+            "doge" | "dogecoin" => "doge",
+            "trx" | "tron" => "trx",
+            "xrp" | "ripple" => "xrp",
+            "shib" | "shiba" | "shibainu" => "shib",
+            "usdc" | "usdcoin" | "usdcint" | "usdcinterno" => "usdc",
+            "usdt" | "tether" | "usdterc20" => "usdt",
+            "dai" => "dai",
+            "gemt" | "gent" | "genesis" => "gemt",
+            "gho" => "gho",
+            "pol" | "polygon" => "pol",
+            "matic" | "maticnetwork" => "matic",
+            "wbtc" | "wrappedbtc" | "wrappedbitcoin" => "wbtc",
+            "cbbtc" | "coinbasebtc" => "cbbtc",
+            _ => continue,
+        };
+        return Some(slug);
+    }
+    None
+}
+
 /// `id` falls back to a fresh UUID exactly like Node's `crypto.randomUUID()`.
 pub fn plan_mining_coin_row(coin: &Value, generated_id: &str) -> MiningCoinRow {
     let obj = coin.as_object();
@@ -174,12 +215,26 @@ pub fn plan_mining_coin_row(coin: &Value, generated_id: &str) -> MiningCoinRow {
 
     let price_usd = js::round8(or_zero(parse_num(field("priceUSD"))).max(NON_NEGATIVE_FLOOR));
 
+    let id = js::string_or(field("id"), generated_id);
+    let name = js::string_or(field("name"), DEFAULT_COIN_NAME);
+    let symbol = js::string_or(field("symbol"), "")
+        .trim()
+        .to_ascii_uppercase();
+
+    let icon_url = field("iconUrl")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && s.len() <= 2048)
+        .map(str::to_string)
+        .or_else(|| {
+            default_known_local_icon_slug(&symbol, &name, &id)
+                .map(|slug| format!("/img/coin-logos/{slug}.png"))
+        });
+
     MiningCoinRow {
-        id: js::string_or(field("id"), generated_id),
-        name: js::string_or(field("name"), DEFAULT_COIN_NAME),
-        symbol: js::string_or(field("symbol"), "")
-            .trim()
-            .to_ascii_uppercase(),
+        id,
+        name,
+        symbol,
         description: js::string_or(field("description"), ""),
         color: normalize_hex_color(&js::string_or(field("color"), DEFAULT_COIN_COLOR)),
         algorithm: js::string_or(field("algorithm"), DEFAULT_COIN_ALGORITHM),
@@ -213,11 +268,7 @@ pub fn plan_mining_coin_row(coin: &Value, generated_id: &str) -> MiningCoinRow {
             or_zero(parse_num(field("distributionUsdMonth"))).max(NON_NEGATIVE_FLOOR),
         ),
         is_internal: i32::from(js::truthy(field("isInternal"))),
-        icon_url: field("iconUrl")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|s| !s.is_empty() && s.len() <= 2048)
-            .map(str::to_string),
+        icon_url,
     }
 }
 
@@ -635,5 +686,23 @@ mod tests {
         assert_eq!(row.id, GENERATED);
         let row = plan_mining_coin_row(&json!({ "id": "gemt" }), GENERATED);
         assert_eq!(row.id, "gemt");
+    }
+
+    #[test]
+    fn icon_url_defaults_to_known_coin_slug_or_preserves_custom() {
+        let btc = plan_mining_coin_row(&json!({ "symbol": "BTC" }), GENERATED);
+        assert_eq!(btc.icon_url, Some("/img/coin-logos/btc.png".to_string()));
+
+        let usdc_int = plan_mining_coin_row(&json!({ "symbol": "USDC_INTERNO" }), GENERATED);
+        assert_eq!(usdc_int.icon_url, Some("/img/coin-logos/usdc.png".to_string()));
+
+        let btc_named = plan_mining_coin_row(&json!({ "name": "Bitcoin", "symbol": "Bitcoin" }), GENERATED);
+        assert_eq!(btc_named.icon_url, Some("/img/coin-logos/btc.png".to_string()));
+
+        let custom = plan_mining_coin_row(
+            &json!({ "symbol": "BTC", "iconUrl": "/storage/uploads/custom.png" }),
+            GENERATED,
+        );
+        assert_eq!(custom.icon_url, Some("/storage/uploads/custom.png".to_string()));
     }
 }

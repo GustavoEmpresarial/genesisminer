@@ -177,6 +177,9 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
   if (method.toUpperCase() === 'POST' && /^\/api\/admin\/users\/[^/]+\/save-game-override$/.test(p)) {
     return { kind: 'tab', tab: 'users' };
   }
+  if (method.toUpperCase() === 'POST' && /^\/api\/admin\/users\/[^/]+\/grant-premium-checkin$/.test(p)) {
+    return { kind: 'tab', tab: 'users' };
+  }
   if (method.toUpperCase() === 'PUT' && /^\/api\/admin\/users\/[^/]+\/rooms$/.test(p)) {
     return { kind: 'tab', tab: 'users' };
   }
@@ -185,6 +188,9 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
     return { kind: 'tab', tab: 'users' };
   }
   if (method.toUpperCase() === 'GET' && /^\/api\/admin\/users\/[^/]+\/wallet-history$/.test(p)) {
+    return { kind: 'tab', tab: 'users' };
+  }
+  if (method.toUpperCase() === 'GET' && /^\/api\/admin\/users\/[^/]+\/reinvestment-history$/.test(p)) {
     return { kind: 'tab', tab: 'users' };
   }
   if (
@@ -199,6 +205,15 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
   // /api/admin/mining-distribution/* is 100% Rust (genesis-api admin_mining_dist.rs).
   // /api/admin/{economy-stats,mining-runtime-summary} are 100% Rust (genesis-api admin_economy.rs).
   // /api/admin/etherscan/* is 100% Rust (genesis-api admin_treasury.rs → genesis-wallet).
+  if (method.toUpperCase() === 'GET' && p === '/api/admin/reinvestment-history') {
+    return { kind: 'tab', tab: 'reports' };
+  }
+  if (method.toUpperCase() === 'GET' && p === '/api/admin/shop/checkouts') {
+    return { kind: 'tab', tab: 'reports' };
+  }
+  if (method.toUpperCase() === 'GET' && p === '/api/admin/purchases/report') {
+    return { kind: 'tab', tab: 'reports' };
+  }
   if (p.startsWith('/api/admin/withdrawals')) return { kind: 'super' };
   // /api/admin/economy-settings + /api/admin/mining-coins/sync-live-prices are
   // 100% Rust (genesis-api admin_economy.rs); unmapped /api/admin/* → super anyway.

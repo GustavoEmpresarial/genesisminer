@@ -31,6 +31,18 @@ import { AdminUserAccountTracePanel } from './AdminUserAccountTracePanel';
 
 type AuditSubTab = 'activity' | 'inventory' | 'state' | 'trace';
 
+const ACTIVITY_QUICK_FILTERS: { id: string; label: string }[] = [
+  { id: 'all', label: 'Tudo' },
+  { id: 'money', label: 'Financeiro (Todas)' },
+  { id: 'purchase', label: 'Só Loja' },
+  { id: 'season', label: 'Passes' },
+  { id: 'upgrades', label: 'Pacotes / Upgrades' },
+  { id: 'p2p', label: 'P2P' },
+  { id: 'boxes', label: 'Caixas & Roleta' },
+  { id: 'room_slots', label: 'Salas' },
+  { id: 'inventory', label: 'Inventário' }
+];
+
 export type AdminUserAuditPanelProps = {
   userId: number | null;
   userEmail: string;
@@ -44,8 +56,11 @@ export const AdminUserAuditPanel: React.FC<AdminUserAuditPanelProps> = ({ userId
   const [activityError, setActivityError] = useState<string | null>(null);
   const [activityMongoNote, setActivityMongoNote] = useState<string | null>(null);
   const [accountCreatedAtMs, setAccountCreatedAtMs] = useState<number | null>(null);
-  const [activityFilterId, setActivityFilterId] = useState('all');
+  const [activityFilterId, setActivityFilterId] = useState('money');
   const [activitySearch, setActivitySearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [hasMoreActivity, setHasMoreActivity] = useState(false);
   const [expandedTech, setExpandedTech] = useState<Record<string, boolean>>({});
 
@@ -77,7 +92,7 @@ export const AdminUserAuditPanel: React.FC<AdminUserAuditPanelProps> = ({ userId
           limit: 100,
           beforeMs,
           filterId: activityFilterId !== 'all' ? activityFilterId : undefined,
-          search: activitySearch.trim() || undefined
+          search: appliedSearch.trim() || undefined
         });
         if (res.error) {
           setActivityError(res.error);
@@ -96,7 +111,7 @@ export const AdminUserAuditPanel: React.FC<AdminUserAuditPanelProps> = ({ userId
         setActivityLoading(false);
       }
     },
-    [userEmail, userId, activityFilterId, activitySearch]
+    [userEmail, userId, activityFilterId, appliedSearch]
   );
 
   const loadInventory = useCallback(
@@ -147,13 +162,18 @@ export const AdminUserAuditPanel: React.FC<AdminUserAuditPanelProps> = ({ userId
     if (auditSubTab === 'state') void loadSnapshots();
   }, [auditSubTab, loadSnapshots]);
 
-  const filteredActivity = useMemo(
-    () =>
-      filterUserActivityLogs(activityLogs, activityFilterId, activitySearch, {
-        accountCreatedAtMs
-      }),
-    [activityLogs, activityFilterId, activitySearch, accountCreatedAtMs]
-  );
+  const filteredActivity = useMemo(() => {
+    const base = filterUserActivityLogs(activityLogs, activityFilterId, appliedSearch, {
+      accountCreatedAtMs
+    });
+    const fromMs = fromDate ? new Date(fromDate).getTime() : Number.NaN;
+    const toMs = toDate ? new Date(toDate).getTime() : Number.NaN;
+    return base.filter((row) => {
+      if (Number.isFinite(fromMs) && row.createdAt < fromMs) return false;
+      if (Number.isFinite(toMs) && row.createdAt > toMs) return false;
+      return true;
+    });
+  }, [activityLogs, activityFilterId, appliedSearch, accountCreatedAtMs, fromDate, toDate]);
 
   const inventoryPages = Math.max(1, Math.ceil(inventoryTotal / 50));
 
@@ -166,7 +186,7 @@ export const AdminUserAuditPanel: React.FC<AdminUserAuditPanelProps> = ({ userId
         <button
           type="button"
           onClick={() => setAuditSubTab('activity')}
-          className={`px-3 py-1.5 text-xs font-bold rounded flex items-center gap-1.5 ${
+          className={`px-3 py-2 text-sm font-bold rounded-lg flex items-center gap-1.5 ${
             auditSubTab === 'activity' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'
           }`}
         >
@@ -176,7 +196,7 @@ export const AdminUserAuditPanel: React.FC<AdminUserAuditPanelProps> = ({ userId
         <button
           type="button"
           onClick={() => setAuditSubTab('inventory')}
-          className={`px-3 py-1.5 text-xs font-bold rounded flex items-center gap-1.5 ${
+          className={`px-3 py-2 text-sm font-bold rounded-lg flex items-center gap-1.5 ${
             auditSubTab === 'inventory' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'
           }`}
         >
@@ -186,7 +206,7 @@ export const AdminUserAuditPanel: React.FC<AdminUserAuditPanelProps> = ({ userId
         <button
           type="button"
           onClick={() => setAuditSubTab('state')}
-          className={`px-3 py-1.5 text-xs font-bold rounded flex items-center gap-1.5 ${
+          className={`px-3 py-2 text-sm font-bold rounded-lg flex items-center gap-1.5 ${
             auditSubTab === 'state' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'
           }`}
         >
@@ -196,7 +216,7 @@ export const AdminUserAuditPanel: React.FC<AdminUserAuditPanelProps> = ({ userId
         <button
           type="button"
           onClick={() => setAuditSubTab('trace')}
-          className={`px-3 py-1.5 text-xs font-bold rounded flex items-center gap-1.5 ${
+          className={`px-3 py-2 text-sm font-bold rounded-lg flex items-center gap-1.5 ${
             auditSubTab === 'trace' ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-400'
           }`}
         >
@@ -210,21 +230,21 @@ export const AdminUserAuditPanel: React.FC<AdminUserAuditPanelProps> = ({ userId
             if (auditSubTab === 'inventory') void loadInventory(inventoryPage);
             if (auditSubTab === 'state') void loadSnapshots();
           }}
-          className="ml-auto px-2 py-1.5 text-xs text-slate-400 hover:text-white flex items-center gap-1"
+          className="ml-auto px-3 py-2 text-sm text-slate-300 hover:text-white flex items-center gap-1"
         >
           <RefreshCw size={12} />
           Recarregar
         </button>
       </div>
 
-      <p className="text-[11px] text-slate-500">
-        Auditoria para <span className="font-mono text-slate-300">{userEmail}</span>
-        {userId != null ? <span className="text-slate-600"> (user #{userId})</span> : null}
-        — textos em português; horários em Brasília.
+      <p className="text-sm text-slate-300">
+        Auditoria de <span className="font-semibold text-white">{userEmail}</span>
+        {userId != null ? <span className="text-slate-400"> · conta #{userId}</span> : null}
+        . Horários em Brasília.
       </p>
 
       {formatAccountCreatedBrt(accountCreatedAtMs) && auditSubTab === 'activity' && (
-        <div className="rounded-lg border border-emerald-900/40 bg-emerald-950/20 px-3 py-2 text-[11px] text-emerald-100/95">
+        <div className="rounded-lg border border-emerald-900/40 bg-emerald-950/20 px-4 py-3 text-sm text-emerald-100">
           <span className="font-bold text-emerald-400/95">Conta criada (estimativa): </span>
           {formatAccountCreatedBrt(accountCreatedAtMs)}
         </div>
@@ -232,33 +252,82 @@ export const AdminUserAuditPanel: React.FC<AdminUserAuditPanelProps> = ({ userId
 
       {auditSubTab === 'activity' && (
         <>
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
-            <select
-              value={activityFilterId}
-              onChange={(e) => setActivityFilterId(e.target.value)}
-              className="rounded border border-slate-600 bg-slate-900 px-2 py-1.5 text-xs text-white"
-            >
-              {ACTIVITY_LOG_FILTER_GROUPS.map((g) => (
-                <option key={g.id} value={g.id}>
+          <form
+            className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setAppliedSearch(activitySearch.trim());
+            }}
+          >
+            <p className="text-sm font-bold text-white">Filtros</p>
+            <div className="flex flex-wrap gap-2">
+              {ACTIVITY_QUICK_FILTERS.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  onClick={() => setActivityFilterId(g.id)}
+                  className={`px-3 py-2 rounded-lg text-sm font-bold ${
+                    activityFilterId === g.id ? 'bg-amber-600 text-white' : 'bg-slate-800 text-slate-300 hover:text-white'
+                  }`}
+                >
                   {g.label}
-                </option>
+                </button>
               ))}
-            </select>
-            <input
-              type="search"
-              value={activitySearch}
-              onChange={(e) => setActivitySearch(e.target.value)}
-              placeholder="Pesquisar no resumo legível…"
-              className="flex-1 min-w-[12rem] rounded border border-slate-600 bg-slate-900 px-2 py-1.5 text-xs text-white"
-            />
-            <button
-              type="button"
-              onClick={() => void loadActivity()}
-              className="px-3 py-1.5 text-xs font-bold rounded bg-amber-600/30 border border-amber-600/50 text-amber-100"
-            >
-              Aplicar filtros
-            </button>
-          </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+              <label className="text-sm text-slate-300 font-semibold">
+                Tipo
+                <select
+                  value={activityFilterId}
+                  onChange={(e) => setActivityFilterId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-normal text-white"
+                >
+                  {ACTIVITY_LOG_FILTER_GROUPS.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-sm text-slate-300 font-semibold md:col-span-1">
+                Item, jogador ou texto
+                <input
+                  type="search"
+                  value={activitySearch}
+                  onChange={(e) => setActivitySearch(e.target.value)}
+                  placeholder="ex. Estelar, RACK A1"
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-normal text-white"
+                />
+              </label>
+              <label className="text-sm text-slate-300 font-semibold">
+                Desde
+                <input
+                  type="datetime-local"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-normal text-white"
+                />
+              </label>
+              <label className="text-sm text-slate-300 font-semibold">
+                Até
+                <input
+                  type="datetime-local"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm font-normal text-white"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="submit"
+                className="px-4 py-2 text-sm font-bold rounded-lg bg-amber-600 text-white"
+              >
+                Aplicar pesquisa
+              </button>
+              <span className="text-sm text-slate-400">{filteredActivity.length} eventos nesta lista</span>
+            </div>
+          </form>
 
           {activityMongoNote && (
             <div className="rounded-lg border border-sky-800/60 bg-sky-950/40 px-3 py-2 text-xs text-sky-100">
@@ -312,8 +381,8 @@ export const AdminUserAuditPanel: React.FC<AdminUserAuditPanelProps> = ({ userId
           ) : (
             <>
               <div className="rounded-lg border border-slate-700 overflow-x-auto">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-slate-950 text-slate-500 uppercase text-[10px] font-bold">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-slate-950 text-slate-400 uppercase text-xs font-bold">
                     <tr>
                       <th className="px-2 py-2">Data</th>
                       <th className="px-2 py-2">Item</th>
@@ -354,7 +423,7 @@ export const AdminUserAuditPanel: React.FC<AdminUserAuditPanelProps> = ({ userId
                   </tbody>
                 </table>
               </div>
-              <div className="flex justify-between items-center text-xs text-slate-500">
+              <div className="flex justify-between items-center text-sm text-slate-400">
                 <span>
                   {inventoryTotal} movimento(s) · página {inventoryPage}/{inventoryPages}
                 </span>

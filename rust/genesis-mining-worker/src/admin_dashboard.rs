@@ -3,17 +3,21 @@
 //! `services/site-metrics.ts` (`computeAdminSiteMetrics`), plus `ranking-exclusion`
 //! and `users/map`. Admin auth stays in `genesis-api` (`admin_dashboard.rs`).
 
+use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Instant;
 
 use chrono::{Datelike, TimeZone, Utc};
 use deadpool_postgres::Pool;
+use genesis_core::ranking::{sum_general_ranking_power, PublicRankingUser};
 use genesis_core::time::MS_PER_DAY;
 use genesis_core::utc_week_start_ms;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::player_reads::{now_ms, PlayerReadError};
+use crate::ranking::RankingService;
 
 pub const DASHBOARD_STATS_PATH: &str = "/v1/admin/dashboard/stats";
 pub const DASHBOARD_METRICS_PATH: &str = "/v1/admin/dashboard/metrics";
@@ -60,7 +64,39 @@ fn f64_col(row: &tokio_postgres::Row, col: &str) -> f64 {
 // dashboard-stats
 // ===========================================================================
 
-pub async fn run_dashboard_stats(pool: &Pool) -> Result<Value, PlayerReadError> {
+/// General-power row used to build `topMiners` (email filled after PG lookup).
+#[derive(Debug, Clone, PartialEq)]
+struct TopMinerGeneral {
+    user_id: i64,
+    username: String,
+    power: f64,
+}
+
+/// Map public ranking → `(globalPower, topMiners)` using `general_coins` only
+/// (excludes NFT/ASIC room credits). Same definition as public RankingPage.
+fn top_miners_from_general_ranking(
+    ranking: &[PublicRankingUser],
+    limit: usize,
+) -> (f64, Vec<TopMinerGeneral>) {
+    let mut scored: Vec<TopMinerGeneral> = ranking
+        .iter()
+        .map(|u| TopMinerGeneral {
+            user_id: u.user_id,
+            username: u.username.clone(),
+            power: sum_general_ranking_power(&u.general_coins),
+        })
+        .filter(|m| m.power > 0.0)
+        .collect();
+    scored.sort_by(|a, b| b.power.partial_cmp(&a.power).unwrap_or(Ordering::Equal));
+    let global_power: f64 = scored.iter().map(|m| m.power).sum();
+    let top = scored.into_iter().take(limit).collect();
+    (global_power, top)
+}
+
+pub async fn run_dashboard_stats(
+    pool: &Pool,
+    ranking: &RankingService,
+) -> Result<Value, PlayerReadError> {
     if let Ok(g) = STATS_CACHE.lock() {
         if let Some((at, v)) = g.as_ref() {
             if at.elapsed().as_millis() < STATS_CACHE_TTL_MS {
@@ -68,14 +104,17 @@ pub async fn run_dashboard_stats(pool: &Pool) -> Result<Value, PlayerReadError> 
             }
         }
     }
-    let fresh = compute_dashboard_stats(pool).await?;
+    let fresh = compute_dashboard_stats(pool, ranking).await?;
     if let Ok(mut g) = STATS_CACHE.lock() {
         *g = Some((Instant::now(), fresh.clone()));
     }
     Ok(fresh)
 }
 
-async fn compute_dashboard_stats(pool: &Pool) -> Result<Value, PlayerReadError> {
+async fn compute_dashboard_stats(
+    pool: &Pool,
+    ranking: &RankingService,
+) -> Result<Value, PlayerReadError> {
     let c = pool.get().await?;
     let now = now_ms();
     let online_cutoff = now - ONLINE_STALE_MS;
@@ -150,42 +189,44 @@ async fn compute_dashboard_stats(pool: &Pool) -> Result<Value, PlayerReadError> 
         .map(|r| json!({ "username": s(r, "username"), "email": s(r, "email"), "amount": f64_col(r, "amount") }))
         .collect();
 
-    let power_rows = c
-        .query(
-            "WITH rack_base AS (
-               SELECT r.id AS rack_id, r.user_id,
-                      SUM(COALESCE(u.base_production, 0)) AS base_prod
-                 FROM placed_racks r
-                 JOIN rack_slots rs ON r.id = rs.rack_id
-                 LEFT JOIN upgrades u ON rs.machine_item_id = u.id
-                WHERE r.is_on = 1 AND r.wiring_id IS NOT NULL AND r.battery_id IS NOT NULL
-                GROUP BY r.id, r.user_id
-             ),
-             rack_mult AS (
-               SELECT rms.rack_id, 1 + SUM(COALESCE(u.multiplier, 0)) AS total_mult
-                 FROM rack_multiplier_slots rms
-                 JOIN upgrades u ON rms.multiplier_item_id = u.id
-                GROUP BY rms.rack_id
-             ),
-             user_power AS (
-               SELECT rb.user_id,
-                      SUM(rb.base_prod * COALESCE(rm.total_mult, 1)) AS power
-                 FROM rack_base rb
-                 LEFT JOIN rack_mult rm ON rb.rack_id = rm.rack_id
-                GROUP BY rb.user_id
-             )
-             SELECT up.power::double precision AS power, u.username, u.email
-               FROM user_power up JOIN users u ON up.user_id = u.id
-              WHERE COALESCE(u.ranking_excluded, 0) = 0
-              ORDER BY up.power DESC",
-            &[],
-        )
-        .await?;
-    let global_power: f64 = power_rows.iter().map(|r| f64_col(r, "power")).sum();
-    let top_miners: Vec<Value> = power_rows
+    // Top miners + globalPower from RankingService general power (general_coins),
+    // not naive SQL over all racks (which double-counts NFT/ASIC rooms).
+    let ranking_payload = ranking
+        .get_public(false)
+        .await
+        .map_err(|e| PlayerReadError::internal(e.to_string()))?;
+    let (global_power, top_general) =
+        top_miners_from_general_ranking(&ranking_payload.ranking, TOP_LIST_LIMIT);
+    let top_ids: Vec<i32> = top_general
         .iter()
-        .take(TOP_LIST_LIMIT)
-        .map(|r| json!({ "username": s(r, "username"), "email": s(r, "email"), "amount": f64_col(r, "power") }))
+        .filter_map(|m| i32::try_from(m.user_id).ok())
+        .collect();
+    let mut email_by_id: HashMap<i32, String> = HashMap::new();
+    if !top_ids.is_empty() {
+        for row in c
+            .query(
+                "SELECT id, email FROM users WHERE id = ANY($1::int[])",
+                &[&top_ids],
+            )
+            .await?
+        {
+            let id: i32 = row.get("id");
+            email_by_id.insert(id, s(&row, "email"));
+        }
+    }
+    let top_miners: Vec<Value> = top_general
+        .iter()
+        .map(|m| {
+            let email = i32::try_from(m.user_id)
+                .ok()
+                .and_then(|id| email_by_id.get(&id).cloned())
+                .unwrap_or_default();
+            json!({
+                "username": m.username,
+                "email": email,
+                "amount": m.power,
+            })
+        })
         .collect();
 
     let ranking_excluded: Vec<Value> = c
@@ -539,5 +580,38 @@ mod tests {
         let ms = 1_788_262_700_000;
         assert_eq!(utc_ymd(utc_day_start_ms(ms)), utc_ymd(ms));
         assert_eq!(utc_day_start_ms(ms) % MS_PER_DAY_I64, 0);
+    }
+
+    #[test]
+    fn top_miners_uses_general_coins_not_full_coins() {
+        // Selleck-shaped: coins ≈ 22337 (incl. NFT), generalCoins ≈ 10333.
+        let ranking = vec![
+            PublicRankingUser {
+                user_id: 1,
+                username: "selleck".into(),
+                coins: HashMap::from([("btc".into(), 22_337.0)]),
+                general_coins: HashMap::from([("btc".into(), 10_333.0)]),
+            },
+            PublicRankingUser {
+                user_id: 2,
+                username: "other".into(),
+                coins: HashMap::from([("btc".into(), 5_000.0)]),
+                general_coins: HashMap::from([("btc".into(), 4_000.0)]),
+            },
+            PublicRankingUser {
+                user_id: 3,
+                username: "zero".into(),
+                coins: HashMap::from([("btc".into(), 100.0)]),
+                general_coins: HashMap::new(),
+            },
+        ];
+        let (global, top) = top_miners_from_general_ranking(&ranking, TOP_LIST_LIMIT);
+        assert!((global - 14_333.0).abs() < f64::EPSILON);
+        assert_eq!(top.len(), 2);
+        assert_eq!(top[0].username, "selleck");
+        assert!((top[0].power - 10_333.0).abs() < f64::EPSILON);
+        assert_eq!(top[1].username, "other");
+        // Full `coins` must not drive sort/sum (would put selleck at 22k and global ~27k).
+        assert!(global < 22_000.0);
     }
 }

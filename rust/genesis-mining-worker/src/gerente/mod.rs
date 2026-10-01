@@ -2,7 +2,7 @@
 //!
 //! Espelho de `server/modules/gerente/services/manager.ts` + controller HTTP.
 
-mod auth_session;
+pub(crate) mod auth_session;
 mod manager;
 mod payout_loop;
 

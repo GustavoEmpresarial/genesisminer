@@ -2,12 +2,23 @@
 //!
 //! Covers the four leftover routes that live outside the `/api/admin` prefix:
 //! `GET /api/users` ([`list`]), `PUT /api/users/block`, `PUT /api/user`
-//! ([`update`]) and `DELETE /api/user/:email` ([`delete`]). genesis-api owns the
-//! `isAdmin` gate and the HTTP shape; this module owns the SQL.
+//! ([`update`]) and `DELETE /api/user/:email` ([`delete`]), plus admin profile
+//! leftovers: save-game override finalize, owned rooms, wallet history,
+//! impersonate, and user-activity. genesis-api owns the `isAdmin` gate and the
+//! HTTP shape; this module owns the SQL / session flags.
 
+pub mod access_level_referral;
 pub mod delete;
+pub mod dormant_mining;
+pub mod grant_premium_checkin;
+pub mod impersonate;
 pub mod list;
+pub mod owned_rooms;
+pub mod referral_models;
+pub mod save_game_override;
 pub mod update;
+pub mod user_activity;
+pub mod wallet_history;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -19,6 +30,20 @@ pub const ADMIN_USERS_BLOCK_PATH: &str = "/v1/users/admin-block";
 pub const ADMIN_USERS_UPDATE_PATH: &str = "/v1/users/admin-update";
 pub const ADMIN_USERS_DELETE_RESOLVE_PATH: &str = "/v1/users/admin-delete/resolve";
 pub const ADMIN_USERS_DELETE_PATH: &str = "/v1/users/admin-delete";
+pub use access_level_referral::{
+    ADMIN_ACCESS_LEVEL_REFERRAL_LIST_PATH, ADMIN_ACCESS_LEVEL_REFERRAL_SAVE_PATH,
+};
+pub use dormant_mining::ADMIN_DORMANT_MINING_PATH;
+pub use grant_premium_checkin::ADMIN_GRANT_PREMIUM_CHECKIN_PATH;
+pub use impersonate::{ADMIN_IMPERSONATE_START_PATH, ADMIN_IMPERSONATE_STOP_PATH};
+pub use owned_rooms::{ADMIN_OWNED_ROOMS_FINALIZE_PATH, ADMIN_OWNED_ROOMS_PREPARE_PATH};
+pub use referral_models::{
+    ADMIN_REFERRAL_MODELS_DELETE_PATH, ADMIN_REFERRAL_MODELS_LIST_PATH,
+    ADMIN_REFERRAL_MODELS_UPSERT_PATH,
+};
+pub use save_game_override::ADMIN_SAVE_GAME_OVERRIDE_FINALIZE_PATH;
+pub use user_activity::ADMIN_USER_ACTIVITY_PATH;
+pub use wallet_history::ADMIN_WALLET_HISTORY_PATH;
 
 /// Node `EMAIL_MAX` (users.controller.ts / delete.ts).
 pub const EMAIL_MAX: usize = 254;
@@ -125,6 +150,50 @@ mod tests {
             "/v1/users/admin-delete/resolve"
         );
         assert_eq!(ADMIN_USERS_DELETE_PATH, "/v1/users/admin-delete");
+        assert_eq!(
+            ADMIN_SAVE_GAME_OVERRIDE_FINALIZE_PATH,
+            "/v1/admin/users/save-game-override-finalize"
+        );
+        assert_eq!(
+            ADMIN_OWNED_ROOMS_PREPARE_PATH,
+            "/v1/admin/users/owned-rooms-prepare"
+        );
+        assert_eq!(
+            ADMIN_OWNED_ROOMS_FINALIZE_PATH,
+            "/v1/admin/users/owned-rooms-finalize"
+        );
+        assert_eq!(ADMIN_WALLET_HISTORY_PATH, "/v1/admin/users/wallet-history");
+        assert_eq!(
+            ADMIN_GRANT_PREMIUM_CHECKIN_PATH,
+            "/v1/admin/users/grant-premium-checkin"
+        );
+        assert_eq!(ADMIN_IMPERSONATE_START_PATH, "/v1/admin/impersonate/start");
+        assert_eq!(ADMIN_IMPERSONATE_STOP_PATH, "/v1/admin/impersonate/stop");
+        assert_eq!(ADMIN_USER_ACTIVITY_PATH, "/v1/admin/user-activity");
+        assert_eq!(
+            ADMIN_REFERRAL_MODELS_LIST_PATH,
+            "/v1/admin/users/referral-models/list"
+        );
+        assert_eq!(
+            ADMIN_REFERRAL_MODELS_UPSERT_PATH,
+            "/v1/admin/users/referral-models/upsert"
+        );
+        assert_eq!(
+            ADMIN_REFERRAL_MODELS_DELETE_PATH,
+            "/v1/admin/users/referral-models/delete"
+        );
+        assert_eq!(
+            ADMIN_ACCESS_LEVEL_REFERRAL_LIST_PATH,
+            "/v1/admin/users/access-level-referral-assignments/list"
+        );
+        assert_eq!(
+            ADMIN_ACCESS_LEVEL_REFERRAL_SAVE_PATH,
+            "/v1/admin/users/access-level-referral-assignments/save"
+        );
+        assert_eq!(
+            ADMIN_DORMANT_MINING_PATH,
+            "/v1/admin/users/accounts-dormant-mining"
+        );
     }
 
     #[test]

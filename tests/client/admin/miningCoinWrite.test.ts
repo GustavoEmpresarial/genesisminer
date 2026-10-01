@@ -16,6 +16,56 @@ afterEach(() => {
   vi.resetModules();
 });
 
+describe('normalizeMiningCoinPayload flags', () => {
+  it('missing showInExchange → true no payload de save', async () => {
+    apiFetch.mockResolvedValue(res(true, { ok: true }));
+    const { saveMiningCoin } = await load();
+    await saveMiningCoin({
+      id: 'btc',
+      networkHashrate: 1,
+      blockReward: 1,
+      usdcRate: 1
+    });
+    const body = JSON.parse(apiFetch.mock.calls[0][1].body);
+    expect(body.showInExchange).toBe(true);
+    expect(body.isActive).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(body, 'showInExchange')).toBe(true);
+  });
+
+  it('explicit showInExchange false → false', async () => {
+    apiFetch.mockResolvedValue(res(true, { ok: true }));
+    const { saveMiningCoin } = await load();
+    await saveMiningCoin({
+      id: 'btc',
+      networkHashrate: 1,
+      blockReward: 1,
+      usdcRate: 1,
+      showInExchange: false
+    });
+    const body = JSON.parse(apiFetch.mock.calls[0][1].body);
+    expect(body.showInExchange).toBe(false);
+  });
+
+  it('isInternal coerce (true/1/"1" → true; else false)', async () => {
+    const { normalizeMiningCoinPayload } = await load();
+    const base = { networkHashrate: 1, blockReward: 1, usdcRate: 1 };
+    expect(normalizeMiningCoinPayload({ ...base, isInternal: true }).isInternal).toBe(true);
+    expect(normalizeMiningCoinPayload({ ...base, isInternal: 1 }).isInternal).toBe(true);
+    expect(normalizeMiningCoinPayload({ ...base, isInternal: '1' }).isInternal).toBe(true);
+    expect(normalizeMiningCoinPayload({ ...base, isInternal: false }).isInternal).toBe(false);
+    expect(normalizeMiningCoinPayload({ ...base }).isInternal).toBe(false);
+  });
+
+  it('isActive explicit off (false/0/"0") → false; absent → true', async () => {
+    const { normalizeMiningCoinPayload } = await load();
+    const base = { networkHashrate: 1, blockReward: 1, usdcRate: 1 };
+    expect(normalizeMiningCoinPayload({ ...base }).isActive).toBe(true);
+    expect(normalizeMiningCoinPayload({ ...base, isActive: false }).isActive).toBe(false);
+    expect(normalizeMiningCoinPayload({ ...base, isActive: 0 }).isActive).toBe(false);
+    expect(normalizeMiningCoinPayload({ ...base, isActive: '0' }).isActive).toBe(false);
+  });
+});
+
 describe('setMiningCoinActive / deleteMiningCoin', () => {
   it('POSTa /api/mining-coins/set-active com { id, active }', async () => {
     apiFetch.mockResolvedValue(res(true, { ok: true, activeMiners: 3 }));

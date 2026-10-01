@@ -41,6 +41,10 @@ describe('isManagerAllowedRoute', () => {
     expect(guardModule.isManagerAllowedRoute('POST', '/api/lucky-boxes/promocodes/redeem')).toBe(true);
   });
 
+  it('GET /api/player/game-header passa (blanket GET não-admin)', () => {
+    expect(guardModule.isManagerAllowedRoute('GET', '/api/player/game-header')).toBe(true);
+  });
+
   it('GET /api/calculator/me passa (blanket GET não-admin)', () => {
     expect(guardModule.isManagerAllowedRoute('GET', '/api/calculator/me')).toBe(true);
   });

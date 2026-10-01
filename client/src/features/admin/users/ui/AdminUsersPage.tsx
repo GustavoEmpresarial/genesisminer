@@ -1,10 +1,10 @@
 // @ts-nocheck — markup legado; o client usa strict+noUnusedLocals.
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminUpgrade, LootBox } from '../../lib/adminTypes';
-import { getAdminUpgrades, createAdminUpgrade, deleteAdminUpgrade, getLootBoxes, setLootBoxes, getReferralModels, saveReferralModel, deleteReferralModel, getAccessLevelReferralAssignments, saveAccessLevelReferralAssignments, getSeasonPasses } from '../api';
+import { getAdminUpgrades, createAdminUpgrade, deleteAdminUpgrade, getLootBoxes, setLootBoxes, getSeasonPasses } from '../api';
 import { AdminRanking } from '../../ui/AdminRanking';
 import { AdminSuspiciousEmailsPanel } from '../../ui/AdminSuspiciousEmailsPanel';
-import { User, AccessLevel, GameState, Upgrade, ReferralModel, SeasonPass } from '../../lib/adminTypes';
+import { User, AccessLevel, GameState, Upgrade, SeasonPass } from '../../lib/adminTypes';
 import {
     Users,
     Search,
@@ -18,6 +18,7 @@ import {
     Trophy,
     Gift,
     Cog,
+    CalendarCheck,
     LogIn,
     ArrowUp,
     ArrowDown,
@@ -34,8 +35,12 @@ import {
     Lock,
     AtSign,
     Wallet,
-    Copy
+    Copy,
+    Coins,
+    DollarSign,
+    Store
 } from 'lucide-react';
+import { formatMinedCoinAmount, formatUsdcAmount } from '../../../../shared/utils/locale-format';
 import {
     getGameState,
     toggleUserBlocked,
@@ -46,22 +51,27 @@ import {
     deleteUser,
     _getSession,
     impersonateUser,
+    grantPremiumCheckin,
     bulkDeleteUsers,
     bulkGiftUsers,
     updateAdminPermissions,
     getUsers,
     getAdminDormantMiningAccounts,
     getAdminUserWalletHistory,
+    getAdminUserReinvestmentHistory,
+    type ReinvestmentHistoryEntry,
     deactivateStreamerRoomByAdmin,
     setAdminUserOwnedRooms,
     type AdminDormantMiningRow,
     type AdminUserWalletHistoryEntry,
     type AdminUserWalletCurrent
 } from '../api';
+import { pathForGameView } from '../../../../app/pathRouting';
 import { getUpgradesCatalog } from '../../../../shared/api/admin-legacy';
 import { validateAuthUsernameFormat } from '../../../../shared/utils/usernameValidation';
 import { AUTH_USERNAME_MAX } from '../../../../shared/constants/authLimits';
 import { AdminUserAuditPanel } from '../../ui/AdminUserAuditPanel';
+import { AdminUserShopPurchases } from '../../ui/AdminUserShopPurchases';
 import { apiFetch } from '../../../../shared/api/http';
 import {
   resolveStreamerRoomId,
@@ -82,6 +92,7 @@ import {
 } from '../../lib/membershipAccessLevels';
 import { AccessLevelsCatalog } from './AccessLevelsCatalog';
 import { UserStockEditor } from './UserStockEditor';
+import { AdminUserDetailView } from './AdminUserDetailView';
 import {
   buildAdminSaveOverrideDelta,
   findOrphanRackRoom,
@@ -217,7 +228,6 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
         | 'admin_upgrades'
         | 'referrals'
         | 'ranking'
-        | 'advanced_referrals'
         | 'dormant_no_mining'
         | 'dormant_mining_no_wallet'
         | 'suspicious_emails'
@@ -240,11 +250,13 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
     const [editProfileUsernameError, setEditProfileUsernameError] = useState<string | null>(null);
 
     // Save Editor State
-    const [saveTab, setSaveTab] = useState<'stock' | 'racks' | 'balances' | 'boxes' | 'logs' | 'wallets'>('stock');
+    const [saveTab, setSaveTab] = useState<'stock' | 'racks' | 'balances' | 'boxes' | 'logs' | 'wallets' | 'shop'>('stock');
     const [walletHistoryLoading, setWalletHistoryLoading] = useState(false);
     const [walletHistoryError, setWalletHistoryError] = useState<string | null>(null);
     const [adminWalletCurrent, setAdminWalletCurrent] = useState<AdminUserWalletCurrent | null>(null);
     const [adminWalletHistory, setAdminWalletHistory] = useState<AdminUserWalletHistoryEntry[]>([]);
+    const [adminReinvestmentHistory, setAdminReinvestmentHistory] = useState<ReinvestmentHistoryEntry[]>([]);
+    const [adminReinvestmentError, setAdminReinvestmentError] = useState<string | null>(null);
     const [streamerRoomBusy, setStreamerRoomBusy] = useState(false);
     const [miningCoins, setMiningCoinsState] = useState<{ id: string; name: string }[]>([]);
     const [newItemId, setNewItemId] = useState<string>('');
@@ -292,14 +304,6 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
     });
     const [isSavingPerms, setIsSavingPerms] = useState(false);
 
-    // Advanced Referrals State
-    const [referralModels, setReferralModels] = useState<ReferralModel[]>([]);
-    const [levelAssignments, setLevelAssignments] = useState<Record<string, number>>({});
-    const [editModelMode, setEditModelMode] = useState(false);
-    const [modelForm, setModelForm] = useState<Partial<ReferralModel>>({ name: '', description: '', sender_reward_usdc: 0, receiver_reward_usdc: 0, sender_loot_box_id: '', receiver_loot_box_id: '', is_active: 1 });
-    const [isSavingModel, setIsSavingModel] = useState(false);
-    const [isSavingAssignments, setIsSavingAssignments] = useState(false);
-
     const [dormantDaysMin, setDormantDaysMin] = useState(30);
     const [dormantNoMining, setDormantNoMining] = useState<AdminDormantMiningRow[]>([]);
     const [dormantMiningNoWallet, setDormantMiningNoWallet] = useState<AdminDormantMiningRow[]>([]);
@@ -340,16 +344,6 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
             setTotalPages(data.pages);
             setTotalUsersCount(data.total);
             setRoomOptions(Array.isArray(data.rooms) ? data.rooms : []);
-
-            // Fetch Advanced Referral Data if needed
-            if (subTab === 'advanced_referrals') {
-                const [models, assignments] = await Promise.all([
-                    getReferralModels(),
-                    getAccessLevelReferralAssignments()
-                ]);
-                setReferralModels(models);
-                setLevelAssignments(assignments);
-            }
         } catch (e) {
             console.error('[AdminUsers] loadUsers failed', e);
         } finally {
@@ -457,23 +451,34 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
             setWalletHistoryError('Sem ID numérico de utilizador (abra o perfil a partir da lista de Utilizadores).');
             setAdminWalletCurrent(null);
             setAdminWalletHistory([]);
+            setAdminReinvestmentHistory([]);
+            setAdminReinvestmentError(null);
             return;
         }
         let cancelled = false;
         setWalletHistoryLoading(true);
         setWalletHistoryError(null);
-        void getAdminUserWalletHistory(dbId).then((r) => {
-            if (cancelled) return;
-            setWalletHistoryLoading(false);
-            if (!r.ok) {
-                setWalletHistoryError(r.error || 'Erro ao carregar histórico de carteiras.');
-                setAdminWalletCurrent(null);
-                setAdminWalletHistory([]);
-            } else {
-                setAdminWalletCurrent(r.currentWallet);
-                setAdminWalletHistory(r.history);
+        setAdminReinvestmentError(null);
+        void Promise.all([getAdminUserWalletHistory(dbId), getAdminUserReinvestmentHistory(dbId)]).then(
+            ([wr, rr]) => {
+                if (cancelled) return;
+                setWalletHistoryLoading(false);
+                if (!wr.ok) {
+                    setWalletHistoryError(wr.error || 'Erro ao carregar histórico de carteiras.');
+                    setAdminWalletCurrent(null);
+                    setAdminWalletHistory([]);
+                } else {
+                    setAdminWalletCurrent(wr.currentWallet);
+                    setAdminWalletHistory(wr.history);
+                }
+                if (!rr.ok) {
+                    setAdminReinvestmentError(rr.error || 'Erro ao carregar histórico de reinvestimento.');
+                    setAdminReinvestmentHistory([]);
+                } else {
+                    setAdminReinvestmentHistory(rr.history);
+                }
             }
-        });
+        );
         return () => {
             cancelled = true;
         };
@@ -484,6 +489,8 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
         setSaveTab('stock');
         setAdminWalletCurrent(null);
         setAdminWalletHistory([]);
+        setAdminReinvestmentHistory([]);
+        setAdminReinvestmentError(null);
         setWalletHistoryError(null);
         setWalletHistoryLoading(false);
         setEditProfileUsernameError(null);
@@ -728,11 +735,21 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
             const dbId = selectedUserDbId(nextSelected);
             if (dbId) {
                 setWalletHistoryLoading(true);
-                const wr = await getAdminUserWalletHistory(dbId);
+                setAdminReinvestmentError(null);
+                const [wr, rr] = await Promise.all([
+                    getAdminUserWalletHistory(dbId),
+                    getAdminUserReinvestmentHistory(dbId)
+                ]);
                 setWalletHistoryLoading(false);
                 if (wr.ok) {
                     setAdminWalletCurrent(wr.currentWallet);
                     setAdminWalletHistory(wr.history);
+                }
+                if (rr.ok) {
+                    setAdminReinvestmentHistory(rr.history);
+                } else {
+                    setAdminReinvestmentError(rr.error || 'Erro ao carregar histórico de reinvestimento.');
+                    setAdminReinvestmentHistory([]);
                 }
             }
         }
@@ -1367,658 +1384,85 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
         }
     };
 
-    const handleSaveModel = async () => {
-        setIsSavingModel(true);
-        try {
-            const res = await saveReferralModel(modelForm);
-            if (res.ok) {
-                const models = await getReferralModels();
-                setReferralModels(models);
-                setEditModelMode(false);
-                alert('Modelo de indicação salvo!');
-            } else {
-                alert('Erro ao salvar modelo: ' + (res.error || 'Erro desconhecido'));
-            }
-        } catch (e) {
-            console.error(e);
-            alert('Erro de exceção ao salvar modelo.');
-        }
-        setIsSavingModel(false);
-    };
-
-    const handleDeleteModel = async (id: number) => {
-        if (!window.confirm('Excluir este modelo?')) return;
-        try {
-            const res = await deleteReferralModel(id);
-            if (res.ok) {
-                const models = await getReferralModels();
-                setReferralModels(models);
-            }
-        } catch (e) { console.error(e); }
-    };
-
-    const handleSaveAssignments = async () => {
-        setIsSavingAssignments(true);
-        try {
-            const res = await saveAccessLevelReferralAssignments(levelAssignments);
-            if (res.ok) {
-                alert('Atribuições salvas com sucesso!');
-            } else {
-                alert('Erro ao salvar atribuições.');
-            }
-        } catch (e) { console.error(e); }
-        setIsSavingAssignments(false);
-    };
-
-
-
     if (selectedUser) {
-        const editingSelectedOther =
-            String((selectedUser.email || '').trim().toLowerCase()) !== String((user?.email || '').trim().toLowerCase());
-        /** Email de outro admin: inalterável sem ser super (alinhado ao PUT /api/user). */
-        const lockAdminEmail =
-            !!selectedUser.isAdmin && editingSelectedOther && !actorIsSuperForCreds;
-        /** Senha de outra conta super: só super (admin normal pode alterar senha de outros admins). */
-        const lockSuperAdminPassword =
-            !!selectedUser.isSuperAdmin && editingSelectedOther && !actorIsSuperForCreds;
-
-        const canDeleteSelectedUser =
-            !selectedUser.isAdmin ||
-            canManageAdminAccounts ||
-            selectedUserDbId(selectedUser) === selectedUserDbId(user ?? null);
-
         return (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-in fade-in slide-in-from-right-4">
-                <div className="lg:col-span-2">
-                    <button
-                        onClick={() => {
-                            jumpApplyEpochRef.current += 1;
-                            onJumpToUserHandled?.();
-                            setSelectedUser(null);
-                            setSelectedUserSave(null);
-                        }}
-                        className="text-slate-400 hover:text-white flex items-center gap-2 mb-4"
-                    >
-                        <X size={16} /> Voltar para Lista
-                    </button>
-                </div>
-
-                {/* EDIT PROFILE */}
-                <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 h-fit">
-                    <div className="flex justify-between items-center mb-4 border-b border-slate-700 pb-2">
-                        <h3 className="font-bold text-white flex items-center gap-2">
-                            <Edit size={16} className="text-amber-500" /> Editar Perfil
-                        </h3>
-                        {selectedUser.isBlocked ? (
-                            <button onClick={handleToggleBlock} className="bg-green-600 text-white px-3 py-1 rounded text-xs font-bold">DESBLOQUEAR</button>
-                        ) : (
-                            <button onClick={handleToggleBlock} className="bg-red-600 text-white px-3 py-1 rounded text-xs font-bold">BLOQUEAR</button>
-                        )}
-                        {canDeleteSelectedUser ? (
-                            <button onClick={handleDeleteUser} className="bg-red-700 hover:bg-red-600 text-white px-3 py-1 rounded text-xs font-bold flex items-center gap-1 ml-2"><Trash2 size={12} /> EXCLUIR</button>
-                        ) : (
-                            <span className="text-[10px] text-slate-500 font-bold ml-2 max-w-[140px] text-right leading-tight">
-                                Exclusão de admin: só super
-                            </span>
-                        )}
-                    </div>
-                    {(lockAdminEmail || lockSuperAdminPassword) && (
-                        <p className="text-xs text-amber-500/90 bg-amber-950/40 border border-amber-800/50 rounded-lg px-3 py-2 mb-3">
-                            {lockAdminEmail && (
-                                <>
-                                    Conta <strong>administrador</strong>: só um <strong>super administrador</strong> pode alterar o <strong>email</strong> de outro admin.
-                                </>
-                            )}
-                            {lockAdminEmail && lockSuperAdminPassword ? ' ' : null}
-                            {lockSuperAdminPassword && (
-                                <>
-                                    Conta <strong>super administrador</strong>: só super pode alterar a <strong>senha</strong> aqui.
-                                </>
-                            )}
-                            {' '}
-                            <span className="text-slate-400">Username e carteira continuam editáveis; senhas de admins que não são super podem ser alteradas por qualquer administrador.</span>
-                        </p>
-                    )}
-                    <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="col-span-2">
-                                <label className="text-xs uppercase text-emerald-400/90 font-bold mb-2 block">
-                                    Salas do jogador
-                                    {roomsSaveBusy ? (
-                                        <span className="ml-2 text-amber-400 normal-case font-semibold">a gravar…</span>
-                                    ) : null}
-                                </label>
-                                <p className="text-[10px] text-slate-500 mb-2">
-                                    Cada clique grava já (não precisa de «Salvar perfil»). Só as {roomOptions.length} salas
-                                    activas. Desmarcar devolve os rigs dessa sala ao estoque. Inicial, ASICs e Extra
-                                    são sempre.
-                                </p>
-                                <div className="flex flex-wrap gap-2 bg-slate-900 p-2 rounded border border-emerald-800/40">
-                                    {roomOptions.map((room) => {
-                                        const isAlwaysOwned = isAlwaysOwnedRoomId(room.id);
-                                        const on = isAlwaysOwned || editOwnedRoomIds.includes(room.id);
-                                        const rackN = countRacksInOwnedRoom(room.id);
-                                        return (
-                                            <label
-                                                key={room.id}
-                                                className={`flex items-center gap-2 px-2 py-1 rounded border ${
-                                                    on
-                                                        ? `bg-emerald-900/30 border-emerald-500 ${
-                                                              isAlwaysOwned ? 'cursor-default' : 'cursor-pointer'
-                                                          }`
-                                                        : 'bg-slate-800 border-slate-700 cursor-pointer'
-                                                } ${roomsSaveBusy && !isAlwaysOwned ? 'opacity-60 pointer-events-none' : ''}`}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={on}
-                                                    disabled={isAlwaysOwned || roomsSaveBusy}
-                                                    onChange={(e) => {
-                                                        void handleToggleOwnedRoom(room.id, e.target.checked);
-                                                    }}
-                                                />
-                                                <span className="text-xs text-white">
-                                                    {room.name}
-                                                    {isAlwaysOwned ? (
-                                                        <span className="text-slate-500"> (sempre)</span>
-                                                    ) : null}
-                                                    {rackN > 0 ? (
-                                                        <span className="text-amber-400/90"> · {rackN} rig(s)</span>
-                                                    ) : null}
-                                                </span>
-                                            </label>
-                                        );
-                                    })}
-                                    {roomOptions.length === 0 && (
-                                        <span className="text-[10px] text-slate-500">Nenhuma sala activa no catálogo.</span>
-                                    )}
-                                </div>
-                            </div>
-                            <div>
-                                <label className="text-xs uppercase text-slate-500 font-bold">Username</label>
-                                <input
-                                    type="text"
-                                    maxLength={AUTH_USERNAME_MAX}
-                                    value={editProfileForm.username}
-                                    onChange={(e) => {
-                                        setEditProfileUsernameError(null);
-                                        setEditProfileForm({ ...editProfileForm, username: e.target.value });
-                                    }}
-                                    className={`w-full bg-slate-900 border rounded p-2 text-white text-sm ${editProfileUsernameError ? 'border-red-500/80' : 'border-slate-700'}`}
-                                />
-                                {editProfileUsernameError && (
-                                    <p className="text-xs text-red-400 mt-1.5" role="alert">
-                                        {editProfileUsernameError}
-                                    </p>
-                                )}
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-xs uppercase text-slate-500 font-bold">Email</label>
-                            <input
-                                type="text"
-                                readOnly={lockAdminEmail}
-                                value={editProfileForm.email}
-                                onChange={e => setEditProfileForm({ ...editProfileForm, email: e.target.value })}
-                                className={`w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm ${lockAdminEmail ? 'opacity-60 cursor-not-allowed' : ''}`}
-                            />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="text-xs uppercase text-slate-500 font-bold">Senha</label>
-                                <input
-                                    type="password"
-                                    autoComplete="new-password"
-                                    readOnly={lockSuperAdminPassword}
-                                    value={editProfileForm.password}
-                                    onChange={(e) => setEditProfileForm({ ...editProfileForm, password: e.target.value })}
-                                    placeholder={lockSuperAdminPassword ? '—' : 'Nova senha (opcional)'}
-                                    className={`w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm font-mono ${lockSuperAdminPassword ? 'opacity-60 cursor-not-allowed' : ''}`}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs uppercase text-slate-500 font-bold">Carteira (Polygon)</label>
-                                <input type="text" value={editProfileForm.wallet} onChange={e => setEditProfileForm({ ...editProfileForm, wallet: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-white text-sm font-mono" placeholder="0x..." />
-                            </div>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={handleUpdateUserProfile}
-                            disabled={roomsSaveBusy}
-                            className="w-full bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white py-2 rounded font-bold text-sm mt-2 flex items-center justify-center gap-2"
-                        >
-                            <Save size={14} /> SALVAR PERFIL
-                        </button>
-                        {resolveStreamerRoomId(roomOptions) ? (
-                        <button
-                            type="button"
-                            onClick={handleDeactivateStreamerRoom}
-                            disabled={streamerRoomBusy || !selectedUserSave}
-                            className="w-full bg-red-700 hover:bg-red-600 disabled:opacity-50 text-white py-2 rounded font-bold text-sm mt-2 flex items-center justify-center gap-2"
-                        >
-                            <Trash2 size={14} /> {streamerRoomBusy ? 'DESATIVANDO SALA STREAMER...' : 'DESATIVAR SALA STREAMER'}
-                        </button>
-                        ) : null}
-                    </div>
-                </div>
-
-                {/* GAME SAVE EDITOR — estoque ocupa a linha toda, altura natural */}
-                <div
-                    className={`bg-slate-800 border border-slate-700 rounded-xl p-6 flex flex-col ${
-                        saveTab === 'stock' ? 'lg:col-span-2 h-auto min-h-[36rem]' : 'h-[500px]'
-                    }`}
-                >
-                    <div className="flex flex-col gap-2 mb-3 border-b border-slate-700 pb-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0 flex gap-2 overflow-x-auto pb-1 flex-nowrap [-ms-overflow-style:none] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-1">
-                            <button type="button" onClick={() => setSaveTab('stock')} className={`shrink-0 px-3 py-1 rounded text-xs font-bold ${saveTab === 'stock' ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Estoque</button>
-                            <button type="button" onClick={() => setSaveTab('racks')} className={`shrink-0 px-3 py-1 rounded text-xs font-bold ${saveTab === 'racks' ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Rigs</button>
-                            <button type="button" onClick={() => setSaveTab('balances')} className={`shrink-0 px-3 py-1 rounded text-xs font-bold ${saveTab === 'balances' ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Saldos</button>
-                            <button type="button" onClick={() => setSaveTab('boxes')} className={`shrink-0 px-3 py-1 rounded text-xs font-bold ${saveTab === 'boxes' ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400'}`}>Caixas</button>
-                            <button
-                                type="button"
-                                onClick={() => setSaveTab('wallets')}
-                                className={`shrink-0 px-3 py-1 rounded text-xs font-bold inline-flex items-center gap-1 ${saveTab === 'wallets' ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400'}`}
-                                title="Histórico append-only de ligação / troca / remoção da carteira Polygon."
-                            >
-                                <Wallet size={12} /> Carteiras
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => setSaveTab('logs')}
-                                className={`shrink-0 px-3 py-1 rounded text-xs font-bold inline-flex items-center gap-1 ring-inset ${saveTab === 'logs' ? 'bg-amber-600 text-white ring-2 ring-amber-400/80' : 'bg-slate-700 text-slate-200 ring-1 ring-amber-600/40'}`}
-                                title="Eventos gravados no MongoDB (coleção game_activity_logs): caixas, roleta, códigos, depósitos."
-                            >
-                                <History size={12} /> Atividade
-                            </button>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={handleSaveGameData}
-                            disabled={isUserSaveTabReadonly(saveTab)}
-                            title={
-                                isUserSaveTabReadonly(saveTab)
-                                    ? 'Esta aba é só leitura — não altera o save.'
-                                    : 'Guardar estoque, rigs, etc.'
-                            }
-                            className={`shrink-0 text-xs font-bold flex items-center gap-1 self-end sm:self-auto ${
-                                isUserSaveTabReadonly(saveTab) ? 'text-slate-500 cursor-not-allowed' : 'text-green-400 hover:text-green-300'
-                            }`}
-                        >
-                            <Save size={14} /> SALVAR DADOS
-                        </button>
-                    </div>
-                    {saveTab !== 'logs' && saveTab !== 'wallets' && (
-                        <p className="text-[10px] text-slate-500 mb-2 -mt-1">
-                            Histórico do jogador: abas <span className="font-bold text-amber-500/90">Carteiras</span> e{' '}
-                            <span className="font-bold text-amber-500/90">Atividade</span> são só leitura; «Salvar dados» desliga-se nessas abas.
-                        </p>
-                    )}
-
-                    {saveTab === 'logs' ? (
-                        <div className="flex-1 overflow-y-auto custom-scrollbar">
-                            <AdminUserAuditPanel
-                                userId={selectedUserDbId(selectedUser) ?? null}
-                                userEmail={selectedUser?.email || ''}
-                            />
-                        </div>
-                    ) : saveTab === 'wallets' ? (
-                        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4">
-                            <div className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
-                                <h4 className="text-xs font-bold uppercase text-slate-500 mb-2">Carteira actual</h4>
-                                {walletHistoryLoading ? (
-                                    <div className="flex items-center gap-2 text-slate-400 text-sm">
-                                        <Loader2 className="animate-spin" size={16} /> A carregar…
-                                    </div>
-                                ) : walletHistoryError ? (
-                                    <div className="text-sm text-amber-200">{walletHistoryError}</div>
-                                ) : adminWalletCurrent ? (
-                                    <div className="space-y-2">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <span className="text-[10px] font-bold uppercase text-emerald-400 border border-emerald-700/60 rounded px-2 py-0.5">Conectada</span>
-                                            <span className="text-[10px] text-slate-500 uppercase">Polygon</span>
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-2 min-w-0">
-                                            <code className="text-sm text-amber-100 font-mono break-all">{adminWalletCurrent.address}</code>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    void navigator.clipboard
-                                                        .writeText(adminWalletCurrent.address)
-                                                        .then(() => alert('Endereço copiado.'))
-                                                        .catch(() => alert('Falha ao copiar.'));
-                                                }}
-                                                className="shrink-0 p-1.5 rounded bg-slate-700 text-slate-200 hover:bg-slate-600"
-                                                title="Copiar endereço"
-                                            >
-                                                <Copy size={14} />
-                                            </button>
-                                        </div>
-                                        {adminWalletCurrent.connectedAt ? (
-                                            <p className="text-[11px] text-slate-500">
-                                                Última ligação registada: {new Date(adminWalletCurrent.connectedAt).toLocaleString('pt-PT')}
-                                            </p>
-                                        ) : null}
-                                    </div>
-                                ) : (
-                                    <p className="text-sm text-slate-400">Nenhuma carteira conectada actualmente.</p>
-                                )}
-                            </div>
-                            <div className="rounded-xl border border-slate-700 bg-slate-950/40 p-4">
-                                <h4 className="text-xs font-bold uppercase text-slate-500 mb-2">Histórico</h4>
-                                {!walletHistoryLoading && adminWalletHistory.length === 0 ? (
-                                    <p className="text-sm text-slate-500 italic py-6 text-center">Sem alterações registadas.</p>
-                                ) : !walletHistoryLoading ? (
-                                    <div className="overflow-x-auto rounded-lg border border-slate-800">
-                                        <table className="w-full text-left text-[11px] min-w-[960px]">
-                                            <thead className="bg-slate-900 text-slate-500 uppercase text-[9px] font-bold">
-                                                <tr>
-                                                    <th className="px-2 py-2">Data</th>
-                                                    <th className="px-2 py-2">Acção</th>
-                                                    <th className="px-2 py-2">Anterior</th>
-                                                    <th className="px-2 py-2">Nova</th>
-                                                    <th className="px-2 py-2">Afectada</th>
-                                                    <th className="px-2 py-2">Rede</th>
-                                                    <th className="px-2 py-2">IP</th>
-                                                    <th className="px-2 py-2">User-agent</th>
-                                                    <th className="px-2 py-2">Origem</th>
-                                                    <th className="px-2 py-2">Notas</th>
-                                                    <th className="px-2 py-2 text-right">Copiar</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-800">
-                                                {adminWalletHistory.map((row) => {
-                                                    const uaShort =
-                                                        row.userAgent && row.userAgent.length > 72
-                                                            ? `${row.userAgent.slice(0, 72)}…`
-                                                            : row.userAgent || '—';
-                                                    const actionPt =
-                                                        row.action === 'connected'
-                                                            ? 'Conectada'
-                                                            : row.action === 'changed'
-                                                              ? 'Trocada'
-                                                              : row.action === 'removed'
-                                                                ? 'Removida'
-                                                                : row.action === 'admin_changed'
-                                                                  ? 'Alterada (admin)'
-                                                                  : row.action;
-                                                    const origin =
-                                                        row.actorType === 'admin'
-                                                            ? 'admin'
-                                                            : row.actorType === 'system'
-                                                              ? 'sistema'
-                                                              : row.source || 'utilizador';
-                                                    return (
-                                                        <tr key={row.id} className="hover:bg-slate-900/50 align-top">
-                                                            <td className="px-2 py-2 text-slate-400 whitespace-nowrap font-mono text-[10px]">
-                                                                {new Date(row.createdAt).toLocaleString('pt-PT')}
-                                                            </td>
-                                                            <td className="px-2 py-2">
-                                                                <span className="inline-block rounded border border-amber-700/50 bg-amber-950/40 px-1.5 py-0.5 text-[9px] font-bold text-amber-100">
-                                                                    {actionPt}
-                                                                </span>
-                                                            </td>
-                                                            <td className="px-2 py-2 font-mono text-slate-300 break-all max-w-[140px]">{row.previousWalletAddress || '—'}</td>
-                                                            <td className="px-2 py-2 font-mono text-slate-300 break-all max-w-[140px]">{row.newWalletAddress || '—'}</td>
-                                                            <td className="px-2 py-2 font-mono text-amber-100/90 break-all max-w-[140px]">{row.walletAddress || '—'}</td>
-                                                            <td className="px-2 py-2 text-slate-500">{row.network}</td>
-                                                            <td className="px-2 py-2 text-slate-500 font-mono text-[10px]">{row.ipAddress || '—'}</td>
-                                                            <td className="px-2 py-2 text-slate-500 text-[10px]" title={row.userAgent || ''}>
-                                                                {uaShort}
-                                                            </td>
-                                                            <td className="px-2 py-2 text-slate-400">{origin}</td>
-                                                            <td className="px-2 py-2 text-slate-500 max-w-[140px] break-words">{row.notes || '—'}</td>
-                                                            <td className="px-2 py-2 text-right">
-                                                                {row.walletAddress ? (
-                                                                    <button
-                                                                        type="button"
-                                                                        className="p-1 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
-                                                                        title="Copiar endereço afectado"
-                                                                        onClick={() => {
-                                                                            void navigator.clipboard
-                                                                                .writeText(row.walletAddress as string)
-                                                                                .then(() => alert('Copiado.'))
-                                                                                .catch(() => alert('Falha ao copiar.'));
-                                                                        }}
-                                                                    >
-                                                                        <Copy size={12} />
-                                                                    </button>
-                                                                ) : (
-                                                                    '—'
-                                                                )}
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                ) : null}
-                                {selectedUserDbId(selectedUser) != null ? (
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            const id = selectedUserDbId(selectedUser);
-                                            if (!id) return;
-                                            setWalletHistoryLoading(true);
-                                            setWalletHistoryError(null);
-                                            void getAdminUserWalletHistory(id).then((r) => {
-                                                setWalletHistoryLoading(false);
-                                                if (r.ok) {
-                                                    setAdminWalletCurrent(r.currentWallet);
-                                                    setAdminWalletHistory(r.history);
-                                                } else {
-                                                    setWalletHistoryError(r.error || 'Erro');
-                                                    setAdminWalletCurrent(null);
-                                                    setAdminWalletHistory([]);
-                                                }
-                                            });
-                                        }}
-                                        className="mt-3 text-xs font-bold text-amber-500 hover:text-amber-400 uppercase"
-                                    >
-                                        Actualizar histórico
-                                    </button>
-                                ) : null}
-                            </div>
-                            <p className="text-[10px] text-slate-600">Registos append-only no PostgreSQL; alterações via perfil (assinatura) ou painel admin.</p>
-                        </div>
-                    ) : selectedUserSave ? (
-                        <div className="flex-1 overflow-y-auto custom-scrollbar">
-                            {saveTab === 'stock' && (
-                                <UserStockEditor
-                                    stock={selectedUserSave.stock}
-                                    gameUpgrades={effectiveUpgrades}
-                                    onUpdateQty={handleUpdateStock}
-                                    onAddItem={handleAddItemToStock}
-                                />
-                            )}
-
-                            {saveTab === 'racks' && (
-                                <div className="space-y-2">
-                                    {(selectedUserSave.placedRacks || []).map((rack, _idx) => {
-                                        const rackDef = effectiveUpgrades.find(u => u.id === rack.itemId);
-                                        const rid = String(rack.roomId || '').trim() || 'room_initial';
-                                        const roomOk = isActiveRoomId(roomOptions, rid);
-                                        return (
-                                            <div key={rack.id} className={`flex justify-between items-start gap-2 bg-slate-900 p-2 rounded border ${roomOk ? 'border-slate-700' : 'border-red-700/80'}`}>
-                                                <div className="flex items-start gap-2 min-w-0 flex-1">
-                                                    <span className="text-lg">{rackDef?.icon || '🗄️'}</span>
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="text-sm font-bold text-white">{rackDef?.name || 'Rig Desconhecido'}</div>
-                                                        <div className="text-[10px] text-slate-500">
-                                                            {rack.isOn ? 'LIGADO' : 'DESLIGADO'} • Bateria: ∞
-                                                        </div>
-                                                        <div className="mt-1 flex flex-wrap items-center gap-2">
-                                                            <label className="text-[9px] uppercase text-slate-500 font-bold">Sala</label>
-                                                            <select
-                                                                value={roomOk ? rid : ''}
-                                                                onChange={(e) => handleRemapRackRoom(rack.id, e.target.value)}
-                                                                className="max-w-full bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-[11px] text-white"
-                                                            >
-                                                                {!roomOk ? (
-                                                                    <option value="">Sala inválida: {rid}</option>
-                                                                ) : null}
-                                                                {roomOptions.map((room) => (
-                                                                    <option key={room.id} value={room.id}>
-                                                                        {room.name}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                            {!roomOk ? (
-                                                                <span className="text-[9px] font-bold text-red-400">Remapear obrigatório</span>
-                                                            ) : (
-                                                                <span className="text-[9px] text-slate-500">{roomNameById(roomOptions, rid)}</span>
-                                                            )}
-                                                        </div>
-                                                        <div className="text-[9px] text-slate-400 mt-1 grid grid-cols-2 gap-x-2">
-                                                            <div>Slots: {(rack.slots || []).filter(s => s).length > 0 ? (rack.slots || []).filter(s => s).map(s => effectiveUpgrades.find(u => u.id === s)?.name || s).join(', ') : 'Vazio'}</div>
-                                                            <div>Mult: {(rack.multiplierSlots || []).filter(s => s).length > 0 ? (rack.multiplierSlots || []).filter(s => s).map(s => effectiveUpgrades.find(u => u.id === s)?.name || s).join(', ') : 'Vazio'}</div>
-                                                            <div>Bat: {rack.batteryId ? (effectiveUpgrades.find(u => u.id === rack.batteryId)?.name || rack.batteryId) : '-'}</div>
-                                                            <div>Fio: {rack.wiringId ? (effectiveUpgrades.find(u => u.id === rack.wiringId)?.name || rack.wiringId) : '-'}</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <button onClick={() => handleDeleteRack(rack.id)} className="text-red-500 hover:text-red-400 p-2 bg-red-900/20 rounded shrink-0">
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            </div>
-                                        );
-                                    })}
-                                    {(selectedUserSave.placedRacks || []).length === 0 && <div className="text-slate-500 text-center text-sm p-4">Nenhum rig instalado.</div>}
-                                </div>
-                            )}
-
-                            {saveTab === 'balances' && (
-                                <div className="space-y-3">
-                                    <div className="bg-slate-900 p-3 rounded border border-slate-700">
-                                        <div className="flex items-center justify-between">
-                                            <div className="text-sm font-bold text-white">USDC</div>
-                                            <input
-                                                type="number"
-                                                value={selectedUserSave.usdc}
-                                                onChange={(e) => handleUpdateUsdc(parseFloat(e.target.value))}
-                                                className="w-24 bg-slate-800 border border-slate-600 rounded p-1 text-right text-white text-sm"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="space-y-2">
-                                        {miningCoins.map(c => (
-                                            <div key={c.id} className="bg-slate-900 p-3 rounded border border-slate-700 flex items-center justify-between">
-                                                <div>
-                                                    <div className="text-sm font-bold text-white">{c.name}</div>
-                                                    <div className="text-[10px] text-slate-500">{c.id}</div>
-                                                </div>
-                                                <input
-                                                    type="number"
-                                                    value={(selectedUserSave.coinBalances || {})[c.id] || 0}
-                                                    onChange={(e) => handleUpdateCoinBalance(c.id, parseFloat(e.target.value))}
-                                                    className="w-24 bg-slate-800 border border-slate-600 rounded p-1 text-right text-white text-sm"
-                                                />
-                                            </div>
-                                        ))}
-                                        {miningCoins.length === 0 && (
-                                            <div className="text-slate-500 text-center text-sm p-4">Nenhuma moeda configurada.</div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {saveTab === 'boxes' && (
-                                <div className="space-y-4">
-                                    <div className="bg-slate-900/50 p-2 rounded text-xs text-slate-400 mb-2">
-                                        Gerencie as caixas não abertas do usuário. Você pode deletar caixas vazias ou inválidas.
-                                    </div>
-                                    <div className="space-y-2">
-                                        {userBoxes.length > 0 ? (
-                                            userBoxes.map((box, idx) => {
-                                                const boxDef = lootBoxes.find(lb => lb.id === box.box_id);
-                                                const hasItems = boxDef && (boxDef.items || []).length > 0;
-
-                                                return (
-                                                    <div key={idx} className={`bg-slate-900 p-3 rounded border ${hasItems ? 'border-slate-700' : 'border-red-900'} flex justify-between items-center`}>
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-12 h-12 rounded bg-slate-800 flex items-center justify-center text-2xl border border-slate-700">
-                                                                {boxDef?.icon || '🎁'}
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold text-white flex items-center gap-2">
-                                                                    {boxDef?.name || 'Caixa Desconhecida'}
-                                                                    {!hasItems && (
-                                                                        <span className="text-[9px] bg-red-900/50 text-red-400 px-2 py-0.5 rounded border border-red-900 font-bold">
-                                                                            SEM ITENS
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                <div className="text-[10px] text-slate-500">
-                                                                    ID: {box.box_id.substring(0, 8)}... • Quantidade: {box.qty}
-                                                                </div>
-                                                                {hasItems && boxDef && (
-                                                                    <div className="text-[9px] text-slate-400 mt-1">
-                                                                        {(boxDef.items || []).length} item(ns) definido(s)
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                        <button
-                                                            onClick={async () => {
-                                                                if (!selectedUser) return;
-                                                                if (!window.confirm(`Deletar ${box.qty}x "${boxDef?.name || 'Caixa'}" do inventário de ${selectedUser.username}?`)) return;
-
-                                                                try {
-                                                                    const res = await apiFetch('/api/admin/delete-user-box', {
-                                                                        method: 'POST',
-                                                                        headers: { 'Content-Type': 'application/json' },
-                                                                        body: JSON.stringify({
-                                                                            email: selectedUser.email,
-                                                                            boxId: box.box_id
-                                                                        })
-                                                                    });
-                                                                    const data = await res.json();
-
-                                                                    if (data.ok) {
-                                                                        alert('Caixa deletada com sucesso!');
-
-                                                                        // Atualizar o estado principal (evita que a caixa "volte" ao clicar em Salvar Dados)
-                                                                        if (selectedUserSave && selectedUserSave.unopenedBoxes) {
-                                                                            const updatedBoxes = { ...selectedUserSave.unopenedBoxes };
-                                                                            delete updatedBoxes[box.box_id];
-                                                                            setSelectedUserSave({ ...selectedUserSave, unopenedBoxes: updatedBoxes });
-                                                                        }
-
-                                                                        // Recarregar caixas
-                                                                        const boxesRes = await apiFetch(`/api/admin/user-boxes?email=${encodeURIComponent(selectedUser.email)}&t=${Date.now()}`);
-                                                                        const boxesData = await boxesRes.json();
-                                                                        setUserBoxes(boxesData.boxes || []);
-                                                                    } else {
-                                                                        alert('Erro ao deletar caixa: ' + (data.error || 'Erro desconhecido'));
-                                                                    }
-                                                                } catch (_e) {
-                                                                    alert('Erro de rede ao deletar caixa.');
-                                                                }
-                                                            }}
-                                                            className="text-red-500 hover:text-red-400 p-2 rounded hover:bg-red-900/20"
-                                                            title="Deletar Caixa"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </div>
-                                                );
-                                            })
-                                        ) : (
-                                            <div className="text-slate-500 text-center text-sm p-4">
-                                                Nenhuma caixa não aberta.
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-slate-500 italic">
-                            Sem dados de jogo iniciados.
-                        </div>
-                    )}
-                </div>
-            </div>
+            <AdminUserDetailView
+                user={user}
+                selectedUser={selectedUser}
+                selectedUserSave={selectedUserSave}
+                setSelectedUser={setSelectedUser}
+                setSelectedUserSave={setSelectedUserSave}
+                effectiveUpgrades={effectiveUpgrades}
+                roomOptions={roomOptions}
+                editOwnedRoomIds={editOwnedRoomIds}
+                setEditOwnedRoomIds={setEditOwnedRoomIds}
+                userBoxes={userBoxes}
+                setUserBoxes={setUserBoxes}
+                lootBoxes={lootBoxes}
+                miningCoins={miningCoins}
+                accessLevels={accessLevels}
+                editProfileForm={editProfileForm}
+                setEditProfileForm={setEditProfileForm}
+                editProfileUsernameError={editProfileUsernameError}
+                setEditProfileUsernameError={setEditProfileUsernameError}
+                roomsSaveBusy={roomsSaveBusy}
+                streamerRoomBusy={streamerRoomBusy}
+                walletHistoryLoading={walletHistoryLoading}
+                walletHistoryError={walletHistoryError}
+                adminWalletCurrent={adminWalletCurrent}
+                adminWalletHistory={adminWalletHistory}
+                adminReinvestmentHistory={adminReinvestmentHistory}
+                adminReinvestmentError={adminReinvestmentError}
+                onBackToList={() => {
+                    jumpApplyEpochRef.current += 1;
+                    onJumpToUserHandled?.();
+                    setSelectedUser(null);
+                    setSelectedUserSave(null);
+                }}
+                onUpdateUserProfile={handleUpdateUserProfile}
+                onToggleOwnedRoom={handleToggleOwnedRoom}
+                onDeactivateStreamerRoom={handleDeactivateStreamerRoom}
+                onToggleBlock={handleToggleBlock}
+                onDeleteUser={handleDeleteUser}
+                onSaveGameData={handleSaveGameData}
+                onUpdateStock={handleUpdateStock}
+                onAddItemToStock={handleAddItemToStock}
+                onRemapRackRoom={handleRemapRackRoom}
+                onDeleteRack={handleDeleteRack}
+                onUpdateUsdc={handleUpdateUsdc}
+                onUpdateCoinBalance={handleUpdateCoinBalance}
+                onRefreshWalletHistory={async () => {
+                    const id = selectedUserDbId(selectedUser);
+                    if (!id) return;
+                    setWalletHistoryLoading(true);
+                    setWalletHistoryError(null);
+                    setAdminReinvestmentError(null);
+                    const [wr, rr] = await Promise.all([
+                        getAdminUserWalletHistory(id),
+                        getAdminUserReinvestmentHistory(id)
+                    ]);
+                    setWalletHistoryLoading(false);
+                    if (wr.ok) {
+                        setAdminWalletCurrent(wr.currentWallet);
+                        setAdminWalletHistory(wr.history);
+                    } else {
+                        setWalletHistoryError(wr.error || 'Erro ao carregar carteira.');
+                        setAdminWalletCurrent(null);
+                        setAdminWalletHistory([]);
+                    }
+                    if (rr.ok) {
+                        setAdminReinvestmentHistory(rr.history);
+                    } else {
+                        setAdminReinvestmentError(
+                            rr.error || 'Erro ao carregar histórico de reinvestimento.'
+                        );
+                        setAdminReinvestmentHistory([]);
+                    }
+                }}
+                canManageAdminAccounts={canManageAdminAccounts}
+                actorIsSuperForCreds={actorIsSuperForCreds}
+                countRacksInOwnedRoom={countRacksInOwnedRoom}
+            />
         );
     }
 
@@ -2043,9 +1487,6 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
                     </button>
                     <button onClick={() => setSubTab('referrals')} className={`px-3 py-2 text-sm font-bold uppercase rounded ${subTab === 'referrals' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}>
                         Indicação
-                    </button>
-                    <button onClick={() => setSubTab('advanced_referrals')} className={`px-3 py-2 text-sm font-bold uppercase rounded ${subTab === 'advanced_referrals' ? 'bg-orange-600 text-white' : 'text-slate-400 hover:text-white hover:bg-orange-900/10'}`}>
-                        Indicação Avançada
                     </button>
                     <button onClick={() => setSubTab('ranking')} className={`px-3 py-2 text-sm font-bold uppercase rounded ${subTab === 'ranking' ? 'bg-amber-600 text-white' : 'text-orange-400 hover:text-orange-300 hover:bg-orange-900/20'} flex items-center gap-1`}>
                         <Trophy size={14} /> Ranking
@@ -2286,7 +1727,7 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
                                                             if (window.confirm(`Deseja acessar a conta de ${u.username}? Você será redirecionado.`)) {
                                                                 const res = await impersonateUser(u.email);
                                                                 if (res.ok) {
-                                                                    window.location.reload();
+                                                                    window.location.assign(pathForGameView('servers'));
                                                                 } else {
                                                                     alert(res.error || 'Falha ao acessar conta');
                                                                 }
@@ -2781,142 +2222,6 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
                                 );
                             })()}
                         </div>
-                    </div>
-                )}
-                {subTab === 'advanced_referrals' && (
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-right-4">
-                        {/* Models List */}
-                        <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-6">
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className="text-white font-bold flex items-center gap-2">
-                                    <Trophy size={20} className="text-orange-500" /> Modelos de Indicação
-                                </h3>
-                                <button
-                                    onClick={() => {
-                                        setModelForm({ name: '', description: '', sender_reward_usdc: 0, receiver_reward_usdc: 0, sender_loot_box_id: '', receiver_loot_box_id: '', is_active: 1 });
-                                        setEditModelMode(true);
-                                    }}
-                                    className="bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-1.5 px-3 rounded flex items-center gap-2"
-                                >
-                                    <PlusCircle size={14} /> NOVO MODELO
-                                </button>
-                            </div>
-
-                            <div className="space-y-4">
-                                {referralModels.map(m => (
-                                    <div key={m.id} className="bg-slate-900 border border-slate-700 rounded-lg p-4 flex justify-between items-center">
-                                        <div>
-                                            <div className="font-bold text-white flex items-center gap-2">
-                                                {m.name}
-                                                {m.is_active === 0 && <span className="text-[10px] bg-red-900/50 text-red-500 px-1.5 rounded">INATIVO</span>}
-                                            </div>
-                                            <div className="text-xs text-slate-400">{m.description}</div>
-                                            <div className="flex gap-4 mt-2">
-                                                <div className="text-[10px] text-slate-500 uppercase font-bold">Indicador (Sender): <span className="text-green-400">${m.sender_reward_usdc}</span> + {m.sender_loot_box_id || 'Nenhuma'}</div>
-                                                <div className="text-[10px] text-slate-500 uppercase font-bold">Indicado (Receiver): <span className="text-amber-400">${m.receiver_reward_usdc}</span> + {m.receiver_loot_box_id || 'Nenhuma'}</div>
-                                            </div>
-                                        </div>
-                                        <div className="flex gap-2">
-                                            <button onClick={() => { setModelForm(m); setEditModelMode(true); }} className="p-2 bg-slate-800 hover:bg-slate-700 rounded text-amber-400"><Edit size={14} /></button>
-                                            <button onClick={() => handleDeleteModel(m.id)} className="p-2 bg-slate-800 hover:bg-red-900/40 rounded text-red-400"><Trash2 size={14} /></button>
-                                        </div>
-                                    </div>
-                                ))}
-                                {referralModels.length === 0 && <div className="text-center py-12 text-slate-500 font-medium">Nenhum modelo criado.</div>}
-                            </div>
-                        </div>
-
-                        {/* Level Assignments */}
-                        <div className="bg-slate-800 border border-slate-700 rounded-xl p-6">
-                            <h3 className="text-white font-bold mb-6 flex items-center gap-2">
-                                <Shield size={18} className="text-amber-500" /> Atribuir por Nível
-                            </h3>
-                            <div className="space-y-4">
-                                {accessLevels.map(lvl => (
-                                    <div key={lvl.id} className="space-y-1.5">
-                                        <label className="text-xs font-bold text-slate-500 uppercase">{lvl.name}</label>
-                                        <select
-                                            value={levelAssignments[lvl.id] || ''}
-                                            onChange={e => setLevelAssignments({ ...levelAssignments, [lvl.id]: e.target.value ? parseInt(e.target.value) : (null as unknown) })}
-                                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white focus:border-orange-500 outline-none"
-                                        >
-                                            <option value="">Padrão do Sistema (Triggers)</option>
-                                            {referralModels.map(m => (
-                                                <option key={m.id} value={m.id}>{m.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                ))}
-                                <button
-                                    onClick={handleSaveAssignments}
-                                    disabled={isSavingAssignments}
-                                    className="w-full mt-4 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-bold py-2.5 rounded-lg flex items-center justify-center gap-2"
-                                >
-                                    {isSavingAssignments ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} SALVAR ATRIBUIÇÕES
-                                </button>
-                                <p className="text-[10px] text-slate-500 italic mt-2 text-center">
-                                    O modelo é definido pelo nível de acesso de quem está INDICANDO.
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Edit Modal Overlay */}
-                        {editModelMode && (
-                            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                                <div className="bg-slate-800 border border-slate-700 rounded-2xl w-full max-w-md shadow-2xl animate-in zoom-in-95 duration-200">
-                                    <div className="p-6 border-b border-slate-700 flex justify-between items-center">
-                                        <h3 className="text-xl font-bold text-white">{modelForm.id ? 'Editar Modelo' : 'Novo Modelo'}</h3>
-                                        <button onClick={() => setEditModelMode(false)} className="text-slate-500 hover:text-white"><X size={20} /></button>
-                                    </div>
-                                    <div className="p-6 space-y-4">
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Nome do Modelo</label>
-                                            <input type="text" value={modelForm.name} onChange={e => setModelForm({ ...modelForm, name: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Descrição</label>
-                                            <textarea value={modelForm.description} onChange={e => setModelForm({ ...modelForm, description: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white h-20" />
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Prêmio Indicador ($)</label>
-                                                <input type="number" step="0.01" value={modelForm.sender_reward_usdc} onChange={e => setModelForm({ ...modelForm, sender_reward_usdc: parseFloat(e.target.value) })} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" />
-                                            </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Prêmio Indicado ($)</label>
-                                                <input type="number" step="0.01" value={modelForm.receiver_reward_usdc} onChange={e => setModelForm({ ...modelForm, receiver_reward_usdc: parseFloat(e.target.value) })} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white" />
-                                            </div>
-                                        </div>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Loot Box Indicador</label>
-                                                <select value={modelForm.sender_loot_box_id || ''} onChange={e => setModelForm({ ...modelForm, sender_loot_box_id: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white">
-                                                    <option value="">Nenhuma</option>
-                                                    {lootBoxes.map(lb => <option key={lb.id} value={lb.id}>{lb.name}</option>)}
-                                                </select>
-                                            </div>
-                                            <div>
-                                                <label className="text-xs font-bold text-slate-500 uppercase block mb-1">Loot Box Indicado</label>
-                                                <select value={modelForm.receiver_loot_box_id || ''} onChange={e => setModelForm({ ...modelForm, receiver_loot_box_id: e.target.value })} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-sm text-white">
-                                                    <option value="">Nenhuma</option>
-                                                    {lootBoxes.map(lb => <option key={lb.id} value={lb.id}>{lb.name}</option>)}
-                                                </select>
-                                            </div>
-                                        </div>
-                                        <label className="flex items-center gap-2 cursor-pointer">
-                                            <input type="checkbox" checked={modelForm.is_active === 1} onChange={e => setModelForm({ ...modelForm, is_active: e.target.checked ? 1 : 0 })} />
-                                            <span className="text-sm text-slate-300 font-medium">Modelo Ativo</span>
-                                        </label>
-                                    </div>
-                                    <div className="p-6 border-t border-slate-700 bg-slate-900/50 rounded-b-2xl flex gap-3">
-                                        <button onClick={() => setEditModelMode(false)} className="flex-1 bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 rounded-lg">CANCELAR</button>
-                                        <button onClick={handleSaveModel} disabled={isSavingModel} className="flex-1 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white font-bold py-2.5 rounded-lg">
-                                            {isSavingModel ? <Loader2 size={18} className="animate-spin mx-auto" /> : 'SALVAR'}
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 )}
                 {(subTab === 'dormant_no_mining' || subTab === 'dormant_mining_no_wallet') && isAllowed('users') && (
