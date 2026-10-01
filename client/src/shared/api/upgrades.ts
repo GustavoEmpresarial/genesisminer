@@ -11,7 +11,37 @@ export type UpgradesStatePackagePreview = {
   catalogId: string;
   quantity: number;
   label: string;
+  imageUrl: string | null;
+  baseProduction: number;
 };
+
+const PREVIEW_BASE_PRODUCTION_FALLBACK = 0;
+
+/** Normaliza uma linha de `itemsPreview` vindos do state (campos novos tolerantes). */
+export function parseUpgradesStatePackagePreview(raw: unknown): UpgradesStatePackagePreview | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const row = raw as Record<string, unknown>;
+  if (typeof row.rewardType !== 'string' || typeof row.catalogId !== 'string') return null;
+  if (typeof row.label !== 'string') return null;
+  const quantity = Number(row.quantity);
+  if (!Number.isFinite(quantity)) return null;
+  const imageRaw = row.imageUrl;
+  const imageUrl =
+    imageRaw == null
+      ? null
+      : typeof imageRaw === 'string' && imageRaw.trim()
+        ? imageRaw.trim()
+        : null;
+  const bp = Number(row.baseProduction);
+  return {
+    rewardType: row.rewardType,
+    catalogId: row.catalogId,
+    quantity,
+    label: row.label,
+    imageUrl,
+    baseProduction: Number.isFinite(bp) ? bp : PREVIEW_BASE_PRODUCTION_FALLBACK
+  };
+}
 
 export type UpgradesStatePackage = {
   id: string;
@@ -56,7 +86,16 @@ export async function getUpgradesState(): Promise<UpgradesStatePayload | null> {
     const res = await apiFetch(`${base}/upgrades/state`);
     if (!res.ok) return null;
     const j = (await res.json()) as UpgradesStatePayload;
-    return j && j.ok ? j : null;
+    if (!j || j.ok !== true) return null;
+    return {
+      ...j,
+      packages: (j.packages || []).map((pkg) => ({
+        ...pkg,
+        itemsPreview: (pkg.itemsPreview || [])
+          .map((row) => parseUpgradesStatePackagePreview(row))
+          .filter((row): row is UpgradesStatePackagePreview => row != null)
+      }))
+    };
   } catch {
     return null;
   }

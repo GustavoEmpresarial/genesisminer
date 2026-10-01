@@ -6,16 +6,18 @@ import React, { useCallback, useEffect, useState } from 'react';
 import DOMPurify from 'dompurify';
 import type { Config } from 'dompurify';
 import type { LucideIcon } from 'lucide-react';
-import { Crown, CheckCircle2, ShieldCheck, Zap, Rocket, Gift } from 'lucide-react';
+import { Crown, CheckCircle2, ShieldCheck, Zap, Rocket, Gift, X } from 'lucide-react';
 import {
   getUpgradesState,
   postUpgradesPurchase,
   type UpgradesStatePackage,
+  type UpgradesStatePackagePreview,
   type UpgradesStatePayload
 } from '../../../shared/api/upgrades';
 import { newWheelIdempotencyKey } from '../../../shared/api/wheel';
 import { appendUsdcShortfallLine, looksLikeInsufficientUsdcMessage } from '../../../shared/utils/playerMoneyMessages';
 import { normalizePublicAssetUrl } from '../../../shared/utils/public-url';
+import { formatHashrateAmount } from '../../../shared/utils/locale-format';
 import { UiNoticeModal, type UiNotice } from '../../../shared/ui/UiNoticeModal';
 
 export type UpgradesPageProps = {
@@ -31,6 +33,13 @@ type PurchaseSuccess = {
   packageName: string;
   boxName: string | null;
   itemsPreview: string[];
+};
+
+type PackageItemPreview = {
+  imageUrl: string;
+  label: string;
+  quantity: number;
+  baseProduction: number;
 };
 
 /** Lista branca para descrições HTML vindas do admin. */
@@ -171,7 +180,6 @@ function formatUsdcDisplay(s: string): string {
 }
 
 export function UpgradesPage({
-  usdcBalance: _usdcBalance,
   onUsdcChange,
   onGoToLuckyBoxes,
   onGoToWallet,
@@ -183,6 +191,27 @@ export function UpgradesPage({
   const [notice, setNotice] = useState<UiNotice | null>(null);
   const [purchaseSuccess, setPurchaseSuccess] = useState<PurchaseSuccess | null>(null);
   const [confirmPackage, setConfirmPackage] = useState<UpgradesStatePackage | null>(null);
+  const [itemPreview, setItemPreview] = useState<PackageItemPreview | null>(null);
+
+  const closeItemPreview = useCallback(() => setItemPreview(null), []);
+
+  useEffect(() => {
+    if (!itemPreview) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeItemPreview();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [itemPreview, closeItemPreview]);
+
+  const openItemPreview = useCallback((row: UpgradesStatePackagePreview, thumb: string) => {
+    setItemPreview({
+      imageUrl: thumb,
+      label: row.label,
+      quantity: row.quantity,
+      baseProduction: row.baseProduction
+    });
+  }, []);
 
   const reloadState = useCallback(async () => {
     const s = await getUpgradesState();
@@ -416,15 +445,47 @@ export function UpgradesPage({
                             CONTEÚDO DO PACOTE
                           </div>
                           <div className="space-y-2">
-                            {offer.itemsPreview.map((row, i) => (
-                              <div
-                                key={`${row.rewardType}-${row.catalogId}-${i}`}
-                                className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl p-3 text-sm group-hover:bg-white/10 transition-colors"
-                              >
-                                <span className={`font-black ${styles.text.split(' ')[0]}`}>{row.quantity}x</span>
-                                <span className="text-slate-200">{row.label}</span>
-                              </div>
-                            ))}
+                            {offer.itemsPreview.map((row, i) => {
+                              const thumb = safePackageImageUrl(row.imageUrl);
+                              const showPower = row.baseProduction > 0;
+                              return (
+                                <div
+                                  key={`${row.rewardType}-${row.catalogId}-${i}`}
+                                  className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl p-3 text-sm group-hover:bg-white/10 transition-colors"
+                                >
+                                  {thumb ? (
+                                    <button
+                                      type="button"
+                                      className="w-10 h-10 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-black/30 flex items-center justify-center transition hover:border-amber-500/50 hover:bg-black/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                                      aria-label={`Pré-visualizar ${row.label}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        openItemPreview(row, thumb);
+                                      }}
+                                    >
+                                      <img src={thumb} alt="" className="h-full w-full object-contain p-0.5" />
+                                    </button>
+                                  ) : (
+                                    <div className="w-10 h-10 shrink-0 overflow-hidden rounded-lg border border-white/10 bg-black/30 flex items-center justify-center">
+                                      <Gift size={16} className="text-slate-500" aria-hidden />
+                                    </div>
+                                  )}
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className={`shrink-0 font-black ${styles.text.split(' ')[0]}`}>
+                                        {row.quantity}x
+                                      </span>
+                                      <span className="truncate text-slate-200">{row.label}</span>
+                                    </div>
+                                    {showPower ? (
+                                      <div className="mt-0.5 font-mono text-[11px] text-green-400">
+                                        +{formatHashrateAmount(row.baseProduction)} H/s
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </>
                       )}
@@ -436,6 +497,59 @@ export function UpgradesPage({
           </div>
         )}
       </div>
+
+      {itemPreview ? (
+        <div
+          className="fixed inset-0 z-[155] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Pré-visualizar ${itemPreview.label}`}
+          onClick={closeItemPreview}
+        >
+          <div
+            className="relative w-full max-w-md rounded-2xl border border-amber-600/50 bg-slate-900 p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={closeItemPreview}
+              className="absolute right-3 top-3 rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-800 hover:text-white"
+              aria-label="Fechar"
+            >
+              <X size={18} aria-hidden />
+            </button>
+            <div className="mb-4 flex aspect-square max-h-72 w-full items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black/40">
+              <img
+                src={itemPreview.imageUrl}
+                alt={itemPreview.label}
+                className="h-full w-full object-contain p-3"
+              />
+            </div>
+            <div className="pr-8">
+              <div className="flex items-baseline gap-2 min-w-0">
+                <span className="shrink-0 text-lg font-black text-amber-300">{itemPreview.quantity}x</span>
+                <h3 className="truncate text-base font-black uppercase tracking-wide text-white">
+                  {itemPreview.label}
+                </h3>
+              </div>
+              {itemPreview.baseProduction > 0 ? (
+                <p className="mt-2 font-mono text-sm text-green-400">
+                  +{formatHashrateAmount(itemPreview.baseProduction)} H/s
+                </p>
+              ) : null}
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={closeItemPreview}
+                className="w-full rounded-xl border border-slate-600 bg-slate-800 py-2.5 text-xs font-black uppercase tracking-widest text-slate-200 transition hover:bg-slate-700 sm:w-auto sm:min-w-[140px]"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {confirmPackage ? (
         <div

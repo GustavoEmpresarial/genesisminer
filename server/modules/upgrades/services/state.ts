@@ -12,31 +12,88 @@ import { computeDiscountPercent, usdcDecimalFromRow } from './catalog.js';
 
 const RECENT_PURCHASES_LIMIT = 30;
 const USDC_DECIMALS = 6;
+const PREVIEW_QTY_MIN = 1;
+const PREVIEW_BASE_PRODUCTION_FALLBACK = 0;
 
-function itemPreviewLabel(nameById: Map<string, string>, boxNameById: Map<string, string>, row: AdminUpgradePackRow): Array<{ rewardType: string; catalogId: string; quantity: number; label: string }> {
-  const out: Array<{ rewardType: string; catalogId: string; quantity: number; label: string }> = [];
+export type PackageItemPreview = {
+  rewardType: string;
+  catalogId: string;
+  quantity: number;
+  label: string;
+  imageUrl: string | null;
+  baseProduction: number;
+};
+
+type StockItemCatalogMeta = {
+  name: string;
+  imageUrl: string | null;
+  baseProduction: number;
+};
+
+function previewImageUrl(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const t = String(raw).trim();
+  return t ? t : null;
+}
+
+function previewBaseProduction(raw: unknown): number {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : PREVIEW_BASE_PRODUCTION_FALLBACK;
+}
+
+function nonStockPreview(
+  rewardType: string,
+  catalogId: string,
+  quantity: number,
+  label: string
+): PackageItemPreview {
+  return {
+    rewardType,
+    catalogId,
+    quantity,
+    label,
+    imageUrl: null,
+    baseProduction: PREVIEW_BASE_PRODUCTION_FALLBACK
+  };
+}
+
+/** Preview de conteúdo do pacote (imagem/nome/poder para STOCK_ITEM). */
+export function buildPackageItemsPreview(
+  stockById: Map<string, StockItemCatalogMeta>,
+  boxNameById: Map<string, string>,
+  row: AdminUpgradePackRow
+): PackageItemPreview[] {
+  const out: PackageItemPreview[] = [];
   for (const it of row.items || []) {
-    const q = Math.max(1, Math.floor(Number(it.qty) || 0));
-    out.push({ rewardType: 'STOCK_ITEM', catalogId: it.itemId, quantity: q, label: nameById.get(it.itemId) || it.itemId });
+    const q = Math.max(PREVIEW_QTY_MIN, Math.floor(Number(it.qty) || 0));
+    const meta = stockById.get(it.itemId);
+    out.push({
+      rewardType: 'STOCK_ITEM',
+      catalogId: it.itemId,
+      quantity: q,
+      label: meta?.name || it.itemId,
+      imageUrl: meta?.imageUrl ?? null,
+      baseProduction: meta?.baseProduction ?? PREVIEW_BASE_PRODUCTION_FALLBACK
+    });
   }
   for (const b of row.boxes || []) {
-    const q = Math.max(1, Math.floor(Number(b.qty) || 0));
-    out.push({ rewardType: 'LOOT_BOX', catalogId: b.boxId, quantity: q, label: boxNameById.get(b.boxId) || b.boxId });
+    const q = Math.max(PREVIEW_QTY_MIN, Math.floor(Number(b.qty) || 0));
+    out.push(nonStockPreview('LOOT_BOX', b.boxId, q, boxNameById.get(b.boxId) || b.boxId));
   }
   for (const pid of row.passes || []) {
-    out.push({ rewardType: 'SEASON_PASS', catalogId: pid, quantity: 1, label: 'Season pass' });
+    out.push(nonStockPreview('SEASON_PASS', pid, 1, 'Season pass'));
   }
   for (const c of row.coins || []) {
     const amt = Number(c.amount);
     if (!Number.isFinite(amt) || amt === 0) continue;
-    out.push({ rewardType: 'MINED_COIN', catalogId: c.coinId, quantity: amt, label: c.coinId });
+    out.push(nonStockPreview('MINED_COIN', c.coinId, amt, c.coinId));
   }
   const grant = Number(row.grantUsdc ?? 0);
   if (Number.isFinite(grant) && grant > 0) {
-    out.push({ rewardType: 'USDC_GRANT', catalogId: 'usdc', quantity: grant, label: 'USDC (bónus do pacote)' });
+    out.push(nonStockPreview('USDC_GRANT', 'usdc', grant, 'USDC (bónus do pacote)'));
   }
   if (row.grantAccessLevelId) {
-    out.push({ rewardType: 'ACCESS_LEVEL', catalogId: row.grantAccessLevelId, quantity: 1, label: 'Nível de acesso' });
+    out.push(nonStockPreview('ACCESS_LEVEL', row.grantAccessLevelId, 1, 'Nível de acesso'));
   }
   return out;
 }
@@ -51,11 +108,11 @@ function visibleToUser(p: AdminUpgradePackRow, levelIds: Set<string>): boolean {
 export async function buildUpgradesStatePayload(userId: number, nowMs?: number): Promise<Record<string, unknown>> {
   const nowBi = BigInt(nowMs ?? Date.now());
 
-  const [levelIds, gs, packsRaw, upgradeNames, lootRows, recentPurch] = await Promise.all([
+  const [levelIds, gs, packsRaw, upgradeCatalog, lootRows, recentPurch] = await Promise.all([
     resolveUserAccessLevelIds(userId),
     prisma.game_states.findUnique({ where: { user_id: userId }, select: { usdc: true } }),
     loadAdminUpgradesForUser(userId),
-    prisma.upgrades.findMany({ select: { id: true, name: true } }),
+    prisma.upgrades.findMany({ select: { id: true, name: true, image: true, base_production: true } }),
     prisma.loot_boxes.findMany({ select: { id: true, name: true } }),
     prisma.admin_upgrade_purchases.findMany({ where: { user_id: userId }, orderBy: { purchased_at: 'desc' }, take: RECENT_PURCHASES_LIMIT })
   ]);
@@ -66,7 +123,16 @@ export async function buildUpgradesStatePayload(userId: number, nowMs?: number):
 
   const packsVisible = packsRaw.filter((p) => visibleToUser(p, levelIds));
 
-  const nameById = new Map(upgradeNames.map((u) => [u.id, u.name]));
+  const stockById = new Map(
+    upgradeCatalog.map((u) => [
+      u.id,
+      {
+        name: u.name,
+        imageUrl: previewImageUrl(u.image),
+        baseProduction: previewBaseProduction(u.base_production)
+      } satisfies StockItemCatalogMeta
+    ])
+  );
   const boxNameById = new Map(lootRows.map((b) => [b.id, b.name]));
 
   const usdcBal = usdcDecimalFromRow(gs?.usdc ?? 0);
@@ -105,7 +171,7 @@ export async function buildUpgradesStatePayload(userId: number, nowMs?: number):
         endsAt: p.endsAt ?? null,
         sortOrder: p.sortOrder ?? 0,
         alreadyOwned: !!p.alreadyOwned,
-        itemsPreview: itemPreviewLabel(nameById, boxNameById, p)
+        itemsPreview: buildPackageItemsPreview(stockById, boxNameById, p)
       };
     })
     .sort((a, b) => {

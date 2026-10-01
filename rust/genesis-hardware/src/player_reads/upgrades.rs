@@ -56,7 +56,7 @@ pub async fn run_upgrades_state(pool: &Pool, user_id: i64) -> Result<Value, Play
         )
         .await?;
     let usdc_bal = gs.as_ref().map(|r| f64_cell(r, "usdc")).unwrap_or(0.0);
-    let upgrade_names = load_name_map(&conn, "SELECT id, name FROM upgrades").await?;
+    let upgrade_catalog = load_upgrade_catalog_map(&conn).await?;
     let box_names = load_name_map(&conn, "SELECT id, name FROM loot_boxes").await?;
     let recent = conn
         .query(
@@ -73,7 +73,7 @@ pub async fn run_upgrades_state(pool: &Pool, user_id: i64) -> Result<Value, Play
     let mut packages: Vec<Value> = packs
         .into_iter()
         .filter(|p| visible_to_user(p, &level_ids))
-        .map(|p| map_pack(p, usdc_bal, now, &upgrade_names, &box_names))
+        .map(|p| map_pack(p, usdc_bal, now, &upgrade_catalog, &box_names))
         .collect();
     packages.sort_by(|a, b| {
         let pa = parse_price(a.get("finalPrice"));
@@ -189,6 +189,12 @@ struct PurchMeta {
     price: String,
     category: Option<String>,
     version: Option<i32>,
+}
+
+struct UpgradeCatalogMeta {
+    name: String,
+    image: Option<String>,
+    base_production: f64,
 }
 
 async fn user_is_admin<C: GenericClient>(client: &C, uid: i32) -> Result<bool, PlayerReadError> {
@@ -358,6 +364,32 @@ async fn load_name_map<C: GenericClient>(
         .collect())
 }
 
+async fn load_upgrade_catalog_map<C: GenericClient>(
+    client: &C,
+) -> Result<std::collections::HashMap<String, UpgradeCatalogMeta>, PlayerReadError> {
+    let rows = client
+        .query(
+            "SELECT id, name, image,
+                    base_production::double precision AS base_production
+               FROM upgrades",
+            &[],
+        )
+        .await?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            (
+                string_cell(r, "id"),
+                UpgradeCatalogMeta {
+                    name: string_cell(r, "name"),
+                    image: opt_string_cell(r, "image"),
+                    base_production: f64_cell(r, "base_production"),
+                },
+            )
+        })
+        .collect())
+}
+
 async fn load_purchase_meta<C: GenericClient>(
     client: &C,
     ids: &[String],
@@ -429,7 +461,7 @@ fn map_pack(
     p: PackRow,
     usdc_bal: f64,
     now: i64,
-    names: &std::collections::HashMap<String, String>,
+    catalog: &std::collections::HashMap<String, UpgradeCatalogMeta>,
     box_names: &std::collections::HashMap<String, String>,
 ) -> Value {
     let final_price = p.price_usdc;
@@ -448,7 +480,7 @@ fn map_pack(
     } else if usdc_bal < final_price {
         reason = Some("Insufficient USDC balance.");
     }
-    let preview = item_preview(&p, names, box_names);
+    let preview = item_preview(&p, catalog, box_names);
     json!({
         "id": p.id,
         "slug": p.slug,
@@ -473,63 +505,67 @@ fn map_pack(
     })
 }
 
+fn preview_non_stock(
+    reward_type: &str,
+    catalog_id: &str,
+    quantity: impl Into<Value>,
+    label: &str,
+) -> Value {
+    json!({
+        "rewardType": reward_type,
+        "catalogId": catalog_id,
+        "quantity": quantity.into(),
+        "label": label,
+        "imageUrl": Value::Null,
+        "baseProduction": 0.0,
+    })
+}
+
 fn item_preview(
     p: &PackRow,
-    names: &std::collections::HashMap<String, String>,
+    catalog: &std::collections::HashMap<String, UpgradeCatalogMeta>,
     box_names: &std::collections::HashMap<String, String>,
 ) -> Vec<Value> {
     let mut out = Vec::new();
     for (id, qty) in &p.items {
         let q = (*qty).max(QTY_MIN);
+        let meta = catalog.get(id);
         out.push(json!({
             "rewardType": "STOCK_ITEM",
             "catalogId": id,
             "quantity": q,
-            "label": names.get(id).cloned().unwrap_or_else(|| id.clone()),
+            "label": meta.map(|m| m.name.clone()).unwrap_or_else(|| id.clone()),
+            "imageUrl": meta.and_then(|m| m.image.clone()),
+            "baseProduction": meta.map(|m| m.base_production).unwrap_or(0.0),
         }));
     }
     for (id, qty) in &p.boxes {
         let q = (*qty).max(QTY_MIN);
-        out.push(json!({
-            "rewardType": "LOOT_BOX",
-            "catalogId": id,
-            "quantity": q,
-            "label": box_names.get(id).cloned().unwrap_or_else(|| id.clone()),
-        }));
+        out.push(preview_non_stock(
+            "LOOT_BOX",
+            id,
+            q,
+            box_names.get(id).map(|s| s.as_str()).unwrap_or(id),
+        ));
     }
     for pid in &p.passes {
-        out.push(json!({
-            "rewardType": "SEASON_PASS",
-            "catalogId": pid,
-            "quantity": 1,
-            "label": "Season pass",
-        }));
+        out.push(preview_non_stock("SEASON_PASS", pid, 1, "Season pass"));
     }
     for (id, amt) in &p.coins {
         if amt.is_finite() && *amt != 0.0 {
-            out.push(json!({
-                "rewardType": "MINED_COIN",
-                "catalogId": id,
-                "quantity": amt,
-                "label": id,
-            }));
+            out.push(preview_non_stock("MINED_COIN", id, *amt, id));
         }
     }
     if p.grant_usdc.is_finite() && p.grant_usdc > 0.0 {
-        out.push(json!({
-            "rewardType": "USDC_GRANT",
-            "catalogId": "usdc",
-            "quantity": p.grant_usdc,
-            "label": "USDC (bónus do pacote)",
-        }));
+        out.push(preview_non_stock(
+            "USDC_GRANT",
+            "usdc",
+            p.grant_usdc,
+            "USDC (bónus do pacote)",
+        ));
     }
     if let Some(lvl) = &p.grant_access_level_id {
-        out.push(json!({
-            "rewardType": "ACCESS_LEVEL",
-            "catalogId": lvl,
-            "quantity": 1,
-            "label": "Nível de acesso",
-        }));
+        out.push(preview_non_stock("ACCESS_LEVEL", lvl, 1, "Nível de acesso"));
     }
     out
 }
@@ -571,6 +607,34 @@ fn clamp_purchases_limit(raw: Option<i64>) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashMap;
+
+    fn empty_pack() -> PackRow {
+        PackRow {
+            id: "pack_1".into(),
+            name: "Pack".into(),
+            description: None,
+            price_usdc: 1.0,
+            grant_usdc: 0.0,
+            grant_access_level_id: None,
+            is_active: true,
+            items: vec![],
+            boxes: vec![],
+            passes: vec![],
+            coins: vec![],
+            visible: vec![],
+            version: DEFAULT_VERSION,
+            slug: None,
+            category: DEFAULT_CATEGORY.into(),
+            original_price_usdc: None,
+            stock_remaining: None,
+            max_per_user: DEFAULT_MAX_PER_USER,
+            starts_at: None,
+            ends_at: None,
+            sort_order: 0,
+            image_url: None,
+        }
+    }
 
     #[test]
     fn discount_only_when_original_higher() {
@@ -586,5 +650,43 @@ mod tests {
             clamp_purchases_limit(Some(PURCHASES_LIMIT_MAX + 1)),
             PURCHASES_LIMIT_MAX
         );
+    }
+
+    #[test]
+    fn stock_item_preview_includes_image_and_base_production() {
+        let mut pack = empty_pack();
+        pack.items = vec![("gpu_1".into(), 2)];
+        pack.boxes = vec![("box_1".into(), 1)];
+        let mut catalog = HashMap::new();
+        catalog.insert(
+            "gpu_1".into(),
+            UpgradeCatalogMeta {
+                name: "GPU Alpha".into(),
+                image: Some("/img/miner/gpu.png".into()),
+                base_production: 150.0,
+            },
+        );
+        let mut box_names = HashMap::new();
+        box_names.insert("box_1".into(), "Lucky".into());
+        let preview = item_preview(&pack, &catalog, &box_names);
+        assert_eq!(preview.len(), 2);
+        assert_eq!(preview[0]["rewardType"], "STOCK_ITEM");
+        assert_eq!(preview[0]["label"], "GPU Alpha");
+        assert_eq!(preview[0]["quantity"], 2);
+        assert_eq!(preview[0]["imageUrl"], "/img/miner/gpu.png");
+        assert_eq!(preview[0]["baseProduction"], 150.0);
+        assert_eq!(preview[1]["rewardType"], "LOOT_BOX");
+        assert!(preview[1]["imageUrl"].is_null());
+        assert_eq!(preview[1]["baseProduction"], 0.0);
+    }
+
+    #[test]
+    fn stock_item_preview_defaults_when_catalog_missing() {
+        let mut pack = empty_pack();
+        pack.items = vec![("missing".into(), 1)];
+        let preview = item_preview(&pack, &HashMap::new(), &HashMap::new());
+        assert_eq!(preview[0]["label"], "missing");
+        assert!(preview[0]["imageUrl"].is_null());
+        assert_eq!(preview[0]["baseProduction"], 0.0);
     }
 }

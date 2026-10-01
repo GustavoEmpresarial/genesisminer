@@ -88,4 +88,75 @@ describe('buildUpgradesStatePayload', () => {
     const packs = payload.packages as Array<{ discountPercent: number | null }>;
     expect(packs[0].discountPercent).toBe(25);
   });
+
+  it('itemsPreview inclui imageUrl e baseProduction para STOCK_ITEM', async () => {
+    prismaMock.prisma.upgrades.findMany.mockResolvedValue([
+      { id: 'gpu_1', name: 'GPU Alpha', image: '/img/miner/gpu.png', base_production: 150 }
+    ]);
+    prismaMock.prisma.loot_boxes.findMany.mockResolvedValue([{ id: 'box_1', name: 'Lucky' }]);
+    loaderMock.loadAdminUpgradesForUser.mockResolvedValue([
+      {
+        ...PACK_VISIBLE,
+        items: [{ itemId: 'gpu_1', qty: 2 }],
+        boxes: [{ boxId: 'box_1', qty: 1 }]
+      }
+    ]);
+    const { buildUpgradesStatePayload } = await import('../../../../server/modules/upgrades/services/state.js');
+    const payload = await buildUpgradesStatePayload(1);
+    const packs = payload.packages as Array<{
+      itemsPreview: Array<{
+        rewardType: string;
+        catalogId: string;
+        quantity: number;
+        label: string;
+        imageUrl: string | null;
+        baseProduction: number;
+      }>;
+    }>;
+    expect(packs[0].itemsPreview).toEqual([
+      {
+        rewardType: 'STOCK_ITEM',
+        catalogId: 'gpu_1',
+        quantity: 2,
+        label: 'GPU Alpha',
+        imageUrl: '/img/miner/gpu.png',
+        baseProduction: 150
+      },
+      {
+        rewardType: 'LOOT_BOX',
+        catalogId: 'box_1',
+        quantity: 1,
+        label: 'Lucky',
+        imageUrl: null,
+        baseProduction: 0
+      }
+    ]);
+  });
+
+  it('buildPackageItemsPreview trata image vazia e base_production inválido', async () => {
+    const { buildPackageItemsPreview } = await import('../../../../server/modules/upgrades/services/state.js');
+    const stockById = new Map([
+      ['gpu_bad', { name: 'Bad GPU', imageUrl: null, baseProduction: 0 }]
+    ]);
+    const preview = buildPackageItemsPreview(
+      stockById,
+      new Map(),
+      {
+        ...PACK_VISIBLE,
+        items: [{ itemId: 'gpu_bad', qty: 1 }],
+        grantUsdc: 5
+      }
+    );
+    expect(preview[0]).toMatchObject({
+      rewardType: 'STOCK_ITEM',
+      imageUrl: null,
+      baseProduction: 0,
+      label: 'Bad GPU'
+    });
+    expect(preview[1]).toMatchObject({
+      rewardType: 'USDC_GRANT',
+      imageUrl: null,
+      baseProduction: 0
+    });
+  });
 });
