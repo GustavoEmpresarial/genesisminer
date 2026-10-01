@@ -39,12 +39,14 @@ const CODE_INVALID_WEB3_ADDRESS: &str = "INVALID_WEB3_ADDRESS";
 const CODE_INVALID_MIN_DEPOSIT: &str = "INVALID_MIN_DEPOSIT";
 const CODE_WITHDRAW_TOKENS_LIMIT: &str = "WITHDRAW_TOKENS_LIMIT";
 const CODE_INVALID_WITHDRAW_TOKEN: &str = "INVALID_WITHDRAW_TOKEN";
+const CODE_INVALID_WITHDRAW_TOKENS: &str = "INVALID_WITHDRAW_TOKENS";
 const CODE_INVALID_WITHDRAW_NETWORK: &str = "INVALID_WITHDRAW_NETWORK";
 const CODE_WITHDRAW_TOKENS_TOO_LARGE: &str = "WITHDRAW_TOKENS_TOO_LARGE";
 
 const ERR_INVALID_MIN_DEPOSIT: &str = "Invalid minDepositUsdc.";
 const ERR_WITHDRAW_TOKENS_LIMIT: &str = "Too many withdrawTokens.";
 const ERR_INVALID_WITHDRAW_TOKEN: &str = "Invalid withdrawTokens entry.";
+const ERR_INVALID_WITHDRAW_TOKENS: &str = "Invalid withdrawTokens.";
 const ERR_INVALID_WITHDRAW_NETWORK: &str = "Invalid withdrawTokens.network.";
 const ERR_WITHDRAW_TOKENS_TOO_LARGE: &str = "withdrawTokens payload too large.";
 
@@ -131,10 +133,14 @@ fn number_to_js_string(n: f64) -> String {
     format!("{n}")
 }
 
-/// Node `serializeWithdrawTokens` — validates every entry, then stores the JSON.
-fn serialize_withdraw_tokens(raw: Option<&Value>) -> Result<String, WalletError> {
-    let Some(Value::Array(items)) = raw else {
-        return Ok("[]".to_string());
+/// Validates every entry, then stores the JSON. Call only when the body
+/// includes `withdrawTokens` — a non-array value is a 400, never a silent wipe.
+fn serialize_withdraw_tokens(raw: &Value) -> Result<String, WalletError> {
+    let Value::Array(items) = raw else {
+        return Err(WalletError::bad_code(
+            ERR_INVALID_WITHDRAW_TOKENS,
+            CODE_INVALID_WITHDRAW_TOKENS,
+        ));
     };
     if items.len() > WITHDRAW_TOKENS_MAX {
         return Err(WalletError::bad_code(
@@ -174,8 +180,8 @@ fn serialize_withdraw_tokens(raw: Option<&Value>) -> Result<String, WalletError>
     Ok(json)
 }
 
-/// Node `buildWeb3SettingsUpserts`. The three network flags are only written
-/// when the key is present, so omitting one never clears an existing block.
+/// Node `buildWeb3SettingsUpserts`. Network flags and `withdrawTokens` are only
+/// written when the key is present, so omitting one never clears existing data.
 pub fn build_web3_settings_upserts(
     body: &Value,
 ) -> Result<Vec<(&'static str, String)>, WalletError> {
@@ -220,11 +226,10 @@ pub fn build_web3_settings_upserts(
             "web3_withdraw_token_contract",
             as_optional_address("withdrawTokenContract", b.get("withdrawTokenContract"))?,
         ),
-        (
-            "web3_withdraw_tokens",
-            serialize_withdraw_tokens(b.get("withdrawTokens"))?,
-        ),
     ];
+    if let Some(raw) = b.get("withdrawTokens") {
+        upserts.push(("web3_withdraw_tokens", serialize_withdraw_tokens(raw)?));
+    }
     for (key, flag) in [
         ("web3_deposit_polygon_disabled", "depositPolygonDisabled"),
         ("web3_deposit_bnb_disabled", "depositBnbDisabled"),
@@ -429,21 +434,21 @@ mod tests {
     }
 
     #[test]
-    fn empty_body_writes_the_nine_base_keys() {
+    fn empty_body_writes_the_eight_base_keys() {
         let entries = build_web3_settings_upserts(&json!({})).unwrap();
-        assert_eq!(entries.len(), 9);
+        assert_eq!(entries.len(), 8);
         let kv = by_key(entries);
         assert_eq!(kv["web3_deposit_wallet"], "");
         assert_eq!(kv["web3_min_deposit_usdc"], "");
         assert_eq!(kv["web3_withdraw_token_name"], "");
-        assert_eq!(kv["web3_withdraw_tokens"], "[]");
+        assert!(!kv.contains_key("web3_withdraw_tokens"));
         assert!(!kv.contains_key("web3_deposit_polygon_disabled"));
     }
 
     #[test]
     fn non_object_body_reads_as_empty() {
         for bad in [json!([1]), json!("x"), json!(null), json!(7)] {
-            assert_eq!(build_web3_settings_upserts(&bad).unwrap().len(), 9);
+            assert_eq!(build_web3_settings_upserts(&bad).unwrap().len(), 8);
         }
     }
 
@@ -502,6 +507,30 @@ mod tests {
     }
 
     #[test]
+    fn withdraw_tokens_omitted_preserves_existing() {
+        let kv = by_key(build_web3_settings_upserts(&json!({})).unwrap());
+        assert!(!kv.contains_key("web3_withdraw_tokens"));
+
+        let kv = by_key(
+            build_web3_settings_upserts(&json!({ "minDepositUsdc": 1 })).unwrap(),
+        );
+        assert!(!kv.contains_key("web3_withdraw_tokens"));
+    }
+
+    #[test]
+    fn withdraw_tokens_empty_array_clears_deliberately() {
+        let kv =
+            by_key(build_web3_settings_upserts(&json!({ "withdrawTokens": [] })).unwrap());
+        assert_eq!(kv["web3_withdraw_tokens"], "[]");
+        assert_eq!(
+            build_web3_settings_upserts(&json!({ "withdrawTokens": [] }))
+                .unwrap()
+                .len(),
+            9
+        );
+    }
+
+    #[test]
     fn withdraw_tokens_are_validated_entry_by_entry() {
         let kv = by_key(
             build_web3_settings_upserts(&json!({
@@ -511,17 +540,33 @@ mod tests {
         );
         assert!(kv["web3_withdraw_tokens"].contains("base"));
 
-        // A non-array is stored as `[]`, not rejected.
-        let kv = by_key(build_web3_settings_upserts(&json!({ "withdrawTokens": "nope" })).unwrap());
-        assert_eq!(kv["web3_withdraw_tokens"], "[]");
-
         for bad in [
+            json!({ "withdrawTokens": "nope" }),
+            json!({ "withdrawTokens": { "network": "base" } }),
+            json!({ "withdrawTokens": null }),
+            json!({ "withdrawTokens": 7 }),
             json!({ "withdrawTokens": [7] }),
             json!({ "withdrawTokens": [[]] }),
             json!({ "withdrawTokens": [{ "network": "solana" }] }),
             json!({ "withdrawTokens": [{ "payoutWallet": "0x1" }] }),
         ] {
             assert!(build_web3_settings_upserts(&bad).is_err(), "{bad}");
+        }
+
+        let err =
+            build_web3_settings_upserts(&json!({ "withdrawTokens": "x" })).unwrap_err();
+        match err {
+            WalletError::Domain {
+                status,
+                error,
+                code,
+                ..
+            } => {
+                assert_eq!(status, 400);
+                assert_eq!(error, ERR_INVALID_WITHDRAW_TOKENS);
+                assert_eq!(code.as_deref(), Some(CODE_INVALID_WITHDRAW_TOKENS));
+            }
+            other => panic!("expected domain error, got {other:?}"),
         }
     }
 

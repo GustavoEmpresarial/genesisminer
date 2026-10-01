@@ -11,7 +11,7 @@ use crate::errors::{WalletError, CODE_VALIDATION};
 use crate::pg_types::pg_user_id;
 use crate::util::{
     assert_active_user, checksum_evm_address, compute_advisory_lock_key64,
-    require_idem_fingerprint, require_nonempty_json_str,
+    normalize_evm_address_lower, require_idem_fingerprint, require_nonempty_json_str,
 };
 
 /// Node `WITHDRAW_IDEM_SCOPE`.
@@ -56,12 +56,32 @@ fn norm_compare(s: &str) -> String {
     s.trim().to_ascii_lowercase()
 }
 
+/// Numeric `disabled: 1`, same as client `isWithdrawTokenDisabled` (`v === 1`).
+const WITHDRAW_DISABLED_FLAG: i64 = 1;
+
+/// Same affirmative rule as client `isWithdrawTokenDisabled` / deposit flags.
+/// `"false"`, `"0"`, `false`, and a missing field stay enabled.
+fn withdraw_token_disabled(cfg: &Value) -> bool {
+    match cfg.get("disabled") {
+        Some(Value::Bool(b)) => *b,
+        Some(Value::Number(n)) => {
+            n.as_i64() == Some(WITHDRAW_DISABLED_FLAG)
+                || n.as_u64() == Some(WITHDRAW_DISABLED_FLAG as u64)
+                || n.as_f64() == Some(WITHDRAW_DISABLED_FLAG as f64)
+        }
+        Some(Value::String(s)) => {
+            let t = s.trim();
+            t == "1"
+                || t.eq_ignore_ascii_case("true")
+                || t.eq_ignore_ascii_case("yes")
+                || t.eq_ignore_ascii_case("on")
+        }
+        _ => false,
+    }
+}
+
 fn is_withdraw_token_usable(cfg: &Value) -> bool {
-    if cfg
-        .get("disabled")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-    {
+    if withdraw_token_disabled(cfg) {
         return false;
     }
     let sym = cfg
@@ -72,8 +92,36 @@ fn is_withdraw_token_usable(cfg: &Value) -> bool {
         .to_ascii_uppercase();
     let is_native = NATIVE_TOKEN_NAMES.contains(&sym.as_str());
     let contract = cfg.get("contract").and_then(|v| v.as_str()).unwrap_or("");
-    let has_valid_contract = checksum_evm_address(contract).is_ok();
+    // Usability: accept any well-formed 0x+40 hex. Strict EIP-55 belongs on
+    // user wallet_address validation, not admin-configured token contracts
+    // (mixed wrong checksums otherwise block withdraws with a config error).
+    let has_valid_contract = normalize_evm_address_lower(contract).is_some();
     is_native || has_valid_contract
+}
+
+fn json_norm_str(v: Option<&Value>) -> String {
+    v.and_then(|x| x.as_str())
+        .map(norm_compare)
+        .unwrap_or_default()
+}
+
+fn prefer_enabled<'a>(matches: Vec<&'a Value>) -> Option<&'a Value> {
+    if matches.is_empty() {
+        return None;
+    }
+    matches
+        .iter()
+        .copied()
+        .find(|t| !withdraw_token_disabled(t))
+        .or_else(|| matches.first().copied())
+}
+
+fn loose_name_match(t: &Value, coin_id: &str, coin_sym: &str, coin_nm: &str) -> bool {
+    let cfg_sym = json_norm_str(t.get("symbol"));
+    let cfg_nm = json_norm_str(t.get("name"));
+    (!coin_id.is_empty() && cfg_nm == coin_id)
+        || (!coin_sym.is_empty() && (cfg_sym == coin_sym || cfg_nm == coin_sym))
+        || (!coin_nm.is_empty() && (cfg_nm == coin_nm || cfg_sym == coin_nm))
 }
 
 fn find_withdraw_token_cfg<'a>(
@@ -88,36 +136,26 @@ fn find_withdraw_token_cfg<'a>(
     if coin_id.is_empty() && coin_sym.is_empty() && coin_nm.is_empty() {
         return None;
     }
-    for t in tokens {
-        let cfg_id = t
-            .get("coinId")
-            .and_then(|v| v.as_str())
-            .map(norm_compare)
-            .unwrap_or_default();
-        let cfg_sym = t
-            .get("symbol")
-            .and_then(|v| v.as_str())
-            .map(norm_compare)
-            .unwrap_or_default();
-        let cfg_nm = t
-            .get("name")
-            .and_then(|v| v.as_str())
-            .map(norm_compare)
-            .unwrap_or_default();
-        if !coin_id.is_empty() && cfg_id == coin_id {
-            return Some(t);
-        }
-        if !coin_id.is_empty() && cfg_nm == coin_id {
-            return Some(t);
-        }
-        if !coin_sym.is_empty() && (cfg_sym == coin_sym || cfg_nm == coin_sym) {
-            return Some(t);
-        }
-        if !coin_nm.is_empty() && (cfg_nm == coin_nm || cfg_sym == coin_nm) {
-            return Some(t);
+    if !coin_id.is_empty() {
+        let by_id: Vec<&Value> = tokens
+            .iter()
+            .filter(|t| json_norm_str(t.get("coinId")) == coin_id)
+            .collect();
+        if let Some(hit) = prefer_enabled(by_id) {
+            return Some(hit);
         }
     }
-    None
+    let by_name: Vec<&Value> = tokens
+        .iter()
+        .filter(|t| {
+            let cfg_id = json_norm_str(t.get("coinId"));
+            if !coin_id.is_empty() && !cfg_id.is_empty() && cfg_id != coin_id {
+                return false;
+            }
+            loose_name_match(t, &coin_id, &coin_sym, &coin_nm)
+        })
+        .collect();
+    prefer_enabled(by_name)
 }
 
 fn parse_withdraw_tokens(raw: Option<&str>) -> Vec<Value> {
@@ -373,18 +411,14 @@ async fn run_inner<C: GenericClient>(
             "{sym} não está configurado para saque no painel administrativo."
         )));
     };
+    if withdraw_token_disabled(token_cfg) {
+        return Err(WalletError::bad(format!(
+            "Saques para {sym} estão desativados no momento."
+        )));
+    }
     if !is_withdraw_token_usable(token_cfg) {
         return Err(WalletError::bad(format!(
             "Saque indisponível para {sym}. Confirma a configuração no painel administrativo."
-        )));
-    }
-    if token_cfg
-        .get("disabled")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false)
-    {
-        return Err(WalletError::bad(format!(
-            "Saques para {sym} estão desativados no momento."
         )));
     }
 
@@ -516,4 +550,110 @@ async fn run_inner<C: GenericClient>(
         .map_err(WalletError::transport)?;
 
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// BSC DOGE (Binance-Peg) with mixed wrong EIP-55 (`...744c43` vs correct `...744C43`).
+    const DOGE_CONTRACT_WRONG_CHECKSUM: &str =
+        "0xbA2aE424d960c26247Dd6c32edC70B295c744c43";
+
+    #[test]
+    fn usable_accepts_mixed_wrong_checksum_contract() {
+        let cfg = json!({
+            "symbol": "DOGE",
+            "contract": DOGE_CONTRACT_WRONG_CHECKSUM,
+        });
+        assert!(is_withdraw_token_usable(&cfg));
+        // Strict checksum still rejects this address (wallet validation path).
+        assert!(checksum_evm_address(DOGE_CONTRACT_WRONG_CHECKSUM).is_err());
+    }
+
+    #[test]
+    fn usable_rejects_disabled_token() {
+        let cfg = json!({
+            "symbol": "DOGE",
+            "contract": DOGE_CONTRACT_WRONG_CHECKSUM,
+            "disabled": true,
+        });
+        assert!(!is_withdraw_token_usable(&cfg));
+    }
+
+    #[test]
+    fn usable_rejects_empty_contract_when_not_native() {
+        let cfg = json!({
+            "symbol": "DOGE",
+            "contract": "",
+        });
+        assert!(!is_withdraw_token_usable(&cfg));
+        let missing = json!({ "symbol": "DOGE" });
+        assert!(!is_withdraw_token_usable(&missing));
+    }
+
+    #[test]
+    fn usable_accepts_native_without_contract() {
+        let cfg = json!({ "symbol": "POL" });
+        assert!(is_withdraw_token_usable(&cfg));
+    }
+
+    #[test]
+    fn string_false_does_not_disable() {
+        let cfg = json!({
+            "symbol": "DAI",
+            "contract": "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
+            "disabled": "false",
+        });
+        assert!(!withdraw_token_disabled(&cfg));
+        assert!(is_withdraw_token_usable(&cfg));
+        let zero = json!({ "symbol": "DAI", "disabled": "0" });
+        assert!(!withdraw_token_disabled(&zero));
+        let on = json!({ "disabled": "true" });
+        assert!(withdraw_token_disabled(&on));
+        let one = json!({ "disabled": 1 });
+        assert!(withdraw_token_disabled(&one));
+    }
+
+    #[test]
+    fn coin_id_match_beats_earlier_disabled_symbol() {
+        let stale = json!({
+            "name": "DAI",
+            "symbol": "DAI",
+            "coinId": "old-dai",
+            "disabled": true,
+            "contract": "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
+        });
+        let live = json!({
+            "name": "DAI",
+            "symbol": "DAI",
+            "coinId": "dai",
+            "disabled": false,
+            "contract": "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
+        });
+        let tokens = vec![stale, live];
+        let hit = find_withdraw_token_cfg(&tokens, "dai", "DAI", "Dai").unwrap();
+        assert_eq!(hit.get("coinId").and_then(|v| v.as_str()), Some("dai"));
+        assert!(!withdraw_token_disabled(hit));
+    }
+
+    #[test]
+    fn symbol_fallback_skips_other_coin_id() {
+        let other = json!({
+            "name": "DAI",
+            "symbol": "DAI",
+            "coinId": "dai-nft",
+            "disabled": true,
+        });
+        let loose = json!({
+            "name": "DAI",
+            "symbol": "DAI",
+            "contract": "0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063",
+        });
+        let tokens = vec![other, loose.clone()];
+        let hit = find_withdraw_token_cfg(&tokens, "dai", "DAI", "DAI").unwrap();
+        assert!(hit.get("coinId").is_none());
+        assert!(is_withdraw_token_usable(hit));
+    }
 }

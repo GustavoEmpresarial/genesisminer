@@ -5,6 +5,7 @@ import { CreditCard, Upload, HardDrive, Coins, TrendingUp, Shield, Clock } from 
 import { formatMinedCoinAmount } from '../../../shared/utils/locale-format';
 import {
   findWithdrawTokenCfg,
+  isWithdrawTokenDisabled,
   isWithdrawTokenUsable,
   minimumWithdrawCryptoAmount
 } from '../../../shared/utils/withdrawTokenMatch';
@@ -18,7 +19,14 @@ interface WalletActionsProps {
   onStartDeposit?: (amount: number, network?: string) => void;
   hasWallet?: boolean;
   coinBalances: Record<string, number>;
-  miningCoins: { id: string; name: string; symbol: string; priceUSD: number; usdcRate?: number }[];
+  miningCoins: {
+    id: string;
+    name: string;
+    symbol: string;
+    priceUSD: number;
+    usdcRate?: number;
+    iconUrl?: string | null;
+  }[];
   coinRates?: Record<string, number>;
   /**
    * Callback de saque. Pode devolver `Promise<WalletWithdrawResult>` para o componente
@@ -47,6 +55,7 @@ interface WalletActionsProps {
   onSyncQueuedDeposit?: () => Promise<void>;
   onOpenWithdrawalHistory?: () => void;
   onOpenDepositHistory?: () => void;
+  onOpenReinvestmentHistory?: () => void;
 }
 
 const MAX_USDC_DEPOSIT_UI = 50_000_000;
@@ -73,7 +82,8 @@ export const WalletActions: React.FC<WalletActionsProps> = ({
   onVerifyDepositByHash,
   onSyncQueuedDeposit,
   onOpenWithdrawalHistory,
-  onOpenDepositHistory
+  onOpenDepositHistory,
+  onOpenReinvestmentHistory
 }) => {
   const t = useT();
   const [usdcAmount, setUsdcAmount] = useState<string>('');
@@ -180,7 +190,7 @@ export const WalletActions: React.FC<WalletActionsProps> = ({
   const withdrawDisabledReason: string = (() => {
     if (!hasWallet) return t('wallet.connectWalletToWithdraw');
     if (!selectedCfg) return `${selectedCoin?.symbol || 'Esta moeda'} não está configurado para saque no painel administrativo.`;
-    if (selectedCfg.disabled) return `Saques de ${selectedCoin?.symbol || 'esta moeda'} estão temporariamente desativados.`;
+    if (isWithdrawTokenDisabled(selectedCfg.disabled)) return `Saques de ${selectedCoin?.symbol || 'esta moeda'} estão temporariamente desativados.`;
     if (!selectedMatching) return `${selectedCoin?.symbol || 'Esta moeda'} ainda não tem contrato válido configurado.`;
     if (selectedMin > 0 && selectedBalance + 1e-9 < selectedMin) {
       return `Seu saldo (${formatAmount(selectedBalance)} ${selectedCoin?.symbol || ''}) ainda não atingiu o mínimo de saque (${formatAmount(selectedMin)} ${selectedCoin?.symbol || ''}).`;
@@ -302,7 +312,17 @@ export const WalletActions: React.FC<WalletActionsProps> = ({
           className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:border-green-400 hover:text-green-500 transition-colors"
         >
           <Clock size={16} />
-          Ver histórico de depósitos
+          {t('wallet.depositHistoryTitle')}
+        </button>
+      )}
+      {onOpenReinvestmentHistory && (
+        <button
+          type="button"
+          onClick={onOpenReinvestmentHistory}
+          className="inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:border-orange-400 hover:text-orange-500 transition-colors"
+        >
+          <Clock size={16} />
+          {t('wallet.openReinvestmentHistory')}
         </button>
       )}
       </div>
@@ -382,9 +402,9 @@ export const WalletActions: React.FC<WalletActionsProps> = ({
           </div>
           <div className="grid grid-cols-3 gap-2">
             {[
-              { id: 'polygon', name: 'Polygon', color: 'bg-orange-500', border: 'border-orange-500/50', text: 'text-orange-500' },
-              { id: 'bnb', name: 'BNB Chain', color: 'bg-yellow-500', border: 'border-yellow-500/50', text: 'text-yellow-500' },
-              { id: 'base', name: 'Base', color: 'bg-amber-500', border: 'border-amber-500/50', text: 'text-amber-500' }
+              { id: 'polygon' as const, name: 'Polygon', color: 'bg-orange-500', border: 'border-orange-500/50', text: 'text-orange-500' },
+              { id: 'bnb' as const, name: 'BNB Chain', color: 'bg-yellow-500', border: 'border-yellow-500/50', text: 'text-yellow-500' },
+              { id: 'base' as const, name: 'Base', color: 'bg-amber-500', border: 'border-amber-500/50', text: 'text-amber-500' }
             ].filter(net => {
               if (net.id === 'polygon') return !polyDepositOff;
               if (net.id === 'bnb') return !bnbDepositOff;
@@ -393,7 +413,7 @@ export const WalletActions: React.FC<WalletActionsProps> = ({
             }).map((net) => (
               <button
                 key={net.id}
-                onClick={() => setSelectedNetwork(net.id as any)}
+                onClick={() => setSelectedNetwork(net.id)}
                 className={`flex flex-col items-center justify-center p-2 rounded-lg border-2 transition-all ${selectedNetwork === net.id
                   ? `${net.border} ${net.color} text-white shadow-lg`
                   : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-400 hover:border-slate-300 dark:hover:border-slate-700'
@@ -517,7 +537,12 @@ export const WalletActions: React.FC<WalletActionsProps> = ({
           <div className="flex min-w-0 items-center gap-2">
             {selectedCoin ? (
               <MiningCoinGlyph
-                coin={{ id: selectedCoin.id, name: selectedCoin.name, symbol: selectedCoin.symbol }}
+                coin={{
+                  id: selectedCoin.id,
+                  name: selectedCoin.name,
+                  symbol: selectedCoin.symbol,
+                  iconUrl: selectedCoin.iconUrl
+                }}
                 size={22}
               />
             ) : null}
@@ -646,7 +671,10 @@ export const WalletActions: React.FC<WalletActionsProps> = ({
           ) : miningCoins.map(c => (
             <div key={c.id} className="flex items-center justify-between gap-2 text-[12px] font-mono">
               <span className="flex min-w-0 items-center gap-2 text-slate-600 dark:text-slate-300">
-                <MiningCoinGlyph coin={{ id: c.id, name: c.name, symbol: c.symbol }} size={18} />
+                <MiningCoinGlyph
+                  coin={{ id: c.id, name: c.name, symbol: c.symbol, iconUrl: c.iconUrl }}
+                  size={18}
+                />
                 <span className="truncate">{c.name}</span>
               </span>
               <span className="shrink-0 text-amber-700 dark:text-amber-300">{formatAmount(coinRates[c.id] || 0)}/s</span>

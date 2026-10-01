@@ -9,6 +9,8 @@ export type WalletMinedBalanceRow = {
   coinId: string;
   name: string;
   symbol: string;
+  /** Admin/upload ou seed SQL — null se vazio. Glyph cai em `/img/coin-logos` + CDN. */
+  iconUrl: string | null;
   usdcRate: number;
   showInExchange: boolean;
   minedBalance: number;
@@ -66,6 +68,91 @@ export type WalletHistoryPayload = {
   ledger: WalletLedgerEntry[];
   withdrawals: WalletWithdrawalRow[];
 };
+
+/** Mirrors server `PLAYER_HISTORY_DEFAULT_LIMIT` / `PLAYER_HISTORY_MAX_LIMIT`. */
+export const PLAYER_HISTORY_DEFAULT_LIMIT = 300;
+export const PLAYER_HISTORY_MAX_LIMIT = 500;
+export type ReinvestmentHistoryEntry = {
+  id: string;
+  coinId: string;
+  /** Mining coin symbol when joined; empty if unknown. */
+  coinSymbol: string;
+  soldCrypto: number;
+  grossUsdc: number;
+  feeUsdc: number;
+  netUsdc: number;
+  createdAt: number;
+  entryType: string;
+};
+
+function parseNumericField(raw: unknown): number {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string' && raw.trim()) {
+    const n = Number(raw);
+    if (Number.isFinite(n)) return n;
+  }
+  return 0;
+}
+
+/** Ledger row from wallet history when desk liquidates mined crypto → USDC. */
+export const WALLET_LEDGER_ENTRY_TYPE_EXCHANGE_LIQUIDATE = 'exchange_liquidate';
+
+/** Epoch ms floor — values above are treated as milliseconds, not seconds. */
+const LEDGER_CREATED_AT_MS_EPOCH_THRESHOLD = 1_000_000_000_000;
+
+/** Aligned with server `MS_PER_SECOND` — no shared client time util yet. */
+const MS_PER_SECOND = 1000;
+
+function parseLedgerCreatedAt(raw: unknown): number {
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
+    if (raw > LEDGER_CREATED_AT_MS_EPOCH_THRESHOLD) return raw;
+    return raw * MS_PER_SECOND;
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    const asNum = Number(raw);
+    if (Number.isFinite(asNum) && asNum > LEDGER_CREATED_AT_MS_EPOCH_THRESHOLD) return asNum;
+    const parsed = Date.parse(raw);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 0;
+}
+
+/** Normalizes a wallet ledger row (snake_case from Rust PG read). */
+export function parseLedgerEntry(raw: unknown): ReinvestmentHistoryEntry | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const id = typeof r.id === 'string' ? r.id : String(r.id ?? '');
+  if (!id) return null;
+  const coinId =
+    typeof r.coin_id === 'string'
+      ? r.coin_id.trim()
+      : typeof r.coinId === 'string'
+        ? r.coinId.trim()
+        : '';
+  if (!coinId) return null;
+  const coinSymbol =
+    typeof r.coin_symbol === 'string'
+      ? r.coin_symbol.trim()
+      : typeof r.coinSymbol === 'string'
+        ? r.coinSymbol.trim()
+        : '';
+  return {
+    id,
+    coinId,
+    coinSymbol,
+    soldCrypto: parseNumericField(r.sold_crypto ?? r.soldCrypto),
+    grossUsdc: parseNumericField(r.gross_usdc ?? r.grossUsdc),
+    feeUsdc: parseNumericField(r.fee_usdc ?? r.feeUsdc),
+    netUsdc: parseNumericField(r.net_usdc ?? r.netUsdc),
+    createdAt: parseLedgerCreatedAt(r.created_at ?? r.createdAt),
+    entryType:
+      typeof r.entry_type === 'string'
+        ? r.entry_type
+        : typeof r.entryType === 'string'
+          ? r.entryType
+          : ''
+  };
+}
 
 export type WalletExchangeLiquidateOk = {
   ok: true;
@@ -237,6 +324,34 @@ export async function getMyDepositHistory(): Promise<DepositHistoryEntry[]> {
   }
 }
 
+/** Trim iconUrl like calculator — empty/whitespace → null. */
+export function parseWalletIconUrl(raw: unknown): string | null {
+  const iconRaw = typeof raw === 'string' ? raw.trim() : '';
+  return iconRaw || null;
+}
+
+function parseMinedBalanceRow(raw: unknown): WalletMinedBalanceRow | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const coinId = typeof o.coinId === 'string' ? o.coinId.trim() : String(o.coinId ?? '').trim();
+  if (!coinId) return null;
+  const name = typeof o.name === 'string' && o.name.trim() ? o.name.trim() : coinId;
+  const symbol =
+    typeof o.symbol === 'string' && o.symbol.trim() ? o.symbol.trim() : name;
+  return {
+    coinId,
+    name,
+    symbol,
+    iconUrl: parseWalletIconUrl(o.iconUrl),
+    usdcRate: Number(o.usdcRate) || 0,
+    showInExchange: o.showInExchange !== false,
+    minedBalance: Number(o.minedBalance) || 0,
+    grossUsdcEstimate: Number(o.grossUsdcEstimate) || 0,
+    feeUsdcEstimate: Number(o.feeUsdcEstimate) || 0,
+    netUsdcEstimate: Number(o.netUsdcEstimate) || 0
+  };
+}
+
 /** Leitura leve — seed USDC no shell (GameShell). Prefer `getWalletState` for full payload. */
 export async function getWalletUsdcBalance(): Promise<number | null> {
   const state = await getWalletState();
@@ -246,18 +361,53 @@ export async function getWalletUsdcBalance(): Promise<number | null> {
 /** Estado consolidado da carteira (servidor é fonte da verdade). */
 export async function getWalletState(): Promise<WalletStatePayload | null> {
   try {
-    const res = await apiFetch(`${base}/wallet/state`);
+    const res = await apiFetch(`${base}/wallet/state`, { cache: 'no-store' });
     if (!res.ok) return null;
-    const j = (await res.json()) as WalletStatePayload;
-    return j && j.ok ? j : null;
+    const raw = (await res.json()) as Record<string, unknown>;
+    if (!raw || raw.ok !== true) return null;
+    const minedRaw = Array.isArray(raw.minedBalances) ? raw.minedBalances : [];
+    const minedBalances: WalletMinedBalanceRow[] = [];
+    for (const row of minedRaw) {
+      const parsed = parseMinedBalanceRow(row);
+      if (parsed) minedBalances.push(parsed);
+    }
+    return {
+      ok: true,
+      usdcBalance: Number(raw.usdcBalance) || 0,
+      polygonWallet:
+        typeof raw.polygonWallet === 'string' && raw.polygonWallet.trim()
+          ? raw.polygonWallet.trim()
+          : null,
+      exchange: {
+        minUsdc: Number((raw.exchange as { minUsdc?: unknown } | undefined)?.minUsdc) || 0,
+        feePercent: Number((raw.exchange as { feePercent?: unknown } | undefined)?.feePercent) || 0,
+        networkUsdcHint:
+          typeof (raw.exchange as { networkUsdcHint?: unknown } | undefined)?.networkUsdcHint ===
+          'string'
+            ? String((raw.exchange as { networkUsdcHint: string }).networkUsdcHint)
+            : 'Polygon'
+      },
+      minedBalances,
+      withdrawTokens: Array.isArray(raw.withdrawTokens) ? raw.withdrawTokens : [],
+      ledger: Array.isArray(raw.ledger) ? (raw.ledger as WalletLedgerEntry[]) : [],
+      withdrawals: Array.isArray(raw.withdrawals)
+        ? (raw.withdrawals as WalletWithdrawalRow[])
+        : [],
+      notice: typeof raw.notice === 'string' ? raw.notice : undefined
+    };
   } catch {
     return null;
   }
 }
 
-export async function getWalletHistory(limit = 15): Promise<WalletHistoryPayload | null> {
+export async function getWalletHistory(
+  limit = PLAYER_HISTORY_DEFAULT_LIMIT
+): Promise<WalletHistoryPayload | null> {
   try {
-    const lim = Math.min(50, Math.max(1, Math.floor(limit)));
+    const lim = Math.min(
+      PLAYER_HISTORY_MAX_LIMIT,
+      Math.max(1, Math.floor(limit))
+    );
     const res = await apiFetch(`${base}/wallet/history?limit=${lim}`);
     if (!res.ok) return null;
     const j = (await res.json()) as WalletHistoryPayload;
@@ -267,6 +417,27 @@ export async function getWalletHistory(limit = 15): Promise<WalletHistoryPayload
       ledger: Array.isArray(j.ledger) ? j.ledger : [],
       withdrawals: Array.isArray(j.withdrawals) ? j.withdrawals : []
     };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Histórico de reinvestimento (liquidações desk → USDC) — `GET /api/wallet/history`.
+ * `null` = falha de rede/API; `[]` = sucesso sem linhas.
+ */
+export async function getMyReinvestmentHistory(
+  limit = PLAYER_HISTORY_DEFAULT_LIMIT
+): Promise<ReinvestmentHistoryEntry[] | null> {
+  try {
+    const hist = await getWalletHistory(limit);
+    if (!hist?.ok || !Array.isArray(hist.ledger)) return null;
+    const out: ReinvestmentHistoryEntry[] = [];
+    for (const row of hist.ledger) {
+      const e = parseLedgerEntry(row);
+      if (e && e.entryType === WALLET_LEDGER_ENTRY_TYPE_EXCHANGE_LIQUIDATE) out.push(e);
+    }
+    return out;
   } catch {
     return null;
   }

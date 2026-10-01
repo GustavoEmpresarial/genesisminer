@@ -18,6 +18,7 @@
 //! Auth: header `x-mining-worker-token` = `MINING_WORKER_AUTH_TOKEN`.
 
 mod admin_balances;
+mod admin_reinvestment_list;
 mod admin_web3;
 mod admin_withdrawal_status;
 mod config;

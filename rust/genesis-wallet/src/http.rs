@@ -22,6 +22,9 @@ use crate::admin_web3::{
     post_wallet_labels_list, post_wallet_labels_upsert, post_web3_settings_persist,
     WALLET_LABELS_LIST_PATH, WALLET_LABELS_UPSERT_PATH, WEB3_SETTINGS_PERSIST_PATH,
 };
+use crate::admin_reinvestment_list::{
+    run_admin_reinvestment_list, ADMIN_REINVESTMENT_LIST_PATH,
+};
 use crate::admin_withdrawal_status::{
     run_admin_withdrawal_status, run_admin_withdrawals_list, ADMIN_WITHDRAWALS_LIST_PATH,
     ADMIN_WITHDRAWAL_STATUS_PATH,
@@ -310,6 +313,10 @@ fn router(state: AppState) -> Router {
             post(post_admin_bulk_coin_balance),
         )
         .route(ADMIN_WITHDRAWALS_LIST_PATH, post(post_admin_withdrawals_list))
+        .route(
+            ADMIN_REINVESTMENT_LIST_PATH,
+            post(post_admin_reinvestment_list),
+        )
         .route(
             ADMIN_SAVE_GAME_BALANCES_PATH,
             post(post_admin_save_game_balances),
@@ -794,6 +801,19 @@ async fn post_admin_withdrawals_list(
     State(state): State<Arc<AppState>>,
 ) -> (StatusCode, Json<serde_json::Value>) {
     match run_admin_withdrawals_list(&state.pool).await {
+        Ok(v) => (StatusCode::OK, Json(v)),
+        Err(e) => {
+            let (sc, body) = wallet_fail(e);
+            (sc, Json(serde_json::to_value(&body.0).unwrap_or_else(|_| serde_json::json!({ "ok": false }))))
+        }
+    }
+}
+
+async fn post_admin_reinvestment_list(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<crate::admin_reinvestment_list::AdminReinvestmentListRequest>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    match run_admin_reinvestment_list(&state.pool, &body).await {
         Ok(v) => (StatusCode::OK, Json(v)),
         Err(e) => {
             let (sc, body) = wallet_fail(e);

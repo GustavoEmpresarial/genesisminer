@@ -6,7 +6,14 @@ import { MiningCoinGlyph } from '../../../shared/ui/MiningCoinGlyph';
 
 interface ExchangeProps {
   coinBalances: Record<string, number>;
-  miningCoins: { id: string; name: string; symbol?: string; usdcRate: number; showInExchange?: boolean }[];
+  miningCoins: {
+    id: string;
+    name: string;
+    symbol?: string;
+    iconUrl?: string | null;
+    usdcRate: number;
+    showInExchange?: boolean;
+  }[];
   /** Atalhos 10 / 50 / 100 — o servidor recalcula a quantidade. */
   onSellCoin: (coinId: string, percentagePoints: 10 | 50 | 100) => Promise<void>;
   /** Piso e taxa vindos de GET /api/wallet/state (evita divergência com /exchange-settings). */
@@ -92,11 +99,11 @@ export const Exchange: React.FC<ExchangeProps> = ({
           <div className="mt-1">
             <div className="text-xs text-slate-500 dark:text-slate-400 mb-2">{t('wallet.eligiblePairs')}</div>
             <div className="space-y-2">
-              {miningCoins.filter(c => (c as any).showInExchange !== false).length === 0 ? (
+              {miningCoins.filter((c) => c.showInExchange !== false).length === 0 ? (
                 <div className="text-[12px] text-slate-500">{t('wallet.noPairsListed')}</div>
-              ) : miningCoins.filter(c => (c as any).showInExchange !== false).sort((a, b) => {
-                const aUsdc = String(a.name || '').toUpperCase().includes('USDC') || String((a as any).symbol || '').toUpperCase() === 'USDC';
-                const bUsdc = String(b.name || '').toUpperCase().includes('USDC') || String((b as any).symbol || '').toUpperCase() === 'USDC';
+              ) : miningCoins.filter((c) => c.showInExchange !== false).sort((a, b) => {
+                const aUsdc = String(a.name || '').toUpperCase().includes('USDC') || String(a.symbol || '').toUpperCase() === 'USDC';
+                const bUsdc = String(b.name || '').toUpperCase().includes('USDC') || String(b.symbol || '').toUpperCase() === 'USDC';
                 if (aUsdc && !bUsdc) return -1;
                 if (!aUsdc && bUsdc) return 1;
                 return a.name.localeCompare(b.name);
@@ -114,7 +121,12 @@ export const Exchange: React.FC<ExchangeProps> = ({
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-2">
                         <MiningCoinGlyph
-                          coin={{ id: c.id, name: c.name, symbol: c.symbol || c.name }}
+                          coin={{
+                            id: c.id,
+                            name: c.name,
+                            symbol: c.symbol || c.name,
+                            iconUrl: c.iconUrl
+                          }}
                           size={22}
                         />
                         <div className="flex min-w-0 flex-col">

@@ -114,6 +114,10 @@ export const WalletPage: React.FC<WalletPageProps> = ({
   }, [loadAll]);
 
   const withdrawTokens = useMemo(() => {
+    // Admin grava em web3-settings (no-store). wallet/state pode vir de cache com `disabled` antigo.
+    if (Array.isArray(web3Settings?.withdrawTokens) && web3Settings.withdrawTokens.length) {
+      return web3Settings.withdrawTokens;
+    }
     if (walletState?.ok && Array.isArray(walletState.withdrawTokens) && walletState.withdrawTokens.length) {
       return walletState.withdrawTokens as Web3Settings['withdrawTokens'];
     }
@@ -138,6 +142,7 @@ export const WalletPage: React.FC<WalletPageProps> = ({
         id: m.coinId,
         name: m.name,
         symbol: m.symbol || m.name,
+        iconUrl: m.iconUrl,
         usdcRate: m.usdcRate,
         showInExchange: m.showInExchange !== false
       }));
@@ -151,6 +156,7 @@ export const WalletPage: React.FC<WalletPageProps> = ({
         id: m.coinId,
         name: m.name,
         symbol: m.symbol || m.name,
+        iconUrl: m.iconUrl,
         priceUSD: m.usdcRate || 0,
         usdcRate: m.usdcRate
       }));
@@ -458,6 +464,9 @@ export const WalletPage: React.FC<WalletPageProps> = ({
               onNavigate ? () => onNavigate('withdrawal_history' as GameView) : undefined
             }
             onOpenDepositHistory={onNavigate ? () => onNavigate('deposit_history' as GameView) : undefined}
+            onOpenReinvestmentHistory={
+              onNavigate ? () => onNavigate('reinvestment_history' as GameView) : undefined
+            }
           />
           <div className="flex flex-col justify-between rounded-xl border border-slate-200 bg-white p-6 shadow-lg transition-colors dark:border-slate-800 dark:bg-slate-900 md:col-span-2 lg:col-span-2 xl:col-span-2">
             <div>

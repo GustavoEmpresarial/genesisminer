@@ -4,7 +4,7 @@ import { Send, PlusCircle, RefreshCw, Wallet, ShieldCheck, Database } from 'luci
 import { getWeb3Settings, setWeb3Settings } from '../../../../shared/api/wallet';
 import { getMiningCoins } from '../../../../shared/api/admin-economy';
 import { MiningCoin } from '../../lib/adminTypes';
-import { findWithdrawTokenCfg } from '../../../../shared/utils/withdrawTokenMatch';
+import { findWithdrawTokenCfg, isWithdrawTokenDisabled } from '../../../../shared/utils/withdrawTokenMatch';
 
 type TokenCfg = {
   name: string;
@@ -203,12 +203,24 @@ export const Web3Withdraw: React.FC<Web3WithdrawProps> = ({ readOnly = false }) 
     });
     const deduped: TokenCfg[] = [];
     for (const t of mergedTokens) {
+      const normalized: TokenCfg = { ...t, disabled: isWithdrawTokenDisabled(t.disabled) };
       const c = miningCoins.find((mc) => mc.id === t.coinId || mc.symbol === t.symbol || mc.symbol === t.name);
       const idx = c
         ? deduped.findIndex((d) => findWithdrawTokenCfg([d], c) != null)
         : deduped.findIndex((d) => d.name === t.name && d.symbol === t.symbol);
-      if (idx >= 0) deduped[idx] = { ...deduped[idx], ...t };
-      else deduped.push(t);
+      if (idx >= 0) {
+        const prev = deduped[idx];
+        const merged: TokenCfg = { ...prev, ...normalized };
+        const coinId = c ? String(c.id).trim().toLowerCase() : '';
+        const prevOwns = coinId !== '' && String(prev.coinId ?? '').trim().toLowerCase() === coinId;
+        const nextOwns = coinId !== '' && String(normalized.coinId ?? '').trim().toLowerCase() === coinId;
+        if (prevOwns && !nextOwns) {
+          merged.disabled = isWithdrawTokenDisabled(prev.disabled);
+        }
+        deduped[idx] = merged;
+      } else {
+        deduped.push(normalized);
+      }
     }
     await setWeb3Settings({
       ...s!,
@@ -337,11 +349,11 @@ export const Web3Withdraw: React.FC<Web3WithdrawProps> = ({ readOnly = false }) 
                             type="checkbox"
                             className="sr-only peer"
                             disabled={readOnly}
-                            checked={!cfg.disabled}
+                            checked={!isWithdrawTokenDisabled(cfg.disabled)}
                             onChange={(e) => updateTokenCfg(coin, 'disabled', !e.target.checked)}
                           />
                           <div className="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-600"></div>
-                          <span className="ms-2 text-[10px] font-bold text-slate-400 uppercase">{!cfg.disabled ? 'Ativado' : 'Desativado'}</span>
+                          <span className="ms-2 text-[10px] font-bold text-slate-400 uppercase">{!isWithdrawTokenDisabled(cfg.disabled) ? 'Ativado' : 'Desativado'}</span>
                         </label>
                       </div>
                       <div className="text-right">

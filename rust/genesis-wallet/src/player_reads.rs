@@ -23,11 +23,18 @@ const HISTORY_MAX_LIMIT: i64 = 50;
 /// Node `PLAYER_HISTORY_DEFAULT_LIMIT`.
 const PLAYER_HISTORY_DEFAULT_LIMIT: i64 = 300;
 /// Node `PLAYER_HISTORY_MAX_LIMIT`.
-const PLAYER_HISTORY_MAX_LIMIT: i64 = 500;
+pub const PLAYER_HISTORY_MAX_LIMIT: i64 = 500;
 /// Node `MINED_COIN_AMOUNT_DECIMALS`.
 const MINED_COIN_AMOUNT_DECIMALS: i32 = 8;
 const DEFAULT_DEPOSIT_NETWORK: &str = "polygon";
+/// Ledger row type for exchange desk liquidations (`wallet_ledger_entries.entry_type`).
+pub const WALLET_LEDGER_ENTRY_TYPE_EXCHANGE_LIQUIDATE: &str = "exchange_liquidate";
+/// Floor for reinvestment history APIs (`0` = include all `exchange_liquidate` rows).
+/// Previously `2026-09-17T21:00:00.000Z` hid ~98% of desk liquidations from admin reports.
+pub const REINVESTMENT_HISTORY_SINCE_MS: i64 = 0;
+const REINVESTMENT_HISTORY_SINCE_UNIX_SECS: i64 = 0;
 
+const _: () = assert!(REINVESTMENT_HISTORY_SINCE_MS == REINVESTMENT_HISTORY_SINCE_UNIX_SECS * 1000);
 const _: () = assert!((EXCHANGE_MIN_USDC_DEFAULT * 10.0) as i64 == 1);
 const _: () = assert!(EXCHANGE_FEE_PERCENT_MAX as i64 == 100);
 const _: () = assert!(WALLET_LEDGER_LIMIT == 30);
@@ -110,7 +117,7 @@ pub async fn run_wallet_state(pool: &Pool, user_id: i64) -> Result<Value, Player
     let coins = conn
         .query(
             "SELECT c.id, c.name, c.symbol, c.usdc_rate::text AS usdc_rate, c.price_usd::text AS price_usd,
-                    COALESCE(c.show_in_exchange, 1) AS sx, b.amount::text AS amount
+                    c.icon_url, COALESCE(c.show_in_exchange, 1) AS sx, b.amount::text AS amount
                FROM mining_coins c
                LEFT JOIN coin_balances b ON b.coin_id = c.id AND b.user_id = $1
               WHERE c.is_active = 1
@@ -158,6 +165,7 @@ pub async fn run_wallet_state(pool: &Pool, user_id: i64) -> Result<Value, Player
                 "coinId": string_cell(r, "id"),
                 "name": string_cell(r, "name"),
                 "symbol": string_cell(r, "symbol"),
+                "iconUrl": opt_string(r, "icon_url"),
                 "usdcRate": rate,
                 "showInExchange": i32_cell(r, "sx") != 0,
                 "minedBalance": bal,
@@ -188,13 +196,28 @@ pub async fn run_wallet_history(
 ) -> Result<Value, PlayerReadError> {
     let conn = pool.get().await?;
     let uid = pg_user_id(user_id)?;
-    let lim = clamp_limit(limit, WALLET_LEDGER_LIMIT, HISTORY_MAX_LIMIT);
+    let ledger_lim = clamp_limit(
+        limit,
+        PLAYER_HISTORY_DEFAULT_LIMIT,
+        PLAYER_HISTORY_MAX_LIMIT,
+    );
+    let withdrawals_lim = clamp_limit(limit, WALLET_LEDGER_LIMIT, HISTORY_MAX_LIMIT);
     let led = conn
         .query(
-            "SELECT id::text, coin_id, sold_crypto::text, gross_usdc::text, fee_usdc::text, net_usdc::text,
-                    created_at::text, entry_type
-               FROM wallet_ledger_entries WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
-            &[&uid, &lim],
+            "SELECT e.id::text, e.coin_id, COALESCE(c.symbol, '') AS coin_symbol,
+                    e.sold_crypto::text, e.gross_usdc::text, e.fee_usdc::text, e.net_usdc::text,
+                    e.created_at::text, e.entry_type
+               FROM wallet_ledger_entries e
+               LEFT JOIN mining_coins c ON e.coin_id = c.id
+              WHERE e.user_id = $1 AND e.entry_type = $2 AND e.created_at >= $3
+              ORDER BY e.created_at DESC
+              LIMIT $4",
+            &[
+                &uid,
+                &WALLET_LEDGER_ENTRY_TYPE_EXCHANGE_LIQUIDATE,
+                &REINVESTMENT_HISTORY_SINCE_MS,
+                &ledger_lim,
+            ],
         )
         .await?;
     let wd = conn
@@ -202,7 +225,7 @@ pub async fn run_wallet_history(
             "SELECT id::text, coin_id, amount_crypto::text, fee_amount::text, net_amount::text, status,
                     wallet_address, tx_hash, created_at::text
                FROM withdrawal_requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2",
-            &[&uid, &lim],
+            &[&uid, &withdrawals_lim],
         )
         .await?;
     Ok(json!({ "ok": true, "ledger": rows_to_objects(&led), "withdrawals": rows_to_objects(&wd) }))
@@ -503,8 +526,21 @@ fn i32_cell(row: &tokio_postgres::Row, col: &str) -> i32 {
     if let Ok(v) = row.try_get::<_, i32>(col) {
         return v;
     }
+    if let Ok(Some(v)) = row.try_get::<_, Option<i32>>(col) {
+        return v;
+    }
     if let Ok(v) = row.try_get::<_, i64>(col) {
         return i32::try_from(v).unwrap_or(0);
+    }
+    // PG `smallint` → `i16` (e.g. mining_coins.show_in_exchange / COALESCE AS sx).
+    if let Ok(v) = row.try_get::<_, i16>(col) {
+        return i32::from(v);
+    }
+    if let Ok(Some(v)) = row.try_get::<_, Option<i16>>(col) {
+        return i32::from(v);
+    }
+    if let Ok(v) = row.try_get::<_, bool>(col) {
+        return if v { 1 } else { 0 };
     }
     0
 }
@@ -527,4 +563,14 @@ fn opt_i64(row: &tokio_postgres::Row, col: &str) -> Option<i64> {
         return Some(v);
     }
     None
+}
+
+#[cfg(test)]
+mod reinvestment_history_cutoff_tests {
+    use super::REINVESTMENT_HISTORY_SINCE_MS;
+
+    #[test]
+    fn reinvestment_history_since_includes_full_ledger() {
+        assert_eq!(REINVESTMENT_HISTORY_SINCE_MS, 0);
+    }
 }

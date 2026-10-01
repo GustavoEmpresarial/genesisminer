@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { getWithdrawalRequests, updateWithdrawalStatus } from '../../../shared/api/admin-legacy';
 import { getWeb3Settings } from '../../../shared/api/wallet';
 import { Web3Settings } from '../lib/adminTypes';
-import { findWithdrawTokenCfg } from '../../../shared/utils/withdrawTokenMatch';
+import { findWithdrawTokenCfg, isWithdrawTokenDisabled } from '../../../shared/utils/withdrawTokenMatch';
 
 import { Search, Filter, CheckCircle, XCircle, Clock, Wallet, DollarSign, Coins, ExternalLink, RefreshCw } from 'lucide-react';
 
@@ -143,7 +143,7 @@ export const AdminManualWithdrawals: React.FC = () => {
             id: req.coinId,
             symbol: req.coinSymbol
         });
-        if (tokenConfig?.disabled) {
+        if (isWithdrawTokenDisabled(tokenConfig?.disabled)) {
             alert(`Configuração de saque desativada para ${req.coinSymbol}`);
             return;
         }

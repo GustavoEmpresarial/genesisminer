@@ -84,7 +84,20 @@ export const walletEn: MessageTree = {
   withdrawHistorySubtitle:
     'Your withdrawal requests — date, token, USDC value, destination wallet and status.',
   exchangeDeskTitle: 'Exchange desk',
-  liquidateConfirm: 'Liquidate all balance of this coin to USDC?'
+  liquidateConfirm: 'Liquidate all balance of this coin to USDC?',
+  reinvestmentHistoryTitle: 'USDC reinvestment history',
+  reinvestmentHistorySubtitle:
+    'Exchange desk liquidations — mined crypto sold for USDC credited to your balance.',
+  openReinvestmentHistory: 'View reinvestment history',
+  reinvestmentHistoryEmpty: 'No reinvestments recorded yet.',
+  reinvestmentHistoryLoading: 'Loading reinvestments…',
+  reinvestmentHistoryLoadError: 'Could not load reinvestment history. Try again.',
+  searchReinvestmentCoin: 'Search by coin…',
+  colCoin: 'Coin',
+  colSold: 'Sold',
+  colGrossUsdc: 'Gross USDC',
+  colFeeUsdc: 'Fee',
+  colNetUsdc: 'Net USDC'
 };
 
 export const walletPt: MessageTree = {
@@ -167,7 +180,21 @@ export const walletPt: MessageTree = {
   withdrawHistorySubtitle:
     'Os teus pedidos de saque — data, token, valor em USDC, carteira de destino e estado.',
   exchangeDeskTitle: 'Desk de câmbio',
-  liquidateConfirm: 'Liquidar todo o saldo desta moeda para USDC?'
+  liquidateConfirm: 'Liquidar todo o saldo desta moeda para USDC?',
+  reinvestmentHistoryTitle: 'Histórico de reinvestimento USDC',
+  reinvestmentHistorySubtitle:
+    'Liquidações no desk — cripto minerada vendida por USDC creditados no teu saldo.',
+  openReinvestmentHistory: 'Ver histórico de reinvestimento',
+  reinvestmentHistoryEmpty: 'Ainda não tens reinvestimentos registados.',
+  reinvestmentHistoryLoading: 'A carregar reinvestimentos…',
+  reinvestmentHistoryLoadError:
+    'Não foi possível carregar o histórico de reinvestimento. Tenta novamente.',
+  searchReinvestmentCoin: 'Pesquisar por moeda…',
+  colCoin: 'Moeda',
+  colSold: 'Vendido',
+  colGrossUsdc: 'Bruto USDC',
+  colFeeUsdc: 'Taxa',
+  colNetUsdc: 'Líquido USDC'
 };
 
 export const walletEs: MessageTree = {
@@ -250,5 +277,19 @@ export const walletEs: MessageTree = {
   withdrawHistorySubtitle:
     'Tus solicitudes de retiro — fecha, token, valor en USDC, billetera de destino y estado.',
   exchangeDeskTitle: 'Mesa de cambio',
-  liquidateConfirm: '¿Liquidar todo el saldo de esta moneda a USDC?'
+  liquidateConfirm: '¿Liquidar todo el saldo de esta moneda a USDC?',
+  reinvestmentHistoryTitle: 'Historial de reinversión en USDC',
+  reinvestmentHistorySubtitle:
+    'Liquidaciones en el desk — cripto minada vendida por USDC acreditados en tu saldo.',
+  openReinvestmentHistory: 'Ver historial de reinversión',
+  reinvestmentHistoryEmpty: 'Aún no hay reinversiones registradas.',
+  reinvestmentHistoryLoading: 'Cargando reinversiones…',
+  reinvestmentHistoryLoadError:
+    'No se pudo cargar el historial de reinversión. Inténtalo de nuevo.',
+  searchReinvestmentCoin: 'Buscar por moneda…',
+  colCoin: 'Moneda',
+  colSold: 'Vendido',
+  colGrossUsdc: 'Bruto USDC',
+  colFeeUsdc: 'Comisión',
+  colNetUsdc: 'Neto USDC'
 };

@@ -262,11 +262,12 @@ async fn run_inner<C: GenericClient>(
     let Some(coin) = coin_rows.first() else {
         return Err(WalletError::not_found("Coin not found or inactive."));
     };
-    let is_active: i32 = coin.get("is_active");
+    let is_active = i32_flag_cell(coin, "is_active");
     if is_active == 0 {
         return Err(WalletError::not_found("Coin not found or inactive."));
     }
-    let sx: i32 = coin.get("sx");
+    // `show_in_exchange` is PG smallint; COALESCE AS sx may still decode as i16.
+    let sx = i32_flag_cell(coin, "sx");
     if sx == 0 {
         return Err(WalletError::unprocessable(
             "This coin is not available on the exchange desk.",
@@ -469,4 +470,24 @@ async fn run_inner<C: GenericClient>(
     }
 
     Ok(out)
+}
+
+/// Read int-like PG flag cells (`integer` / `smallint` / bool) as i32; missing → 0.
+fn i32_flag_cell(row: &tokio_postgres::Row, col: &str) -> i32 {
+    if let Ok(v) = row.try_get::<_, i32>(col) {
+        return v;
+    }
+    if let Ok(Some(v)) = row.try_get::<_, Option<i32>>(col) {
+        return v;
+    }
+    if let Ok(v) = row.try_get::<_, i16>(col) {
+        return i32::from(v);
+    }
+    if let Ok(Some(v)) = row.try_get::<_, Option<i16>>(col) {
+        return i32::from(v);
+    }
+    if let Ok(v) = row.try_get::<_, bool>(col) {
+        return if v { 1 } else { 0 };
+    }
+    0
 }
