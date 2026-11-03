@@ -39,7 +39,7 @@
     "multer": "^2.3.0",
     "pg": "^8.20.0",
     "prisma": "^6.19.0",
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
