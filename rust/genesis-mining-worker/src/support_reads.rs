@@ -40,6 +40,8 @@ const _: () = assert!(USER_HISTORY_DEFAULT_LIMIT == 100);
 
 pub const SUPPORT_LIST_MINE_PATH: &str = "/v1/support/list-mine";
 pub const SUPPORT_GET_PATH: &str = "/v1/support/get";
+pub const SUPPORT_GUEST_LIST_PATH: &str = "/v1/support/guest-list";
+pub const SUPPORT_GUEST_GET_PATH: &str = "/v1/support/guest-get";
 pub const SUPPORT_STATE_PATH: &str = "/v1/support/state";
 pub const SUPPORT_ARCHIVE_PATH: &str = "/v1/support/archive";
 pub const SUPPORT_REOPEN_PATH: &str = "/v1/support/reopen";
@@ -50,6 +52,10 @@ pub const SUPPORT_ADMIN_STATS_PATH: &str = "/v1/support/admin/stats";
 pub const SUPPORT_TICKET_FOR_PLAYER_PATH: &str = "/v1/support/ticket-for-player";
 pub const SUPPORT_ATTACHMENT_REFERENCED_PATH: &str = "/v1/support/attachment-referenced";
 
+/// Client `SUPPORT_CONTACT_EMAIL_MAX` (`formLimits.ts`).
+const CONTACT_EMAIL_MAX: usize = 254;
+const _: () = assert!(CONTACT_EMAIL_MAX == 254);
+
 const SUMMARY_SELECT: &str = "SELECT t.id, t.subject, t.status, t.created_at,
         (SELECT COUNT(*)::int FROM support_ticket_replies r WHERE r.ticket_id = t.id) AS admin_reply_count,
         COALESCE((SELECT MAX(r.created_at) FROM support_ticket_replies r WHERE r.ticket_id = t.id), 0) AS last_admin_at,
@@ -57,10 +63,13 @@ const SUMMARY_SELECT: &str = "SELECT t.id, t.subject, t.status, t.created_at,
       FROM support_tickets t";
 
 const ADMIN_TICKET_SELECT: &str =
-    "SELECT t.id, t.user_id, t.subject, t.message, t.attachments, t.status, t.created_at,
-           u.username, u.email
+    "SELECT t.id,
+            COALESCE(t.user_id, 0) AS user_id,
+            t.subject, t.message, t.attachments, t.status, t.created_at,
+            COALESCE(u.username, t.contact_name, 'Guest') AS username,
+            COALESCE(u.email, t.contact_email, '') AS email
     FROM support_tickets t
-    JOIN users u ON u.id = t.user_id";
+    LEFT JOIN users u ON u.id = t.user_id";
 
 const HISTORY_SELECT: &str = "SELECT
       t.id,
@@ -133,6 +142,71 @@ pub struct SupportListMineRequest {
 pub struct SupportGetRequest {
     pub user_id: i64,
     pub ticket_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportGuestListRequest {
+    pub contact_email: String,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportGuestGetRequest {
+    pub contact_email: String,
+    pub ticket_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportGuestSummaryRow {
+    pub id: String,
+    pub subject: String,
+    pub status: String,
+    pub created_at: i64,
+    pub contact_name: String,
+    pub contact_email: String,
+    pub admin_reply_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportGuestListResponse {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tickets: Option<Vec<SupportGuestSummaryRow>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportGuestDetailRow {
+    pub id: String,
+    pub subject: String,
+    pub status: String,
+    pub created_at: i64,
+    pub contact_name: String,
+    pub contact_email: String,
+    pub admin_reply_count: i32,
+    pub message: String,
+    pub attachments: serde_json::Value,
+    pub replies: Vec<SupportAdminReplyRow>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportGuestGetResponse {
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ticket: Option<SupportGuestDetailRow>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -704,6 +778,138 @@ pub async fn run_support_list_mine(
     })
 }
 
+fn normalize_guest_email(raw: &str) -> Result<String, SupportReadError> {
+    let normalized = raw.trim().to_lowercase();
+    if normalized.is_empty() || normalized.len() > CONTACT_EMAIL_MAX {
+        return Err(SupportReadError::validation("Invalid email."));
+    }
+    let at = match normalized.rfind('@') {
+        Some(i) if i >= 1 && i < normalized.len() - 1 => i,
+        _ => return Err(SupportReadError::validation("Invalid email.")),
+    };
+    let domain = &normalized[at + 1..];
+    if domain.is_empty() || domain.contains("..") || domain.starts_with('.') || domain.ends_with('.')
+    {
+        return Err(SupportReadError::validation("Invalid email."));
+    }
+    Ok(normalized)
+}
+
+pub async fn run_support_guest_list(
+    pool: &Pool,
+    req: SupportGuestListRequest,
+) -> Result<SupportGuestListResponse, SupportReadError> {
+    let email = normalize_guest_email(&req.contact_email)?;
+    let limit = clamp_limit(req.limit, SUMMARIES_MAX_LIMIT, SUMMARIES_MAX_LIMIT);
+    let client = pool
+        .get()
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+    let rows = client
+        .query(
+            "SELECT t.id, t.subject, t.status, t.created_at,
+                    COALESCE(t.contact_name, '') AS contact_name,
+                    COALESCE(t.contact_email, '') AS contact_email,
+                    (SELECT COUNT(*)::int FROM support_ticket_replies r WHERE r.ticket_id = t.id) AS admin_reply_count
+               FROM support_tickets t
+              WHERE t.user_id IS NULL
+                AND lower(btrim(COALESCE(t.contact_email, ''))) = $1
+              ORDER BY t.created_at DESC
+              LIMIT $2",
+            &[&email, &limit],
+        )
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+    let mut tickets = Vec::with_capacity(rows.len());
+    for row in &rows {
+        tickets.push(SupportGuestSummaryRow {
+            id: row
+                .try_get("id")
+                .map_err(|e| SupportReadError::internal(e.to_string()))?,
+            subject: row
+                .try_get("subject")
+                .map_err(|e| SupportReadError::internal(e.to_string()))?,
+            status: row
+                .try_get("status")
+                .map_err(|e| SupportReadError::internal(e.to_string()))?,
+            created_at: i64_col(row, "created_at")?,
+            contact_name: row
+                .try_get("contact_name")
+                .map_err(|e| SupportReadError::internal(e.to_string()))?,
+            contact_email: row
+                .try_get("contact_email")
+                .map_err(|e| SupportReadError::internal(e.to_string()))?,
+            admin_reply_count: i32_col(row, "admin_reply_count")?,
+        });
+    }
+    Ok(SupportGuestListResponse {
+        ok: true,
+        tickets: Some(tickets),
+        error: None,
+        code: None,
+    })
+}
+
+pub async fn run_support_guest_get(
+    pool: &Pool,
+    req: SupportGuestGetRequest,
+) -> Result<SupportGuestGetResponse, SupportReadError> {
+    let email = normalize_guest_email(&req.contact_email)?;
+    let ticket_id = trim_ticket_id(&req.ticket_id)?;
+    let client = pool
+        .get()
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+    let row = client
+        .query_opt(
+            "SELECT t.id, t.subject, t.status, t.created_at, t.message, t.attachments,
+                    COALESCE(t.contact_name, '') AS contact_name,
+                    COALESCE(t.contact_email, '') AS contact_email,
+                    (SELECT COUNT(*)::int FROM support_ticket_replies r WHERE r.ticket_id = t.id) AS admin_reply_count
+               FROM support_tickets t
+              WHERE t.id = $1
+                AND t.user_id IS NULL
+                AND lower(btrim(COALESCE(t.contact_email, ''))) = $2
+              LIMIT 1",
+            &[&ticket_id, &email],
+        )
+        .await
+        .map_err(|e| SupportReadError::internal(e.to_string()))?;
+    let Some(row) = row else {
+        return Err(SupportReadError::not_found());
+    };
+    let replies = list_admin_replies_for_ticket(&client, &ticket_id, false).await?;
+    Ok(SupportGuestGetResponse {
+        ok: true,
+        ticket: Some(SupportGuestDetailRow {
+            id: row
+                .try_get("id")
+                .map_err(|e| SupportReadError::internal(e.to_string()))?,
+            subject: row
+                .try_get("subject")
+                .map_err(|e| SupportReadError::internal(e.to_string()))?,
+            status: row
+                .try_get("status")
+                .map_err(|e| SupportReadError::internal(e.to_string()))?,
+            created_at: i64_col(&row, "created_at")?,
+            contact_name: row
+                .try_get("contact_name")
+                .map_err(|e| SupportReadError::internal(e.to_string()))?,
+            contact_email: row
+                .try_get("contact_email")
+                .map_err(|e| SupportReadError::internal(e.to_string()))?,
+            admin_reply_count: i32_col(&row, "admin_reply_count")?,
+            message: row
+                .try_get("message")
+                .map_err(|e| SupportReadError::internal(e.to_string()))?,
+            attachments: json_col(&row, "attachments"),
+            replies,
+        }),
+        error: None,
+        code: None,
+    })
+}
+
 pub async fn run_support_get(
     pool: &Pool,
     req: SupportGetRequest,
@@ -717,8 +923,8 @@ pub async fn run_support_get(
     let row = client
         .query_opt(
             "SELECT id, user_id, subject, message, attachments, status, created_at
-             FROM support_tickets WHERE id = $1",
-            &[&ticket_id],
+             FROM support_tickets WHERE id = $1 AND user_id = $2",
+            &[&ticket_id, &user_id],
         )
         .await
         .map_err(|e| SupportReadError::internal(e.to_string()))?;
@@ -726,9 +932,6 @@ pub async fn run_support_get(
         return Err(SupportReadError::not_found());
     };
     let ticket = map_ticket_detail(&row)?;
-    if ticket.user_id != i64::from(user_id) {
-        return Err(SupportReadError::not_found());
-    }
     let admin_replies = list_admin_replies_for_ticket(&client, &ticket_id, false).await?;
     let player_replies = list_player_replies_for_ticket(&client, &ticket_id, false).await?;
     Ok(SupportGetResponse {
@@ -1092,7 +1295,7 @@ pub async fn run_support_ticket_for_player(
         .map_err(|e| SupportReadError::internal(e.to_string()))?;
     let row = client
         .query_opt(
-            "SELECT id, user_id, status FROM support_tickets WHERE id = $1",
+            "SELECT id, COALESCE(user_id, 0) AS user_id, status FROM support_tickets WHERE id = $1",
             &[&ticket_id],
         )
         .await

@@ -79,6 +79,7 @@ fn router_arc(state: Arc<AppState>) -> Router {
         .route("/api/session", get(get_session))
         .route("/api/site-status", get(site_status))
         .merge(crate::topidle::router())
+        .merge(crate::public_support::router())
         .route("/api/auth/refresh", post(post_refresh))
         .route("/api/logout", post(post_logout))
         .route(

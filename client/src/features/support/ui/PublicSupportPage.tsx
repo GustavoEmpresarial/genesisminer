@@ -7,6 +7,7 @@ import {
   type PublicSupportTicketDetail,
   type PublicSupportTicketSummary
 } from '../../../shared/api/public-support';
+import { useTurnstileSiteKey, useTurnstileWidget } from '../../../shared/auth/turnstile';
 import {
   SUPPORT_ATTACHMENT_MAX_BYTES,
   SUPPORT_ATTACHMENT_MAX_COUNT,
@@ -16,9 +17,12 @@ import {
   SUPPORT_TICKET_MESSAGE_MAX,
   SUPPORT_TICKET_SUBJECT_MAX
 } from '../../../shared/constants/formLimits';
+import { AuthTurnstileBox } from '../../../shared/ui/auth/AuthFields';
 import { SUPPORT_FILE_ACCEPT } from '../lib/supportAccept';
 import { mergeSupportPicks } from '../lib/mergeSupportPicks';
 import { prepareSupportAttachment } from '../lib/prepareSupportAttachment';
+
+const TURNSTILE_SUPPORT_CONTAINER_ID = 'cf-turnstile-public-support';
 
 type Tab = 'new' | 'lookup';
 
@@ -41,6 +45,14 @@ export function PublicSupportPage({ onBackHome, onGoLogin }: PublicSupportPagePr
   const [lookupEmail, setLookupEmail] = useState('');
   const [tickets, setTickets] = useState<PublicSupportTicketSummary[]>([]);
   const [detail, setDetail] = useState<PublicSupportTicketDetail | null>(null);
+
+  const turnstileSiteKey = useTurnstileSiteKey();
+  const { turnstileToken, resetTurnstile } = useTurnstileWidget({
+    siteKey: turnstileSiteKey,
+    enabled: turnstileSiteKey.length > 0,
+    containerId: TURNSTILE_SUPPORT_CONTAINER_ID
+  });
+  const captchaBlocking = turnstileSiteKey.length > 0 && !turnstileToken;
 
   const fileLabel = useMemo(() => {
     if (files.length === 0) return 'Anexar imagens (opcional)';
@@ -92,17 +104,30 @@ export function PublicSupportPage({ onBackHome, onGoLogin }: PublicSupportPagePr
     e.preventDefault();
     setError(null);
     setSuccess(null);
+    if (captchaBlocking) {
+      setError('Completa a verificação antes de enviar.');
+      return;
+    }
     setBusy(true);
     try {
-      const res = await createPublicSupportTicket({ name, email, subject, message, files });
+      const res = await createPublicSupportTicket({
+        name,
+        email,
+        subject,
+        message,
+        files,
+        turnstileToken: turnstileToken || undefined
+      });
       if (!res.ok) {
         setError(res.error || 'Falha ao enviar.');
+        resetTurnstile();
         return;
       }
       setSuccess(`Ticket criado: ${res.id}`);
       setSubject('');
       setMessage('');
       setFiles([]);
+      resetTurnstile();
       setLookupEmail(email.trim());
       setTab('lookup');
       const listed = await listPublicSupportTicketsByEmail(email);
@@ -292,9 +317,10 @@ export function PublicSupportPage({ onBackHome, onGoLogin }: PublicSupportPagePr
                   </ul>
                 ) : null}
               </div>
+              <AuthTurnstileBox containerId={TURNSTILE_SUPPORT_CONTAINER_ID} siteKey={turnstileSiteKey} />
               <button
                 type="submit"
-                disabled={busy}
+                disabled={busy || captchaBlocking}
                 className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-400 to-amber-600 px-4 py-3 text-sm font-bold text-stone-950 disabled:opacity-50 sm:w-auto"
               >
                 {busy ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
@@ -333,7 +359,7 @@ export function PublicSupportPage({ onBackHome, onGoLogin }: PublicSupportPagePr
                   </button>
                   <h2 className="font-bold text-slate-900 dark:text-white">{detail.subject}</h2>
                   <p className="text-xs text-slate-500">
-                    {detail.status} · respostas admin: {detail.admin_reply_count}
+                    {detail.status} · respostas admin: {detail.adminReplyCount}
                   </p>
                   <p className="whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">{detail.message}</p>
                   {Array.isArray(detail.attachments) && detail.attachments.length > 0 ? (
@@ -365,7 +391,7 @@ export function PublicSupportPage({ onBackHome, onGoLogin }: PublicSupportPagePr
                       detail.replies.map((r) => (
                         <div key={r.id} className="rounded-lg bg-slate-50 p-3 text-sm dark:bg-slate-950">
                           <div className="mb-1 text-[10px] font-bold text-amber-700 dark:text-amber-400">
-                            {r.admin_username}
+                            {r.adminUsername}
                           </div>
                           <p className="whitespace-pre-wrap text-slate-700 dark:text-slate-200">{r.message}</p>
                         </div>
@@ -384,7 +410,7 @@ export function PublicSupportPage({ onBackHome, onGoLogin }: PublicSupportPagePr
                       >
                         <div className="font-semibold text-slate-900 dark:text-white">{t.subject}</div>
                         <div className="text-[11px] text-slate-500">
-                          {t.status} · {t.admin_reply_count} resposta(s)
+                          {t.status} · {t.adminReplyCount} resposta(s)
                         </div>
                       </button>
                     </li>

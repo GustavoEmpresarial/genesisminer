@@ -1,5 +1,6 @@
 /**
  * Public (pré-login) support API — create ticket + lookup by email.
+ * Worker/API respondem camelCase (igual ao suporte autenticado).
  */
 import { apiFetch } from './http';
 
@@ -7,10 +8,10 @@ export type PublicSupportTicketSummary = {
   id: string;
   subject: string;
   status: string;
-  created_at: number | string;
-  contact_name: string;
-  contact_email: string;
-  admin_reply_count: number;
+  createdAt: number | string;
+  contactName: string;
+  contactEmail: string;
+  adminReplyCount: number;
 };
 
 export type PublicSupportTicketDetail = PublicSupportTicketSummary & {
@@ -20,8 +21,8 @@ export type PublicSupportTicketDetail = PublicSupportTicketSummary & {
     id: string;
     message: string;
     attachments: unknown;
-    created_at: number | string;
-    admin_username: string;
+    createdAt: number | string;
+    adminUsername: string;
   }>;
 };
 
@@ -31,12 +32,14 @@ export async function createPublicSupportTicket(input: {
   subject: string;
   message: string;
   files: File[];
+  turnstileToken?: string;
 }): Promise<{ ok: boolean; id?: string; error?: string; code?: string }> {
   const fd = new FormData();
   fd.set('name', input.name);
   fd.set('email', input.email);
   fd.set('subject', input.subject);
   fd.set('message', input.message);
+  if (input.turnstileToken) fd.set('turnstileToken', input.turnstileToken);
   for (const f of input.files) fd.append('files', f);
   try {
     const res = await apiFetch('/api/public/support/tickets', { method: 'POST', body: fd });

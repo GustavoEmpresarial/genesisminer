@@ -1041,15 +1041,17 @@ model player_news_submissions {
 
 // --- Suporte e moderação de conteúdo ---
 
-/** Ticket de suporte aberto por um utilizador. */
+/** Ticket de suporte — jogador autenticado (`user_id`) ou guest (`contact_*`). */
 model support_tickets {
-  id          String @id
-  user_id     Int
-  subject     String
-  message     String
-  attachments Json   @default(dbgenerated("'[]'::jsonb"))
-  status      String @default("open")
-  created_at  BigInt
+  id            String  @id
+  user_id       Int?
+  subject       String
+  message       String
+  attachments   Json    @default(dbgenerated("'[]'::jsonb"))
+  status        String  @default("open")
+  created_at    BigInt
+  contact_name  String?
+  contact_email String?
 
   @@map("support_tickets")
 }

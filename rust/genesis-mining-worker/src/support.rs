@@ -59,8 +59,16 @@ const SHA256_LEN: usize = 32;
 const INT32_LEN: usize = 4;
 
 pub const SUPPORT_SUBMIT_PATH: &str = "/v1/support/submit";
+pub const SUPPORT_GUEST_SUBMIT_PATH: &str = "/v1/support/guest-submit";
 pub const SUPPORT_REPLY_PATH: &str = "/v1/support/reply";
 pub const SUPPORT_ADMIN_REPLY_PATH: &str = "/v1/support/admin-reply";
+
+/// Client `SUPPORT_CONTACT_NAME_MAX` (`formLimits.ts`).
+const CONTACT_NAME_MAX: usize = 80;
+/// Client `SUPPORT_CONTACT_EMAIL_MAX` / RFC 5321 (`formLimits.ts`).
+const CONTACT_EMAIL_MAX: usize = 254;
+const _: () = assert!(CONTACT_NAME_MAX == 80);
+const _: () = assert!(CONTACT_EMAIL_MAX == 254);
 
 const _: () = assert!(LOCK_TIMEOUT_MS == 45_000);
 const _: () = assert!(HASH_INT32_BYTE_OFFSET == INT32_LEN);
@@ -83,6 +91,18 @@ pub struct SupportSubmitRequest {
     #[serde(default)]
     pub attachments: Vec<SupportAttachmentItem>,
     pub idempotency_key: Option<String>,
+}
+
+/// Pré-login ticket — `user_id` NULL + `contact_*` (scripts/ops/support-guest-tickets.sql).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupportGuestSubmitRequest {
+    pub contact_name: String,
+    pub contact_email: String,
+    pub subject: String,
+    pub message: String,
+    #[serde(default)]
+    pub attachments: Vec<SupportAttachmentItem>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -360,6 +380,67 @@ async fn insert_ticket<C: GenericClient>(
     Ok(())
 }
 
+async fn insert_guest_ticket<C: GenericClient>(
+    tx: &C,
+    id: &str,
+    contact_name: &str,
+    contact_email: &str,
+    subject: &str,
+    message: &str,
+    attachments: &serde_json::Value,
+    created_at: i64,
+) -> Result<(), SupportApiError> {
+    tx.execute(
+        "INSERT INTO support_tickets
+            (id, user_id, subject, message, attachments, status, created_at, contact_name, contact_email)
+         VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8)",
+        &[
+            &id,
+            &subject,
+            &message,
+            &Json(attachments),
+            &TICKET_STATUS_OPEN,
+            &created_at,
+            &contact_name,
+            &contact_email,
+        ],
+    )
+    .await
+    .map_err(|e| SupportApiError::internal(e.to_string()))?;
+    Ok(())
+}
+
+fn normalize_contact_email(raw: &str) -> Result<String, SupportApiError> {
+    let normalized = raw.trim().to_lowercase();
+    if normalized.is_empty() {
+        return Err(SupportApiError::validation("Enter your email."));
+    }
+    if normalized.len() > CONTACT_EMAIL_MAX {
+        return Err(SupportApiError::validation(format!(
+            "Email may be at most {CONTACT_EMAIL_MAX} characters."
+        )));
+    }
+    let at = match normalized.rfind('@') {
+        Some(i) if i >= 1 && i < normalized.len() - 1 => i,
+        _ => return Err(SupportApiError::validation("Invalid email.")),
+    };
+    let local = &normalized[..at];
+    let domain = &normalized[at + 1..];
+    if local.is_empty()
+        || domain.is_empty()
+        || domain.contains("..")
+        || domain.starts_with('.')
+        || domain.ends_with('.')
+        || local.chars().any(|c| matches!(c, '<' | '>' | '\'' | '"' | '\\'))
+        || domain
+            .chars()
+            .any(|c| matches!(c, '<' | '>' | '\'' | '"' | '\\'))
+    {
+        return Err(SupportApiError::validation("Invalid email."));
+    }
+    Ok(normalized)
+}
+
 async fn insert_player_reply<C: GenericClient>(
     tx: &C,
     reply_id: &str,
@@ -524,6 +605,54 @@ pub async fn run_support_submit(
     tx.commit()
         .await
         .map_err(|e| SupportApiError::internal(e.to_string()))?;
+    Ok(SupportSubmitResponse {
+        ok: true,
+        id: Some(id),
+        idempotent_replay: None,
+        error: None,
+        code: None,
+    })
+}
+
+pub async fn run_support_guest_submit(
+    pool: &Pool,
+    req: SupportGuestSubmitRequest,
+) -> Result<SupportSubmitResponse, SupportApiError> {
+    let contact_name = trim_chars(&req.contact_name, CONTACT_NAME_MAX);
+    if contact_name.is_empty() {
+        return Err(SupportApiError::validation("Enter your name."));
+    }
+    let contact_email = normalize_contact_email(&req.contact_email)?;
+    let subject = trim_chars(&req.subject, SUBJECT_MAX_LENGTH);
+    let message = trim_chars(&req.message, MESSAGE_MAX_LENGTH);
+    if subject.chars().count() < SUBJECT_MIN_LENGTH {
+        return Err(SupportApiError::validation(
+            "Assunto demasiado curto (mín. 3 characters).",
+        ));
+    }
+    if message.chars().count() < MESSAGE_MIN_LENGTH_SUBMIT {
+        return Err(SupportApiError::validation(
+            "Mensagem demasiado curta (mín. 10 characters).",
+        ));
+    }
+    let attachments = attachments_json(&req.attachments);
+    let id = Uuid::new_v4().to_string();
+    let now = current_unix_ms();
+    let client = pool
+        .get()
+        .await
+        .map_err(|e| SupportApiError::internal(e.to_string()))?;
+    insert_guest_ticket(
+        &client,
+        &id,
+        &contact_name,
+        &contact_email,
+        &subject,
+        &message,
+        &attachments,
+        now,
+    )
+    .await?;
     Ok(SupportSubmitResponse {
         ok: true,
         id: Some(id),

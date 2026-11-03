@@ -38,6 +38,7 @@ mod partner_games;
 mod partners;
 mod player;
 mod proxy;
+mod public_support;
 mod rate_limit;
 mod realtime;
 mod session;

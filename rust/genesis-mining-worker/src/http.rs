@@ -217,29 +217,32 @@ use crate::site_maintenance::{
     SITE_STATUS_PATH,
 };
 use crate::support::{
-    run_support_admin_reply, run_support_reply, run_support_submit, SupportAdminReplyRequest,
-    SupportAdminReplyResponse, SupportReplyRequest, SupportReplyResponse, SupportSubmitRequest,
-    SupportSubmitResponse, SUPPORT_ADMIN_REPLY_PATH, SUPPORT_REPLY_PATH, SUPPORT_SUBMIT_PATH,
+    run_support_admin_reply, run_support_guest_submit, run_support_reply, run_support_submit,
+    SupportAdminReplyRequest, SupportAdminReplyResponse, SupportGuestSubmitRequest,
+    SupportReplyRequest, SupportReplyResponse, SupportSubmitRequest, SupportSubmitResponse,
+    SUPPORT_ADMIN_REPLY_PATH, SUPPORT_GUEST_SUBMIT_PATH, SUPPORT_REPLY_PATH, SUPPORT_SUBMIT_PATH,
 };
 use crate::support_reads::{
     run_support_admin_get, run_support_admin_history, run_support_admin_list,
     run_support_admin_stats, run_support_admin_status, run_support_admin_ticket_payload,
     run_support_admin_tickets_payload, run_support_admin_user_history_payload, run_support_archive,
-    run_support_attachment_referenced, run_support_get, run_support_list_mine, run_support_reopen,
-    run_support_state, run_support_ticket_for_player, SupportAdminGetRequest,
-    SupportAdminGetResponse, SupportAdminHistoryRequest, SupportAdminHistoryResponse,
-    SupportAdminListRequest, SupportAdminListResponse, SupportAdminStatsRequest,
-    SupportAdminStatsResponse, SupportAdminStatusRequest, SupportAdminTicketPayloadRequest,
-    SupportAdminTicketsPayloadRequest, SupportAdminUserHistoryRequest,
-    SupportAttachmentReferencedRequest, SupportAttachmentReferencedResponse, SupportGetRequest,
-    SupportGetResponse, SupportListMineRequest, SupportListMineResponse, SupportStateRequest,
+    run_support_attachment_referenced, run_support_get, run_support_guest_get,
+    run_support_guest_list, run_support_list_mine, run_support_reopen, run_support_state,
+    run_support_ticket_for_player, SupportAdminGetRequest, SupportAdminGetResponse,
+    SupportAdminHistoryRequest, SupportAdminHistoryResponse, SupportAdminListRequest,
+    SupportAdminListResponse, SupportAdminStatsRequest, SupportAdminStatsResponse,
+    SupportAdminStatusRequest, SupportAdminTicketPayloadRequest, SupportAdminTicketsPayloadRequest,
+    SupportAdminUserHistoryRequest, SupportAttachmentReferencedRequest,
+    SupportAttachmentReferencedResponse, SupportGetRequest, SupportGetResponse,
+    SupportGuestGetRequest, SupportGuestGetResponse, SupportGuestListRequest,
+    SupportGuestListResponse, SupportListMineRequest, SupportListMineResponse, SupportStateRequest,
     SupportStatusChangeRequest, SupportStatusChangeResponse, SupportTicketForPlayerRequest,
     SupportTicketForPlayerResponse, SUPPORT_ADMIN_GET_PATH, SUPPORT_ADMIN_HISTORY_PATH,
     SUPPORT_ADMIN_LIST_PATH, SUPPORT_ADMIN_STATS_PATH, SUPPORT_ADMIN_STATUS_PATH,
     SUPPORT_ADMIN_TICKETS_PAYLOAD_PATH, SUPPORT_ADMIN_TICKET_PAYLOAD_PATH,
     SUPPORT_ADMIN_USER_HISTORY_PATH, SUPPORT_ARCHIVE_PATH, SUPPORT_ATTACHMENT_REFERENCED_PATH,
-    SUPPORT_GET_PATH, SUPPORT_LIST_MINE_PATH, SUPPORT_REOPEN_PATH, SUPPORT_STATE_PATH,
-    SUPPORT_TICKET_FOR_PLAYER_PATH,
+    SUPPORT_GET_PATH, SUPPORT_GUEST_GET_PATH, SUPPORT_GUEST_LIST_PATH, SUPPORT_LIST_MINE_PATH,
+    SUPPORT_REOPEN_PATH, SUPPORT_STATE_PATH, SUPPORT_TICKET_FOR_PLAYER_PATH,
 };
 use crate::topidle::{
     run_topidle_status, run_topidle_webhook, TopIdleStatusRequest, TopIdleWebhookForward,
@@ -415,10 +418,13 @@ pub fn router(state: AppState) -> Router {
                 .layer(DefaultBodyLimit::max(UPLOAD_HTTP_BODY_LIMIT_BYTES)),
         )
         .route(SUPPORT_SUBMIT_PATH, post(post_support_submit))
+        .route(SUPPORT_GUEST_SUBMIT_PATH, post(post_support_guest_submit))
         .route(SUPPORT_REPLY_PATH, post(post_support_reply))
         .route(SUPPORT_ADMIN_REPLY_PATH, post(post_support_admin_reply))
         .route(SUPPORT_LIST_MINE_PATH, post(post_support_list_mine))
         .route(SUPPORT_GET_PATH, post(post_support_get))
+        .route(SUPPORT_GUEST_LIST_PATH, post(post_support_guest_list))
+        .route(SUPPORT_GUEST_GET_PATH, post(post_support_guest_get))
         .route(SUPPORT_STATE_PATH, post(post_support_state))
         .route(SUPPORT_ARCHIVE_PATH, post(post_support_archive))
         .route(SUPPORT_REOPEN_PATH, post(post_support_reopen))
@@ -2002,6 +2008,70 @@ async fn post_support_submit(
                 warn!(err = %e.message, "support submit failed");
             }
             (status, Json(SupportSubmitResponse::from_err(e)))
+        }
+    }
+}
+
+async fn post_support_guest_submit(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SupportGuestSubmitRequest>,
+) -> (StatusCode, Json<SupportSubmitResponse>) {
+    match run_support_guest_submit(&state.pool, body).await {
+        Ok(out) => (StatusCode::OK, Json(out)),
+        Err(e) => {
+            let status = status_from_u16(e.http_status);
+            if status.is_server_error() {
+                warn!(err = %e.message, "support guest submit failed");
+            }
+            (status, Json(SupportSubmitResponse::from_err(e)))
+        }
+    }
+}
+
+async fn post_support_guest_list(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SupportGuestListRequest>,
+) -> (StatusCode, Json<SupportGuestListResponse>) {
+    match run_support_guest_list(&state.pool, body).await {
+        Ok(out) => (StatusCode::OK, Json(out)),
+        Err(e) => {
+            let status = status_from_u16(e.http_status);
+            if status.is_server_error() {
+                warn!(err = %e.message, "support guest list failed");
+            }
+            (
+                status,
+                Json(SupportGuestListResponse {
+                    ok: false,
+                    tickets: None,
+                    error: Some(e.message),
+                    code: Some(e.code.to_string()),
+                }),
+            )
+        }
+    }
+}
+
+async fn post_support_guest_get(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SupportGuestGetRequest>,
+) -> (StatusCode, Json<SupportGuestGetResponse>) {
+    match run_support_guest_get(&state.pool, body).await {
+        Ok(out) => (StatusCode::OK, Json(out)),
+        Err(e) => {
+            let status = status_from_u16(e.http_status);
+            if status.is_server_error() {
+                warn!(err = %e.message, "support guest get failed");
+            }
+            (
+                status,
+                Json(SupportGuestGetResponse {
+                    ok: false,
+                    ticket: None,
+                    error: Some(e.message),
+                    code: Some(e.code.to_string()),
+                }),
+            )
         }
     }
 }

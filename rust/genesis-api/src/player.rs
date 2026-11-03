@@ -2351,10 +2351,10 @@ async fn support_get(
     .await
 }
 
-struct SupportFilePart {
-    original_name: String,
-    mime: String,
-    bytes: Vec<u8>,
+pub(crate) struct SupportFilePart {
+    pub(crate) original_name: String,
+    pub(crate) mime: String,
+    pub(crate) bytes: Vec<u8>,
 }
 
 fn support_part(bytes: Vec<u8>, original: &str, mime: &str) -> reqwest::multipart::Part {
@@ -2366,7 +2366,7 @@ fn support_part(bytes: Vec<u8>, original: &str, mime: &str) -> reqwest::multipar
         .unwrap_or_else(|_| reqwest::multipart::Part::bytes(bytes).file_name(original.to_string()))
 }
 
-async fn upload_support_file(
+pub(crate) async fn upload_support_file(
     state: &AppState,
     uid: i64,
     name_prefix: &str,
