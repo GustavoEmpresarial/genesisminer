@@ -20,6 +20,7 @@ import { formatHashTotal, formatUsdcAmount } from '../../../shared/utils/locale-
 import { MiniBlogPage } from '../../mini-blog';
 import { InAppAnnouncementModal, type InAppAnnouncement } from '../../announcements';
 import { PlayerChatWidget } from '../../chat';
+import { CHAT_POPUP_Z_CLASS, shouldShowFloatingGerenciaChat } from '../../chat/lib/chatPlacement';
 import { WalletGatePopup, useWalletGate } from '../../wallet';
 import { GameMobileDrawer } from './GameMobileDrawer';
 import { GameSidebar } from './GameSidebar';
@@ -136,6 +137,23 @@ export function GameShell({
   useEffect(() => {
     setWalletPopupDismissed(false);
   }, [currentView]);
+
+  // Trava scroll do document: shell é h-[100dvh]; window.scrollY > 0 revela canvas preto.
+  useEffect(() => {
+    const html = document.documentElement;
+    const { body } = document;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    window.scrollTo(0, 0);
+    html.scrollTop = 0;
+    body.scrollTop = 0;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
 
   const items = useMemo(
     () =>
@@ -494,28 +512,54 @@ export function GameShell({
           promoteMobileOnlyKeys={isManagingAccount ? new Set(['checkin']) : undefined}
         />
 
-        <main
-          id="main-content"
-          className="custom-scrollbar relative flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto font-mono"
-        >
-          <GameViewOutlet
-            view={currentView}
-            user={user}
-            viewLabel={currentViewLabel}
-            t={t}
-            onNavigate={onNavigate}
-            onUsdcChange={setUsdc}
-            usdcBalance={usdc ?? 0}
-            onSessionRefresh={refreshSessionAndUsdc}
-            onUserUpdate={onUserUpdate}
-            hasWallet={walletGate.hasWallet}
-            onOpenWalletConnect={onOpenWalletConnect}
-            onHeaderRefresh={applyHeaderSnapshot}
-            partnerGameSlug={partnerPlayerSlug}
-            onOpenPartnerGame={onOpenPartnerGame}
-            onBackToPartnerHub={onBackToPartnerHub}
-          />
-        </main>
+        <div className="relative min-h-0 min-w-0 flex-1">
+          <main
+            id="main-content"
+            className="custom-scrollbar relative flex h-full min-h-0 min-w-0 flex-col overflow-x-hidden overflow-y-auto font-mono"
+          >
+            <GameViewOutlet
+              view={currentView}
+              user={user}
+              viewLabel={currentViewLabel}
+              t={t}
+              onNavigate={onNavigate}
+              onUsdcChange={setUsdc}
+              usdcBalance={usdc ?? 0}
+              onSessionRefresh={refreshSessionAndUsdc}
+              onUserUpdate={onUserUpdate}
+              hasWallet={walletGate.hasWallet}
+              onOpenWalletConnect={onOpenWalletConnect}
+              onHeaderRefresh={applyHeaderSnapshot}
+              partnerGameSlug={partnerPlayerSlug}
+              onOpenPartnerGame={onOpenPartnerGame}
+              onBackToPartnerHub={onBackToPartnerHub}
+            />
+          </main>
+          {shouldShowFloatingGerenciaChat({
+            isImpersonating: user.isImpersonating,
+            isManagingAccount: user.isManagingAccount,
+            managerMode: user.managerMode
+          }) ? (
+            <div
+              className={`pointer-events-none absolute inset-0 ${CHAT_POPUP_Z_CLASS} flex items-end justify-end p-4`}
+            >
+              <div className="pointer-events-auto">
+                <PlayerChatWidget
+                  currentUserId={Number(user.id)}
+                  currentUsername={user.username}
+                  realUserId={
+                    user.isManagingAccount || user.managerMode
+                      ? Number(user.managerUserId) || Number(user.id)
+                      : Number(user.id)
+                  }
+                  isManagingAccount={!!user.isManagingAccount || !!user.managerMode}
+                  startOpen
+                  initialTab="am"
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
 
         {showMiniBlogSidebar ? (
           miniBlogExpanded ? (
@@ -567,19 +611,6 @@ export function GameShell({
         onDismiss={() => setWalletPopupDismissed(true)}
         onConnect={() => onNavigate('profile')}
       />
-
-      {!user.isImpersonating ? (
-        <PlayerChatWidget
-          currentUserId={Number(user.id)}
-          currentUsername={user.username}
-          realUserId={
-            user.isManagingAccount || user.managerMode
-              ? Number(user.managerUserId) || Number(user.id)
-              : Number(user.id)
-          }
-          isManagingAccount={!!user.isManagingAccount || !!user.managerMode}
-        />
-      ) : null}
     </div>
   );
 }

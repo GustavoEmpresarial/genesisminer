@@ -1,6 +1,7 @@
 import type { PublicView } from '../../shell';
 import { GuidePage } from '../../guide';
 import { RoadmapPage } from '../../roadmap';
+import { TopIdleVerificationMark } from '../../../shared/seo/TopIdleVerificationMark';
 import {
   AmlPolicyPage,
   CommunityPolicyPage,
@@ -15,7 +16,7 @@ type PublicPagesOutletProps = {
   view: PublicView;
 };
 
-export function PublicPagesOutlet({ view }: PublicPagesOutletProps) {
+function pageForView(view: PublicView) {
   if (view === 'docs') return <GuidePage />;
   if (view === 'roadmap') return <RoadmapPage />;
   if (view === 'terms') return <TermsPage />;
@@ -26,4 +27,13 @@ export function PublicPagesOutlet({ view }: PublicPagesOutletProps) {
   if (view === 'refunds') return <RefundPolicyPage />;
   if (view === 'community') return <CommunityPolicyPage />;
   return null;
+}
+
+export function PublicPagesOutlet({ view }: PublicPagesOutletProps) {
+  return (
+    <>
+      <TopIdleVerificationMark />
+      {pageForView(view)}
+    </>
+  );
 }

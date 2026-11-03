@@ -22,10 +22,10 @@ server/modules/gerente/
   index.ts                          # exports públicos + registerGerenteModuleRoutes
   controllers/gerente.controller.ts # HTTP /api/account-manager/*
   services/
-    constants.ts                    # SHARE 10%, FIRE_LOCK_DAYS, statuses
+    constants.ts                    # SHARE 5%, FIRE_LOCK_DAYS, statuses
     feature.ts                      # kill-switch ACCOUNT_MANAGER_ENABLED
     manager.ts                      # hire/apply/accept/decline/fire/resign/enter/leave/me
-    accrual.ts                      # 10% do minerado → gerente (tx mining / Node path)
+    accrual.ts                      # 5% do minerado → gerente (tx mining / Node path)
     payout.ts                       # liquida semanas UTC fechadas unpaid
     payout-cron.ts                  # poll horário + lock Redis
     guard.ts                        # allowlist em manager_mode
@@ -50,6 +50,15 @@ Prefixo: `/api/account-manager/*`
 | `POST` | `/enter` | Sessão passa a atuar como dono (`manager_mode`) |
 | `POST` | `/leave` | Sai do `manager_mode` |
 
+Admin Support (tab `support`, genesis-api → worker):
+
+| Método | Rota | Notas |
+|--------|------|--------|
+| `GET` | `/api/admin/support/account-manager?userId=` | Estado do gerente ativo do dono (`enabled` + `active`) |
+| `POST` | `/api/admin/support/account-manager/fire` | Demite gerente do dono **sem** fire-lock (override de suporte) |
+
+Worker twins: `POST /v1/gerente/admin-status`, `POST /v1/gerente/admin-fire`.
+
 Kill-switch: `ACCOUNT_MANAGER_ENABLED=1` (default desligado). Mutações e `me` rejeitam com `ACCOUNT_MANAGER_DISABLED` se off.
 
 ## Prisma / SQL
@@ -71,7 +80,7 @@ Tabelas (nomes legados preservados):
 
 | Regra | Valor / comportamento |
 |-------|------------------------|
-| Accrual | `ACCOUNT_MANAGER_SHARE` = 10% do minerado do dono → ledger de accrual (mesma tx do crédito). Node: `progress-computer` SAVEPOINT; Rust worker: `progress.rs` SAVEPOINT `mining_progress_accrual_sp` quando `ACCOUNT_MANAGER_ENABLED`. |
+| Accrual | `ACCOUNT_MANAGER_SHARE` = 5% do minerado do dono → ledger de accrual (mesma tx do crédito). Node: `progress-computer` SAVEPOINT; Rust worker: `progress.rs` SAVEPOINT `mining_progress_accrual_sp` quando `ACCOUNT_MANAGER_ENABLED`. |
 | Payout | **Rust** `genesis-mining-worker` owns o poll horário (`run_gerente_payout_loop`, lock `genesis:lock:job:gerente-payout`). Money TX: `POST /v1/gerente/payout`. Node `startGerentePayoutCron` é no-op. Chave: `am_payout:{contractId}:{coinId}:{weekStart}`. |
 | Fire-lock | `ACCOUNT_MANAGER_FIRE_LOCK_DAYS` = 7 dias após accept |
 | Teto de contas | **Sem teto** — sem cap de contas geridas ativas |

@@ -250,3 +250,84 @@ describe('máquina ASIC só na Sala ASICs (picker)', () => {
     expect(nftIds).toEqual(['nft_gemt_1']);
   });
 });
+
+describe('GPU com racks marcados entra na sala normal', () => {
+  function machine(id: string, category: string, compatibleRacks?: string[]): Upgrade {
+    return {
+      id,
+      name: id,
+      category,
+      type: 'machine',
+      baseCost: 0,
+      baseProduction: 1,
+      description: '',
+      icon: '',
+      status: 'normal',
+      ...(compatibleRacks ? { compatibleRacks } : {})
+    };
+  }
+
+  const placed = {
+    id: 'r1',
+    itemId: 'rack04',
+    slots: [''],
+    multiplierSlots: [],
+    wiringId: null,
+    batteryId: null,
+    isOn: false,
+    roomId: 'room_initial',
+    slotIndex: 0
+  };
+
+  const sel = {
+    type: 'machine' as const,
+    rackId: 'r1',
+    slotIndex: 0,
+    roomId: 'room_initial',
+    roomName: 'Sala'
+  };
+
+  it('categoria nft com rack04 marcado aparece no picker da sala normal', () => {
+    const ids = listItemsForSelection(
+      sel,
+      [placed],
+      [machine('gpu_natal', 'nft', ['rack04'])],
+      { gpu_natal: 1 }
+    ).map((u) => u.id);
+    expect(ids).toEqual(['gpu_natal']);
+  });
+
+  it('categoria nft com lista vazia continua fora da sala normal', () => {
+    const ids = listItemsForSelection(
+      sel,
+      [placed],
+      [machine('gpu_natal', 'nft')],
+      { gpu_natal: 1 }
+    ).map((u) => u.id);
+    expect(ids).toEqual([]);
+  });
+
+  it('id asic_ com categoria GPU entra na sala normal e não na Sala ASICs', () => {
+    const natal = machine('asic_natal_3', 'GPU');
+    const stock = { asic_natal_3: 1 };
+    const stdIds = listItemsForSelection(sel, [placed], [natal], stock).map((u) => u.id);
+    const asicIds = listItemsForSelection(
+      { ...sel, roomId: ASIC_ROOM_ID, roomName: 'SALA DAS ASICS' },
+      [{ ...placed, roomId: ASIC_ROOM_ID }],
+      [natal],
+      stock
+    ).map((u) => u.id);
+    expect(stdIds).toEqual(['asic_natal_3']);
+    expect(asicIds).toEqual([]);
+  });
+
+  it('rack não marcado continua fora', () => {
+    const ids = listItemsForSelection(
+      sel,
+      [placed],
+      [machine('gpu_natal', 'nft', [NFT_AUTO_ALLOWED_CHASSIS_ID])],
+      { gpu_natal: 1 }
+    ).map((u) => u.id);
+    expect(ids).toEqual([]);
+  });
+});

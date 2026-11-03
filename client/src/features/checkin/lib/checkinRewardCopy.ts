@@ -6,18 +6,14 @@ import type { CheckinPerformPayload, CheckinStatusPayload } from '../api/checkin
 type TFn = (key: string, vars?: Record<string, string>) => string;
 
 export function buildCheckinRewardHint(s: CheckinStatusPayload, t: TFn): string {
-  const amount = s.premiumWeeklyCheckin ? s.weeklyRewardAmount : s.dailyRewardAmount;
+  const amount = s.dailyRewardAmount;
   let base: string;
   if (s.rewardType === 'hashrate') {
-    base = s.premiumWeeklyCheckin
-      ? t('checkin.hintPremiumHash', { amount: String(amount) })
-      : t('checkin.hintDailyHash', { amount: String(amount) });
+    base = t('checkin.hintDailyHash', { amount: String(amount) });
   } else {
-    base = s.premiumWeeklyCheckin
-      ? t('checkin.hintPremiumItem', { amount: String(amount), unit: s.rewardUnit })
-      : t('checkin.hintDailyItem', { amount: String(amount), unit: s.rewardUnit });
+    base = t('checkin.hintDailyItem', { amount: String(amount), unit: s.rewardUnit });
   }
-  if (!s.premiumWeeklyCheckin && s.streakRewardEnabled && s.streakRewardItemId) {
+  if (s.streakRewardEnabled && s.streakRewardItemId) {
     const dur =
       s.streakRewardDurationLabel || `${s.streakRewardDurationAmount} ${s.streakRewardDurationUnit}`;
     base += ` ${t('checkin.hintStreakMachine', { duration: dur })}`;

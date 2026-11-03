@@ -332,11 +332,7 @@ pub fn normalize_period_ym(raw: Option<&str>) -> Option<String> {
 }
 
 /// Whether a published entry is charged against the current window.
-pub fn entry_in_scope(
-    period_ym: Option<&str>,
-    now_ms: i64,
-    settings: &HealthSettings,
-) -> bool {
+pub fn entry_in_scope(period_ym: Option<&str>, now_ms: i64, settings: &HealthSettings) -> bool {
     let period = normalize_period_ym(period_ym);
     let Some(period) = period else {
         // "Geral / permanente": counted in every window unless the admin says otherwise.
@@ -572,8 +568,14 @@ mod tests {
 
     #[test]
     fn normalize_period_ym_accepts_only_valid_months() {
-        assert_eq!(normalize_period_ym(Some("2026-09")).as_deref(), Some("2026-09"));
-        assert_eq!(normalize_period_ym(Some("  2026-09 ")).as_deref(), Some("2026-09"));
+        assert_eq!(
+            normalize_period_ym(Some("2026-09")).as_deref(),
+            Some("2026-09")
+        );
+        assert_eq!(
+            normalize_period_ym(Some("  2026-09 ")).as_deref(),
+            Some("2026-09")
+        );
         assert_eq!(normalize_period_ym(Some("geral")), None);
         assert_eq!(normalize_period_ym(Some("standing")), None);
         assert_eq!(normalize_period_ym(Some("")), None);
@@ -651,7 +653,10 @@ mod tests {
             &HealthSettings::default(),
         );
         assert_eq!(all.expense_usdc, 38_100.0);
-        assert_eq!(all.ledger_score, 0.0, "expenses dwarf inflow => portal pinned at 0");
+        assert_eq!(
+            all.ledger_score, 0.0,
+            "expenses dwarf inflow => portal pinned at 0"
+        );
 
         let season = compute_transparency_health_with(
             &entries,
@@ -711,8 +716,14 @@ mod tests {
         assert!((i2 - 0.4).abs() < 1e-9 && (r2 - 0.35).abs() < 1e-9 && (l2 - 0.25).abs() < 1e-9);
 
         for bad in [
-            HealthSettings { weight_inflow: f64::NAN, ..HealthSettings::default() },
-            HealthSettings { weight_rent: -1.0, ..HealthSettings::default() },
+            HealthSettings {
+                weight_inflow: f64::NAN,
+                ..HealthSettings::default()
+            },
+            HealthSettings {
+                weight_rent: -1.0,
+                ..HealthSettings::default()
+            },
             HealthSettings {
                 weight_inflow: 0.0,
                 weight_rent: 0.0,
@@ -740,7 +751,10 @@ mod tests {
             &entries,
             NOW,
             &cash,
-            &HealthSettings { floor: 0, ..HealthSettings::default() },
+            &HealthSettings {
+                floor: 0,
+                ..HealthSettings::default()
+            },
         );
         assert!(no_floor.health < 50, "got {}", no_floor.health);
     }
@@ -776,8 +790,7 @@ mod tests {
             override_value: Some(92),
             ..HealthSettings::default()
         };
-        let snap =
-            compute_transparency_health_with(&entries, NOW, &PlayerCashFlows::default(), &s);
+        let snap = compute_transparency_health_with(&entries, NOW, &PlayerCashFlows::default(), &s);
         assert_eq!(snap.health, 92);
         assert_eq!(snap.band, HealthBand::Excellent);
         // sub-scores stay honest — only the headline number is pinned
@@ -786,13 +799,26 @@ mod tests {
 
     #[test]
     fn override_is_clamped_and_needs_a_value() {
-        let base = HealthSettings { override_enabled: true, ..HealthSettings::default() };
-        assert_eq!(base.manual_health(), None, "enabled without a value = no override");
+        let base = HealthSettings {
+            override_enabled: true,
+            ..HealthSettings::default()
+        };
+        assert_eq!(
+            base.manual_health(),
+            None,
+            "enabled without a value = no override"
+        );
 
-        let high = HealthSettings { override_value: Some(500), ..base.clone() };
+        let high = HealthSettings {
+            override_value: Some(500),
+            ..base.clone()
+        };
         assert_eq!(high.manual_health(), Some(100));
 
-        let low = HealthSettings { override_value: Some(-5), ..base.clone() };
+        let low = HealthSettings {
+            override_value: Some(-5),
+            ..base.clone()
+        };
         assert_eq!(low.manual_health(), Some(0));
 
         let off = HealthSettings {

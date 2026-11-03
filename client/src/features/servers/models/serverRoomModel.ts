@@ -255,14 +255,20 @@ export function listItemsForSelection(
       roomKind: selection.roomKind,
       nftAutoArmario1Only: selection.nftAutoArmario1Only
     });
-    if (kind === 'asic') {
-      filtered = filtered.filter((u) => isAsicMachineUpgrade(u));
-    } else if (kind === 'nft') {
-      filtered = filtered.filter((u) => isNftCollectibleMachine(u) && Boolean(u.nftMiningCoinId));
-    } else {
-      // Sala normal: nem ASIC real nem colecionável NFT.
-      filtered = filtered.filter((u) => !isAsicMachineUpgrade(u) && !isNftCollectibleMachine(u));
-    }
+    filtered = filtered.filter((u) => {
+      // Lista preenchida e este chassis marcado: a marcação do admin autoriza o encaixe.
+      if (
+        currentRack &&
+        u.compatibleRacks?.length &&
+        isCompatibleWithRack(u.compatibleRacks, currentRack.itemId)
+      ) {
+        return true;
+      }
+      if (kind === 'asic') return isAsicMachineUpgrade(u);
+      if (kind === 'nft') return isNftCollectibleMachine(u) && Boolean(u.nftMiningCoinId);
+      // Sala normal, lista vazia: nem ASIC real nem colecionável NFT.
+      return !isAsicMachineUpgrade(u) && !isNftCollectibleMachine(u);
+    });
   }
   return filtered;
 }

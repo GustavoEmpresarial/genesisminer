@@ -271,6 +271,22 @@ describe('resolveAdminRouteRequirement', () => {
       expect(allowsAdminRouteAccess(false, new Set(['users']), { kind: 'tab', tab: 'reports' })).toBe(false);
     });
 
+    it('POST /api/admin/site-maintenance é tab settings, não super', () => {
+      expect(resolveAdminRouteRequirement('POST', '/api/admin/site-maintenance')).toEqual({
+        kind: 'tab',
+        tab: 'settings'
+      });
+      expect(allowsAdminRouteAccess(false, new Set(['settings']), { kind: 'tab', tab: 'settings' })).toBe(
+        true
+      );
+      expect(allowsAdminRouteAccess(false, new Set(['users']), { kind: 'tab', tab: 'settings' })).toBe(
+        false
+      );
+      expect(resolveAdminRouteRequirement('GET', '/api/admin/site-maintenance')).toEqual({
+        kind: 'super'
+      });
+    });
+
     it('GET /api/admin/purchases/report é tab reports, não super', () => {
       expect(resolveAdminRouteRequirement('GET', '/api/admin/purchases/report')).toEqual({
         kind: 'tab',

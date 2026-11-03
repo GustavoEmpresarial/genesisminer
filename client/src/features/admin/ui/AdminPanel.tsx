@@ -478,9 +478,9 @@ export function AdminPanel({ user }: AdminPanelProps) {
 
       <div
         id="main-content"
-        className="custom-scrollbar flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto"
+        className="custom-scrollbar flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto bg-slate-900"
       >
-        <main className="min-w-0 flex-1">
+        <main className="min-w-0 flex-1 bg-slate-900">
           <div className="mx-auto min-w-0 max-w-7xl p-4 sm:p-6">
             {activeTab === 'dashboard' && <AdminDashboard />}
             {activeTab === 'metrics' && (isAllowed('metrics') || isAllowed('dashboard')) && <AdminMetrics />}

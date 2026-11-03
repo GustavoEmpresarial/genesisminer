@@ -1134,6 +1134,10 @@ export async function getAdminUpgrades(): Promise<AdminUpgrade[]> {
 
 export async function createAdminUpgrade(upgrade: AdminUpgrade): Promise<{ ok: boolean; id?: string }> {
   try {
+    const imageUrl =
+      upgrade.imageUrl != null && String(upgrade.imageUrl).trim() !== ''
+        ? String(upgrade.imageUrl).trim()
+        : null;
     const payload = {
       id: upgrade.id,
       name: upgrade.name,
@@ -1142,6 +1146,7 @@ export async function createAdminUpgrade(upgrade: AdminUpgrade): Promise<{ ok: b
       grantUsdc: upgrade.grantUsdc || 0,
       grantAccessLevelId: upgrade.grantAccessLevelId || null,
       isActive: upgrade.isActive === false ? false : true,
+      imageUrl,
       items: (upgrade.items || []).map((it) => ({ itemId: it.itemId, qty: it.qty })),
       boxes: (upgrade.boxes || []).map((b) => ({ boxId: b.boxId, qty: b.qty })),
       passes: Array.isArray(upgrade.passes) ? upgrade.passes : [],

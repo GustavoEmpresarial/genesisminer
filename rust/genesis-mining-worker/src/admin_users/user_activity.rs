@@ -84,28 +84,13 @@ pub async fn run_user_activity(
         ACTIVITY_LIMIT_MIN,
         ACTIVITY_LIMIT_MAX,
     );
-    let before_raw = parse_i64_loose(req.before_ms.as_ref())
-        .or_else(|| parse_i64_loose(req.cursor.as_ref()));
+    let before_raw =
+        parse_i64_loose(req.before_ms.as_ref()).or_else(|| parse_i64_loose(req.cursor.as_ref()));
     let before_ms = before_raw.filter(|n| *n > 0);
 
-    let category_filter = req
-        .category
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let severity_filter = req
-        .severity
-        .as_deref()
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let filter_id = req
-        .filter_id
-        .as_deref()
-        .unwrap_or("all")
-        .trim()
-        .to_string();
+    let category_filter = req.category.as_deref().unwrap_or("").trim().to_string();
+    let severity_filter = req.severity.as_deref().unwrap_or("").trim().to_string();
+    let filter_id = req.filter_id.as_deref().unwrap_or("all").trim().to_string();
     let filter_id = if filter_id.is_empty() {
         "all".to_string()
     } else {
@@ -136,7 +121,8 @@ pub async fn run_user_activity(
         pg_rows.extend(list_season_pass_activity_rows(&conn, uid, before_ms, fetch_limit).await?);
     }
     if want_upgrades {
-        pg_rows.extend(list_upgrade_package_activity_rows(&conn, uid, before_ms, fetch_limit).await?);
+        pg_rows
+            .extend(list_upgrade_package_activity_rows(&conn, uid, before_ms, fetch_limit).await?);
     }
     if want_boxes {
         pg_rows.extend(list_lucky_box_activity_rows(&conn, uid, before_ms, fetch_limit).await?);
@@ -380,10 +366,7 @@ async fn list_p2p_activity_rows<C: GenericClient>(
     let mut listing_seen = HashSet::new();
     for l in &listings {
         let status = opt_string(l, "status").unwrap_or_else(|| "active".into());
-        if !matches!(
-            status.as_str(),
-            "active" | "awaiting_pickup" | "reserved"
-        ) {
+        if !matches!(status.as_str(), "active" | "awaiting_pickup" | "reserved") {
             continue;
         }
         push_listing(
@@ -445,7 +428,10 @@ fn push_trade(
         },
     };
     let item_id: String = t.get("item_id");
-    let item_name = names.get(&item_id).cloned().unwrap_or_else(|| item_id.clone());
+    let item_name = names
+        .get(&item_id)
+        .cloned()
+        .unwrap_or_else(|| item_id.clone());
     let qty = i64_cell(t, "qty").max(1);
     let unit_price = f64_cell(t, "unit_price");
     let total_usdc = f64_cell(t, "buyer_paid_usdc");
@@ -514,7 +500,10 @@ fn push_listing(
         }
     }
     let item_id: String = l.get("item_id");
-    let item_name = names.get(&item_id).cloned().unwrap_or_else(|| item_id.clone());
+    let item_name = names
+        .get(&item_id)
+        .cloned()
+        .unwrap_or_else(|| item_id.clone());
     let status = opt_string(l, "status").unwrap_or_else(|| "active".into());
     let reserved_by: Option<i32> = l.try_get("reserved_by").ok().flatten();
     let action = if role == "buyer" && reserved_by == Some(uid) {
@@ -742,10 +731,19 @@ async fn list_inventory_activity_rows<C: GenericClient>(
         let item_name = if item_id.is_empty() {
             String::new()
         } else {
-            names.get(&item_id).cloned().unwrap_or_else(|| item_id.clone())
+            names
+                .get(&item_id)
+                .cloned()
+                .unwrap_or_else(|| item_id.clone())
         };
-        let before = row.try_get::<_, Option<i32>>("quantity_before").ok().flatten();
-        let after = row.try_get::<_, Option<i32>>("quantity_after").ok().flatten();
+        let before = row
+            .try_get::<_, Option<i32>>("quantity_before")
+            .ok()
+            .flatten();
+        let after = row
+            .try_get::<_, Option<i32>>("quantity_after")
+            .ok()
+            .flatten();
         out.push(json!({
             "id": format!("pg:inv:{id}"),
             "action": action,
@@ -846,16 +844,19 @@ async fn list_lucky_box_activity_rows<C: GenericClient>(
         let box_name_db: String = row.try_get("box_name").unwrap_or_default();
         let box_price = f64_cell(row, "box_price");
         let v: Option<Value> = serde_json::from_str(&body_raw).ok();
-        let box_id = v.as_ref()
+        let box_id = v
+            .as_ref()
             .and_then(|o| o.get("boxId"))
             .and_then(Value::as_str)
             .unwrap_or("")
             .to_string();
-        let qty = v.as_ref()
+        let qty = v
+            .as_ref()
             .and_then(|o| o.get("qtyPurchased"))
             .and_then(Value::as_i64)
             .unwrap_or(1);
-        let new_usdc = v.as_ref()
+        let new_usdc = v
+            .as_ref()
             .and_then(|o| o.get("newUsdc"))
             .and_then(Value::as_f64);
         let name = if !box_name_db.is_empty() {
@@ -957,7 +958,11 @@ async fn list_wheel_spin_activity_rows<C: GenericClient>(
         let won_item_name: String = row.get("won_item_name");
         let charged = f64_cell(row, "charged_usdc");
         let is_paid = kind == "paid" || charged > 0.0;
-        let action = if is_paid { "wheel_spin_paid" } else { "wheel_spin_free" };
+        let action = if is_paid {
+            "wheel_spin_paid"
+        } else {
+            "wheel_spin_free"
+        };
         out.push(json!({
             "id": format!("pg:wheel:{spin_id}"),
             "action": action,
@@ -1063,7 +1068,11 @@ async fn list_merge_activity_rows<C: GenericClient>(
         let source_name: String = row.get("source_name");
         let result_name: String = row.get("result_name");
         let fee = f64_cell(row, "fee_usdc");
-        let action = if fee > 0.0 { "merge_craft_paid" } else { "merge_craft" };
+        let action = if fee > 0.0 {
+            "merge_craft_paid"
+        } else {
+            "merge_craft"
+        };
         out.push(json!({
             "id": format!("pg:merge:{mid}"),
             "action": action,
@@ -1096,7 +1105,11 @@ fn shop_line_bits(lines_json: &str) -> (String, Vec<String>) {
         if id.is_empty() {
             continue;
         }
-        let name = line.get("name").and_then(Value::as_str).unwrap_or("").trim();
+        let name = line
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
         let label = if name.is_empty() { id } else { name };
         let qty = line
             .get("qty")
@@ -1258,7 +1271,9 @@ fn format_activity_event(action: &str, meta: &Value) -> Value {
 
 fn format_upgrade_package_buy(meta: &Map<String, Value>) -> Value {
     let name = str_meta(meta, "upgradeName").unwrap_or_else(|| "Pacote de Upgrades".into());
-    let price = num_meta(meta, "priceUsdc").or_else(|| num_meta(meta, "totalUsdc")).unwrap_or(0.0);
+    let price = num_meta(meta, "priceUsdc")
+        .or_else(|| num_meta(meta, "totalUsdc"))
+        .unwrap_or(0.0);
     json!({
         "category": "economy",
         "severity": "success",
@@ -1311,7 +1326,11 @@ fn format_loot_box_open(meta: &Map<String, Value>) -> Value {
         if let Ok(v) = serde_json::from_str::<Value>(&r_str) {
             if let Some(arr) = v.as_array() {
                 for item in arr {
-                    let iname = item.get("name").or_else(|| item.get("id")).and_then(Value::as_str).unwrap_or("Item");
+                    let iname = item
+                        .get("name")
+                        .or_else(|| item.get("id"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("Item");
                     let iqty = item.get("qty").and_then(Value::as_i64).unwrap_or(1);
                     lines.push(format!("Prémio: {iqty}× {iname}"));
                 }
@@ -1341,7 +1360,11 @@ fn format_wheel_spin(action: &str, meta: &Map<String, Value>) -> Value {
         .or_else(|| num_meta(meta, "totalUsdc"))
         .unwrap_or(0.0);
     let is_paid = action == "wheel_spin_paid" || charged > 0.0;
-    let title = if is_paid { "Giro Pago na Roleta" } else { "Giro na Roleta" };
+    let title = if is_paid {
+        "Giro Pago na Roleta"
+    } else {
+        "Giro na Roleta"
+    };
     let category = if is_paid { "economy" } else { "boxes" };
     let summary = if is_paid {
         format!("Giro pago ({:.2} USDC) → Ganhou: {}", charged, item_name)
@@ -1407,10 +1430,7 @@ fn format_merge_action(action: &str, meta: &Map<String, Value>) -> Value {
     } else {
         format!("Fundiu {source} → {result}")
     };
-    let mut lines = vec![
-        format!("Origem: {source}"),
-        format!("Resultado: {result}"),
-    ];
+    let mut lines = vec![format!("Origem: {source}"), format!("Resultado: {result}")];
     if is_paid {
         lines.push(format!("Taxa paga: {:.2} USDC", fee));
     }
@@ -1475,9 +1495,7 @@ fn format_p2p_action(action: &str, meta: &Map<String, Value>) -> Value {
         _ => "Mercado P2P",
     };
 
-    let mut summary = action
-        .trim_start_matches("p2p_")
-        .replace('_', " ");
+    let mut summary = action.trim_start_matches("p2p_").replace('_', " ");
     if let Some(ref name) = item_name {
         if action == "p2p_listing_create" {
             summary = format!(
@@ -1706,9 +1724,7 @@ fn matches_activity_filter(display: &Value, action: &str, filter_id: &str) -> bo
         }
         "season" | "season_pass" => action == "season_pass_purchase",
         "upgrades" | "upgrade_packages" => action == "upgrade_package_buy",
-        "losses" => {
-            category == "inventory" && (severity == "warning" || severity == "danger")
-        }
+        "losses" => category == "inventory" && (severity == "warning" || severity == "danger"),
         "session" => category == "session",
         "inventory" => category == "inventory" || action.starts_with("merge_"),
         "inventory_moves" => {
@@ -1771,19 +1787,18 @@ fn json_i64(v: &Value) -> Option<i64> {
 }
 
 fn str_meta(meta: &Map<String, Value>, key: &str) -> Option<String> {
-    meta.get(key)
-        .and_then(|v| match v {
-            Value::String(s) => {
-                let t = s.trim();
-                if t.is_empty() {
-                    None
-                } else {
-                    Some(t.to_string())
-                }
+    meta.get(key).and_then(|v| match v {
+        Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Some(t.to_string())
             }
-            Value::Number(n) => Some(n.to_string()),
-            _ => None,
-        })
+        }
+        Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    })
 }
 
 fn num_meta(meta: &Map<String, Value>, key: &str) -> Option<f64> {
@@ -1953,7 +1968,10 @@ mod tests {
         );
         assert_eq!(box_buy["title"], "Compra de Caixa da Sorte");
         assert_eq!(box_buy["category"], "boxes");
-        assert!(box_buy["summary"].as_str().unwrap().contains("2× Caixa Mística"));
+        assert!(box_buy["summary"]
+            .as_str()
+            .unwrap()
+            .contains("2× Caixa Mística"));
 
         // Paid Wheel Spin
         let wheel = format_activity_event(
@@ -1979,15 +1997,34 @@ mod tests {
         );
         assert_eq!(slot["title"], "Expansão de Slots de Sala");
         assert_eq!(slot["category"], "economy");
-        assert!(slot["summary"].as_str().unwrap().contains("+4 Slot(s) na Sala VIP"));
+        assert!(slot["summary"]
+            .as_str()
+            .unwrap()
+            .contains("+4 Slot(s) na Sala VIP"));
 
         // Filter money matches all purchase types
-        assert!(matches_activity_filter(&upg, "upgrade_package_buy", "money"));
+        assert!(matches_activity_filter(
+            &upg,
+            "upgrade_package_buy",
+            "money"
+        ));
         assert!(matches_activity_filter(&box_buy, "loot_box_buy", "money"));
         assert!(matches_activity_filter(&wheel, "wheel_spin_paid", "money"));
-        assert!(matches_activity_filter(&slot, "rig_room_slot_purchase", "money"));
-        assert!(matches_activity_filter(&upg, "upgrade_package_buy", "purchase"));
-        assert!(matches_activity_filter(&upg, "upgrade_package_buy", "upgrades"));
+        assert!(matches_activity_filter(
+            &slot,
+            "rig_room_slot_purchase",
+            "money"
+        ));
+        assert!(matches_activity_filter(
+            &upg,
+            "upgrade_package_buy",
+            "purchase"
+        ));
+        assert!(matches_activity_filter(
+            &upg,
+            "upgrade_package_buy",
+            "upgrades"
+        ));
         assert!(matches_activity_filter(&box_buy, "loot_box_buy", "boxes"));
     }
 }

@@ -66,8 +66,13 @@ async fn withdrawals_status(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
-    if let Err(e) =
-        require_admin(&state, &headers, &Method::POST, ADMIN_WITHDRAWALS_STATUS_PATH).await
+    if let Err(e) = require_admin(
+        &state,
+        &headers,
+        &Method::POST,
+        ADMIN_WITHDRAWALS_STATUS_PATH,
+    )
+    .await
     {
         return e;
     }
@@ -79,8 +84,13 @@ async fn update_coin_balance(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
-    if let Err(e) =
-        require_admin(&state, &headers, &Method::POST, ADMIN_UPDATE_COIN_BALANCE_PATH).await
+    if let Err(e) = require_admin(
+        &state,
+        &headers,
+        &Method::POST,
+        ADMIN_UPDATE_COIN_BALANCE_PATH,
+    )
+    .await
     {
         return e;
     }

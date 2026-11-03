@@ -102,6 +102,15 @@ import {
 /** Inicial / ASICs / Extra — checkboxes always on; admin never revokes. */
 const ALWAYS_OWNED_ROOM_IDS = [ROOM_INITIAL_ID, ASIC_ROOM_ID, EXTRA_ROOM_ID] as const;
 
+/** MIME aceites no upload da foto do passe (mesmo contrato do upload-image do catálogo). */
+const UPGRADE_IMAGE_OK_MIME = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'image/webp',
+  'image/gif'
+]);
+
 function isAlwaysOwnedRoomId(roomId: string): boolean {
     return (ALWAYS_OWNED_ROOM_IDS as readonly string[]).includes(roomId);
 }
@@ -273,9 +282,10 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
     const [adminUpgrades, setAdminUpgradesState] = useState<AdminUpgrade[]>([]);
     const [seasonPasses, setSeasonPassesState] = useState<SeasonPass[]>([]);
     const [editUpgradeMode, setEditUpgradeMode] = useState<boolean>(false);
-    const [upgradeForm, setUpgradeForm] = useState<Partial<AdminUpgrade>>({ id: '', name: '', description: '', priceUsdc: 0, grantUsdc: 0, grantAccessLevelId: '', isActive: true, items: [], boxes: [], passes: [], coins: [], visibleToAccessLevelIds: [] });
+    const [upgradeForm, setUpgradeForm] = useState<Partial<AdminUpgrade>>({ id: '', name: '', description: '', priceUsdc: 0, grantUsdc: 0, grantAccessLevelId: '', isActive: true, imageUrl: null, items: [], boxes: [], passes: [], coins: [], visibleToAccessLevelIds: [] });
     const [savingUpgrade, setSavingUpgrade] = useState<boolean>(false);
     const [upgradeError, setUpgradeError] = useState<string>('');
+    const [isUploadingUpgradeImage, setIsUploadingUpgradeImage] = useState(false);
     const [referralSenderBoxForm, setReferralSenderBoxForm] = useState<Partial<LootBox>>({ id: '', name: 'Prêmio por Indicação', description: 'Recompensas para quem indicou', trigger: 'referral_sender', items: [], icon: '🎁', price: 0 });
     const [referralReceiverBoxForm, setReferralReceiverBoxForm] = useState<Partial<LootBox>>({ id: '', name: 'Prêmio de Indicado', description: 'Recompensas para novos indicados', trigger: 'referral_receiver', items: [], icon: '🎁', price: 0 });
     const [newSenderItem, setNewSenderItem] = useState<{ type: 'item' | 'currency' | 'coin'; id: string; minQty: number; maxQty: number; probability: number }>({ type: 'item', id: '', minQty: 1, maxQty: 1, probability: 50 });
@@ -1307,15 +1317,49 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
 
     const handleNewUpgrade = () => {
         const mkid = (crypto && typeof crypto.randomUUID === 'function') ? crypto.randomUUID() : `up_${Math.random().toString(36).slice(2, 10)}`;
-        setUpgradeForm({ id: mkid, name: '', description: '', priceUsdc: 0, grantUsdc: 0, grantAccessLevelId: '', isActive: true, items: [], boxes: [], passes: [], coins: [], visibleToAccessLevelIds: [] });
+        setUpgradeForm({ id: mkid, name: '', description: '', priceUsdc: 0, grantUsdc: 0, grantAccessLevelId: '', isActive: true, imageUrl: null, items: [], boxes: [], passes: [], coins: [], visibleToAccessLevelIds: [] });
         setEditUpgradeMode(true);
         setUpgradeError('');
     };
 
     const handleEditUpgrade = (u: AdminUpgrade) => {
-        setUpgradeForm({ ...u });
+        setUpgradeForm({ ...u, imageUrl: u.imageUrl ?? null });
         setEditUpgradeMode(true);
         setUpgradeError('');
+    };
+
+    const handleUpgradeImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const input = e.target;
+        const file = input.files?.[0];
+        if (!file) return;
+        if (!UPGRADE_IMAGE_OK_MIME.has(file.type)) {
+            alert('Formato de imagem inválido. Usa PNG, JPG, WEBP ou GIF.');
+            input.value = '';
+            return;
+        }
+        const fd = new FormData();
+        fd.append('image', file, file.name);
+        setIsUploadingUpgradeImage(true);
+        try {
+            const res = await apiFetch('/api/admin/upload-image', {
+                method: 'POST',
+                credentials: 'include',
+                body: fd
+            });
+            let payload: { ok?: boolean; path?: string; url?: string; error?: string } | null = null;
+            try { payload = await res.json(); } catch { /* sem JSON */ }
+            const url = payload?.path || payload?.url;
+            if (res.ok && payload?.ok && url) {
+                setUpgradeForm(prev => ({ ...prev, imageUrl: url }));
+            } else {
+                alert(payload?.error || `Falha ao enviar imagem (HTTP ${res.status}).`);
+            }
+        } catch {
+            alert('Falha de rede ao enviar imagem. Verifica a ligação e tenta novamente.');
+        } finally {
+            setIsUploadingUpgradeImage(false);
+            input.value = '';
+        }
     };
 
     const handleSaveUpgrade = async () => {
@@ -1329,6 +1373,10 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
         }
         setUpgradeError('');
         setSavingUpgrade(true);
+        const imageUrl =
+            upgradeForm.imageUrl != null && String(upgradeForm.imageUrl).trim() !== ''
+                ? String(upgradeForm.imageUrl).trim()
+                : null;
         const payload: AdminUpgrade = {
             id,
             name,
@@ -1337,6 +1385,7 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
             grantUsdc: typeof upgradeForm.grantUsdc === 'number' ? upgradeForm.grantUsdc : parseFloat(String(upgradeForm.grantUsdc || 0)),
             grantAccessLevelId: (upgradeForm.grantAccessLevelId || '') || undefined,
             isActive: upgradeForm.isActive !== false,
+            imageUrl,
             items: (upgradeForm.items || []).map(it => ({ itemId: it.itemId, qty: parseInt(String(it.qty || 0)) || 0 })).filter(x => x.itemId && x.qty > 0),
             boxes: (upgradeForm.boxes || []).map(b => ({ boxId: b.boxId, qty: parseInt(String(b.qty || 0)) || 0 })).filter(x => x.boxId && x.qty > 0),
             passes: Array.isArray(upgradeForm.passes) ? upgradeForm.passes : [],
@@ -1817,11 +1866,20 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
                             <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
                                 {adminUpgrades.map(u => (
                                     <div key={u.id} onClick={() => handleEditUpgrade(u)} className={`p-3 rounded border cursor-pointer hover:border-yellow-500 ${u.isActive ? 'bg-slate-900 border-slate-700' : 'bg-slate-900/50 border-slate-800'}`}>
-                                        <div className="flex justify-between items-start">
-                                            <div className="font-bold text-white">{u.name}</div>
-                                            <div className="text-xs text-yellow-400 font-mono">${u.priceUsdc} USDC</div>
+                                        <div className="flex items-start gap-3">
+                                            {u.imageUrl ? (
+                                                <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-slate-600 bg-black/40">
+                                                    <img src={u.imageUrl} alt="" className="h-full w-full object-contain p-0.5" />
+                                                </div>
+                                            ) : null}
+                                            <div className="min-w-0 flex-1">
+                                                <div className="flex justify-between items-start gap-2">
+                                                    <div className="font-bold text-white">{u.name}</div>
+                                                    <div className="text-xs text-yellow-400 font-mono shrink-0">${u.priceUsdc} USDC</div>
+                                                </div>
+                                                <div className="text-xs text-slate-400 mt-1 whitespace-pre-wrap line-clamp-2">{u.description}</div>
+                                            </div>
                                         </div>
-                                        <div className="text-xs text-slate-400 mt-1 whitespace-pre-wrap line-clamp-2">{u.description}</div>
                                     </div>
                                 ))}
                                 {adminUpgrades.length === 0 && <div className="text-slate-500 text-center text-sm p-4">Nenhum upgrade configurado.</div>}
@@ -1831,11 +1889,48 @@ export const AdminUsersPage: React.FC<AdminUsersPageProps> = ({
                         <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 overflow-y-auto">
                             {editUpgradeMode ? (
                                 <div className="space-y-4">
-                                    <h3 className="font-bold text-white border-b border-slate-700 pb-2 mb-4">{upgradeForm.id ? `Editando: ${upgradeForm.name}` : 'Novo Upgrade'}</h3>
+                                    <h3 className="font-bold text-white border-b border-slate-700 pb-2 mb-4">
+                                        {adminUpgrades.some((u) => u.id === upgradeForm.id)
+                                            ? `Editando: ${upgradeForm.name}`
+                                            : 'Novo Upgrade'}
+                                    </h3>
                                     <div className="grid grid-cols-2 gap-4">
-                                        <div>
-                                            <label className="text-xs font-bold text-slate-500 block mb-1">ID</label>
-                                            <input type="text" value={upgradeForm.id} onChange={e => setUpgradeForm({ ...upgradeForm, id: e.target.value })} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white text-sm" />
+                                        <div className="col-span-2">
+                                            <label className="text-xs font-bold text-slate-500 block mb-1">Foto do passe</label>
+                                            <div className="flex flex-wrap items-center gap-3">
+                                                {upgradeForm.imageUrl ? (
+                                                    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-600 bg-black/40">
+                                                        <img src={upgradeForm.imageUrl} alt="" className="h-full w-full object-contain p-1" />
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-slate-600 bg-slate-900 text-[10px] text-slate-500">
+                                                        Sem foto
+                                                    </div>
+                                                )}
+                                                <input
+                                                    type="file"
+                                                    accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                                                    disabled={isUploadingUpgradeImage || savingUpgrade}
+                                                    onChange={handleUpgradeImageUpload}
+                                                    className="text-xs text-slate-300 file:mr-2 file:rounded file:border-0 file:bg-slate-700 file:px-3 file:py-2 file:text-xs file:font-bold file:text-white hover:file:bg-slate-600 disabled:opacity-50"
+                                                />
+                                                {upgradeForm.imageUrl ? (
+                                                    <button
+                                                        type="button"
+                                                        disabled={isUploadingUpgradeImage || savingUpgrade}
+                                                        onClick={() => setUpgradeForm({ ...upgradeForm, imageUrl: null })}
+                                                        className="bg-slate-700 hover:bg-slate-600 text-white text-xs px-3 py-2 rounded font-bold disabled:opacity-50"
+                                                    >
+                                                        Remover imagem
+                                                    </button>
+                                                ) : null}
+                                                {isUploadingUpgradeImage ? (
+                                                    <span className="inline-flex items-center gap-1 text-xs text-amber-300">
+                                                        <Loader2 size={12} className="animate-spin" aria-hidden /> A enviar…
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                            <p className="mt-1 text-[10px] text-slate-500">PNG, JPG, WEBP ou GIF. A foto aparece no carrossel de Eventos e passes.</p>
                                         </div>
                                         <div>
                                             <label className="text-xs font-bold text-slate-500 block mb-1">Ativo</label>

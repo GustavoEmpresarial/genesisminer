@@ -22,15 +22,21 @@ use genesis_core::auth::password::verify_password;
 use genesis_core::generate_referral_code;
 use genesis_core::time::MS_PER_SECOND;
 use genesis_core::{
-    is_account_locked, lockout_status, user_requires_email_verification,
-    validate_login_email, validate_login_fields_present, validate_login_password,
+    is_account_locked, lockout_status, validate_login_email, validate_login_fields_present,
+    validate_login_password,
 };
 
 pub const LOGIN_COMPLETE_PATH: &str = "/v1/auth/login/complete";
 
+/// Frase quando `is_blocked` está ligado e `block_message` vem vazio.
+const DEFAULT_BLOCKED_LOGIN_ERROR: &str = "This account is blocked.";
+
+/// Teto do texto de ban no login. Igual a `NOTIFICATION_MESSAGE_MAX_CHARS`
+/// em `genesis-mining-worker` (`dashboard.rs`).
+const BLOCK_LOGIN_MESSAGE_MAX_CHARS: usize = 280;
+
 /// Node `DUMMY_BCRYPT_HASH` — unknown-email timing pad (bcrypt cost 12).
-pub const DUMMY_BCRYPT_HASH: &str =
-    "$2b$12$LZUbIvLtEnFKPqXhUGXwkuszLtVDFW9AcE/OeIQH.9y17O/wIFUIC";
+pub const DUMMY_BCRYPT_HASH: &str = "$2b$12$LZUbIvLtEnFKPqXhUGXwkuszLtVDFW9AcE/OeIQH.9y17O/wIFUIC";
 
 const BCRYPT_PREFIX_2A: &str = "$2a$";
 const BCRYPT_PREFIX_2B: &str = "$2b$";
@@ -119,6 +125,14 @@ impl LoginCompleteError {
     }
 }
 
+fn blocked_login_error(block_message: Option<&str>) -> String {
+    let custom = block_message.unwrap_or("").trim();
+    if custom.is_empty() {
+        return DEFAULT_BLOCKED_LOGIN_ERROR.to_string();
+    }
+    custom.chars().take(BLOCK_LOGIN_MESSAGE_MAX_CHARS).collect()
+}
+
 fn hash_looks_bcrypt(pwd: &str) -> bool {
     pwd.starts_with(BCRYPT_PREFIX_2A) || pwd.starts_with(BCRYPT_PREFIX_2B)
 }
@@ -157,7 +171,10 @@ fn usable_registration_ip(raw: &str) -> Option<String> {
         return Some(n.to_string());
     }
     let lower = n.to_ascii_lowercase();
-    if lower == "::1" || lower.starts_with("fe80:") || lower.starts_with("fc") || lower.starts_with("fd")
+    if lower == "::1"
+        || lower.starts_with("fe80:")
+        || lower.starts_with("fc")
+        || lower.starts_with("fd")
     {
         return None;
     }
@@ -189,6 +206,7 @@ struct LoginUserRow {
     is_super_admin: i32,
     polygon_wallet: Option<String>,
     is_blocked: Option<i32>,
+    block_message: Option<String>,
     access_level_id: Option<String>,
     referral_code: Option<String>,
     referred_by: Option<String>,
@@ -209,6 +227,7 @@ fn login_user_from_row(row: &Row) -> LoginUserRow {
         is_super_admin: row.get("is_super_admin"),
         polygon_wallet: row.get("polygon_wallet"),
         is_blocked: row.get("is_blocked"),
+        block_message: row.get("block_message"),
         access_level_id: row.get("access_level_id"),
         referral_code: row.get("referral_code"),
         referred_by: row.get("referred_by"),
@@ -219,12 +238,15 @@ fn login_user_from_row(row: &Row) -> LoginUserRow {
     }
 }
 
-async fn find_user_by_email(pool: &Pool, email: &str) -> Result<Option<LoginUserRow>, LoginCompleteError> {
+async fn find_user_by_email(
+    pool: &Pool,
+    email: &str,
+) -> Result<Option<LoginUserRow>, LoginCompleteError> {
     let client = pool.get().await.map_err(LoginCompleteError::transport)?;
     let row = client
         .query_opt(
             "SELECT id, username, email, password, is_admin, is_super_admin,
-                    polygon_wallet, is_blocked, access_level_id, referral_code,
+                    polygon_wallet, is_blocked, block_message, access_level_id, referral_code,
                     referred_by, admin_permissions, email_verification_required,
                     email_verified, login_locked_until
                FROM users WHERE lower(email) = $1",
@@ -337,7 +359,9 @@ fn validate_login_input(email: &str, password: &str) -> Result<String, LoginComp
     let present = validate_login_fields_present(Some(email), Some(password));
     if !present.is_ok() {
         return Err(LoginCompleteError::BadRequest(
-            present.error.unwrap_or_else(|| "Enter your email and password.".into()),
+            present
+                .error
+                .unwrap_or_else(|| "Enter your email and password.".into()),
         ));
     }
     let email_check = validate_login_email(Some(email));
@@ -349,7 +373,9 @@ fn validate_login_input(email: &str, password: &str) -> Result<String, LoginComp
     let password_check = validate_login_password(Some(password));
     if !password_check.is_ok() {
         return Err(LoginCompleteError::BadRequest(
-            password_check.error.unwrap_or_else(|| "Enter your password.".into()),
+            password_check
+                .error
+                .unwrap_or_else(|| "Enter your password.".into()),
         ));
     }
     Ok(email.trim().to_ascii_lowercase())
@@ -380,7 +406,7 @@ pub async fn run_login_complete(
 
     if user.is_blocked.unwrap_or(0) != 0 {
         return Err(LoginCompleteError::Forbidden {
-            error: "This account is blocked.".into(),
+            error: blocked_login_error(user.block_message.as_deref()),
             code: None,
         });
     }
@@ -389,16 +415,6 @@ pub async fn run_login_complete(
     if is_account_locked(user.login_locked_until_ms, now) {
         let secs = lockout_status(user.login_locked_until_ms, now).remaining_seconds;
         return Err(LoginCompleteError::Locked { seconds: secs });
-    }
-
-    if user_requires_email_verification(
-        i64::from(user.email_verified),
-        i64::from(user.email_verification_required),
-    ) {
-        return Err(LoginCompleteError::Forbidden {
-            error: "Confirm your account email using the link we sent before signing in.".into(),
-            code: Some("EMAIL_NOT_VERIFIED".into()),
-        });
     }
 
     let mut is_match = false;
@@ -424,14 +440,10 @@ pub async fn run_login_complete(
         }
     }
 
-    let referral = ensure_referral_code(
-        pool,
-        user.id,
-        &user.username,
-        user.referral_code.as_deref(),
-    )
-    .await
-    .unwrap_or_else(|_| user.referral_code.clone().unwrap_or_default());
+    let referral =
+        ensure_referral_code(pool, user.id, &user.username, user.referral_code.as_deref())
+            .await
+            .unwrap_or_else(|_| user.referral_code.clone().unwrap_or_default());
 
     let session_id = uuid::Uuid::new_v4().to_string();
     let ttl_ms = i64::try_from(SESSION_TTL_SECONDS.saturating_mul(MS_PER_SECOND))
@@ -481,7 +493,9 @@ pub async fn run_login_complete(
         user.polygon_wallet,
         user.access_level_id,
         access_levels,
-        Some(referral).filter(|s| !s.is_empty()).or(user.referral_code),
+        Some(referral)
+            .filter(|s| !s.is_empty())
+            .or(user.referral_code),
         user.referred_by,
         user.email_verified,
         user.email_verification_required,
@@ -506,6 +520,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn blocked_login_uses_custom_message_or_default() {
+        assert_eq!(blocked_login_error(None), DEFAULT_BLOCKED_LOGIN_ERROR);
+        assert_eq!(blocked_login_error(Some("  ")), DEFAULT_BLOCKED_LOGIN_ERROR);
+        assert_eq!(blocked_login_error(Some(" BANIDO. ")), "BANIDO.");
+        let long = "x".repeat(BLOCK_LOGIN_MESSAGE_MAX_CHARS + 8);
+        assert_eq!(
+            blocked_login_error(Some(&long)).chars().count(),
+            BLOCK_LOGIN_MESSAGE_MAX_CHARS
+        );
+    }
+
+    #[test]
     fn dummy_hash_is_bcrypt() {
         assert!(hash_looks_bcrypt(DUMMY_BCRYPT_HASH));
     }
@@ -520,6 +546,15 @@ mod tests {
     fn validate_normalizes_email() {
         let e = validate_login_input("  A@B.Com ", "secret1").unwrap();
         assert_eq!(e, "a@b.com");
+    }
+
+    #[test]
+    fn login_does_not_block_unverified_email() {
+        let needle = format!(
+            "{} using the link we sent before signing in.",
+            "Confirm your account email"
+        );
+        assert!(!include_str!("login.rs").contains(&needle));
     }
 
     #[test]

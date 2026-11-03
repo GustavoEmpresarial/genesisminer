@@ -22,8 +22,7 @@ pub const AUTH_WORKER_DEFAULT_PORT: u16 = 8091;
 pub const MINING_WORKER_AUTH_HEADER: &str = "x-mining-worker-token";
 
 /// Dev-only fallback when `JWT_SECRET` unset and not production — keep in sync with Node `config.ts`.
-const DEV_FALLBACK_JWT_SECRET: &str =
-    "dev-only-jwt-secret-do-not-use-in-production-min-32-chars!";
+const DEV_FALLBACK_JWT_SECRET: &str = "dev-only-jwt-secret-do-not-use-in-production-min-32-chars!";
 
 #[derive(Clone)]
 pub struct WorkerConfig {
@@ -51,10 +50,7 @@ impl std::fmt::Debug for WorkerConfig {
             .field("auth_worker_port", &self.auth_worker_port)
             .field(
                 "mining_worker_auth_token",
-                &self
-                    .mining_worker_auth_token
-                    .as_ref()
-                    .map(|_| "<redacted>"),
+                &self.mining_worker_auth_token.as_ref().map(|_| "<redacted>"),
             )
             .field("jwt", &self.jwt)
             .field("refresh_ttl_sec", &self.refresh_ttl_sec)

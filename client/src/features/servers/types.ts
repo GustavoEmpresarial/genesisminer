@@ -150,6 +150,59 @@ export function resolveAsicValidityLabel(u: Pick<Upgrade, 'asicDurationAmount' |
   return formatAsicDurationPreview(d.amount, d.unit);
 }
 
+/** Lease sem relógio (`compute_asic_lease_expires_at` devolve 0). */
+export const ASIC_LEASE_NO_CLOCK_EXPIRES_AT = 0;
+
+/** Lease com prazo já vencido. Permanente (`expiresAt` ausente ou ≤ 0) fica. */
+export function isTimedAsicLeasePast(
+  expiresAt: number | null | undefined,
+  nowMs: number
+): boolean {
+  const exp = Number(expiresAt);
+  if (!Number.isFinite(exp) || exp <= ASIC_LEASE_NO_CLOCK_EXPIRES_AT) return false;
+  return exp <= nowMs;
+}
+
+export function findAsicLeaseForSlot(
+  details: readonly AsicLeaseDetail[],
+  rackId: string,
+  slotIndex: number,
+  leaseId: string | null | undefined
+): AsicLeaseDetail | undefined {
+  const id = leaseId != null ? String(leaseId).trim() : '';
+  if (id) {
+    const byId = details.find((lease) => lease.leaseId === id);
+    if (byId) return byId;
+  }
+  return details.find(
+    (lease) => lease.status === 'equipped' && lease.rackId === rackId && lease.slotIndex === slotIndex
+  );
+}
+
+/** Id da máquina no slot, ou null quando a lease temporizada já passou. */
+export function visibleMachineSlotId(
+  itemId: string | null | undefined,
+  lease: AsicLeaseDetail | undefined,
+  nowMs: number
+): string | null {
+  if (itemId == null) return null;
+  const id = String(itemId).trim();
+  if (!id) return null;
+  if (lease && isTimedAsicLeasePast(lease.expiresAt, nowMs)) return null;
+  return id;
+}
+
+export function rackWithPastLeasesHidden<T extends PlacedRack>(
+  rack: T,
+  details: readonly AsicLeaseDetail[],
+  nowMs: number
+): T {
+  const slots = (rack.slots || []).map((slotId, idx) =>
+    visibleMachineSlotId(slotId, findAsicLeaseForSlot(details, rack.id, idx, rack.slotLeaseIds?.[idx]), nowMs)
+  );
+  return { ...rack, slots };
+}
+
 /** Tempo restante até `expiresAt` (ms). */
 export function formatAsicRemainingUntil(expiresAtMs: number, nowMs: number = Date.now()): string {
   const left = Math.floor(Number(expiresAtMs) - nowMs);
@@ -192,15 +245,20 @@ export type AsicLeaseDetail = {
   slotIndex: number | null;
 };
 
-/** ASIC (máquina) elegível na Sala NFT — só id `asic_*` ou categoria com «asic». */
+/** Classe admin «Máquina normal (GPU)» — `AdminEditor` grava a categoria com este texto. */
+const MACHINE_CLASS_GPU_CATEGORY = 'gpu';
+
+/**
+ * ASIC: categoria com «asic», ou id `asic_*` quando a classe não é GPU.
+ * Categoria `GPU` ganha ao prefixo do id (ex. Natal criada como `asic_*` e depois passada a GPU normal).
+ */
 export function isAsicMachineUpgrade(u: Pick<Upgrade, 'id' | 'category' | 'type'>): boolean {
   if (u.type !== 'machine') return false;
+  const category = String(u.category || '').trim().toLowerCase();
+  if (category === MACHINE_CLASS_GPU_CATEGORY) return false;
+  if (category.includes('asic')) return true;
   const id = String(u.id || '').trim().toLowerCase();
-  if (id.startsWith('asic_')) return true;
-  return String(u.category || '')
-    .trim()
-    .toLowerCase()
-    .includes('asic');
+  return id.startsWith('asic_');
 }
 
 /** Renomeações acidentais no admin — não contar como ASICs NFT. */
@@ -898,6 +956,8 @@ export interface AdminUpgrade {
   grantUsdc?: number;
   grantAccessLevelId?: string;
   isActive?: boolean;
+  /** Foto do passe (path/URL público). */
+  imageUrl?: string | null;
   items?: AdminUpgradeItemGrant[];
   boxes?: AdminUpgradeBoxGrant[];
   passes?: string[];

@@ -1301,7 +1301,6 @@ impl SupportAttachmentReferencedResponse {
     }
 }
 
-
 // ---------------------------------------------------------------------------
 // Admin support: full client payloads (was Node `admin.controller.ts` +
 // `ticket-model.ts` reshaping). genesis-api only forwards + gates.
@@ -1404,13 +1403,15 @@ fn nest_admin_tickets(
     admin_replies: &[SupportAdminReplyRow],
     player_replies: &[SupportPlayerReplyRow],
 ) -> Vec<Value> {
-    let mut by_admin: std::collections::HashMap<&str, Vec<Value>> = std::collections::HashMap::new();
+    let mut by_admin: std::collections::HashMap<&str, Vec<Value>> =
+        std::collections::HashMap::new();
     for r in admin_replies {
         if let Some(tid) = r.ticket_id.as_deref() {
             by_admin.entry(tid).or_default().push(admin_reply_json(r));
         }
     }
-    let mut by_player: std::collections::HashMap<&str, Vec<Value>> = std::collections::HashMap::new();
+    let mut by_player: std::collections::HashMap<&str, Vec<Value>> =
+        std::collections::HashMap::new();
     for r in player_replies {
         if let Some(tid) = r.ticket_id.as_deref() {
             by_player.entry(tid).or_default().push(player_reply_json(r));
@@ -1431,7 +1432,11 @@ pub async fn run_support_admin_tickets_payload(
     pool: &Pool,
     req: SupportAdminTicketsPayloadRequest,
 ) -> Result<Value, SupportReadError> {
-    let limit = clamp_limit(req.limit, ADMIN_TICKETS_DEFAULT_LIMIT, ADMIN_TICKETS_MAX_LIMIT);
+    let limit = clamp_limit(
+        req.limit,
+        ADMIN_TICKETS_DEFAULT_LIMIT,
+        ADMIN_TICKETS_MAX_LIMIT,
+    );
     let client = pool
         .get()
         .await
@@ -1441,8 +1446,10 @@ pub async fn run_support_admin_tickets_payload(
         .query(&sql, &[&limit])
         .await
         .map_err(|e| SupportReadError::internal(e.to_string()))?;
-    let tickets: Vec<SupportAdminTicketRow> =
-        rows.iter().map(map_admin_ticket).collect::<Result<_, _>>()?;
+    let tickets: Vec<SupportAdminTicketRow> = rows
+        .iter()
+        .map(map_admin_ticket)
+        .collect::<Result<_, _>>()?;
     let ids: Vec<String> = tickets.iter().map(|t| t.id.clone()).collect();
     let admin_replies = list_admin_replies_for_ids(&client, &ids).await?;
     let player_replies = list_player_replies_for_ids(&client, &ids).await?;
@@ -1513,10 +1520,16 @@ pub async fn run_support_admin_user_history_payload(
 ) -> Result<Value, SupportReadError> {
     let email = req.email.trim().to_string();
     if email.is_empty() {
-        return Err(SupportReadError::validation("Informe um email para buscar."));
+        return Err(SupportReadError::validation(
+            "Informe um email para buscar.",
+        ));
     }
     let page = req.page.unwrap_or(1).max(1);
-    let limit = clamp_limit(req.limit, USER_HISTORY_DEFAULT_LIMIT, USER_HISTORY_MAX_LIMIT);
+    let limit = clamp_limit(
+        req.limit,
+        USER_HISTORY_DEFAULT_LIMIT,
+        USER_HISTORY_MAX_LIMIT,
+    );
     let offset = (page - 1) * limit;
 
     let client = pool
@@ -1655,7 +1668,6 @@ pub async fn run_support_admin_user_history_payload(
         "tickets": tickets,
     }))
 }
-
 
 #[cfg(test)]
 mod tests {

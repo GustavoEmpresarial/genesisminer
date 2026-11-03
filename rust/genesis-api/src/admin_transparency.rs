@@ -65,7 +65,8 @@ async fn remove(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    if let Err(e) = require_admin(&state, &headers, &Method::DELETE, TRANSPARENCY_ADMIN_PATH).await {
+    if let Err(e) = require_admin(&state, &headers, &Method::DELETE, TRANSPARENCY_ADMIN_PATH).await
+    {
         return e;
     }
     forward_mining(&state, DELETE_PATH, json!({ "id": id })).await
@@ -76,10 +77,7 @@ async fn remove(
 /// Same `transparency` tab as the CRUD. The actor is taken from the verified admin
 /// context and **overwrites** anything the client sent, so `actorUserId` cannot be
 /// spoofed into the audit trail.
-async fn health_settings_get(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Response {
+async fn health_settings_get(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if let Err(e) = require_admin(&state, &headers, &Method::GET, TRANSPARENCY_ADMIN_PATH).await {
         return e;
     }

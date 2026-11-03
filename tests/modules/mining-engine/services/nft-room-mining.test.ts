@@ -90,6 +90,7 @@ describe('isAsicMachineUpgradeRow / isNftRoomCatalogMachineRow / nftMiningCoinId
     expect(isAsicMachineUpgradeRow({ type: 'machine', id: 'asic_x1' })).toBe(true);
     expect(isAsicMachineUpgradeRow({ type: 'machine', id: 'gpu_x1', category: 'asic-line' })).toBe(true);
     expect(isAsicMachineUpgradeRow({ type: 'machine', id: 'gpu_x1', category: 'gpu' })).toBe(false);
+    expect(isAsicMachineUpgradeRow({ type: 'machine', id: 'asic_natal_3', category: 'GPU' })).toBe(false);
     expect(isAsicMachineUpgradeRow(null)).toBe(false);
   });
 

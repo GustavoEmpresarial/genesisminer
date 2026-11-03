@@ -228,10 +228,9 @@ pub(crate) async fn ensure_premium_credit(
     if !enabled {
         return Ok(());
     }
-    let eligible =
-        crate::checkin_premium_elig::user_has_premium_usdc_spend(&*conn, uid, min_usdc)
-            .await
-            .unwrap_or(false);
+    let eligible = crate::checkin_premium_elig::user_has_premium_usdc_spend(&*conn, uid, min_usdc)
+        .await
+        .unwrap_or(false);
     if !eligible || !is_premium_within_active_window(Some(last_at), now_ms, interval_days) {
         return Ok(());
     }

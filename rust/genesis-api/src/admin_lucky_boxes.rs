@@ -152,8 +152,7 @@ async fn delete_user_box(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
-    if let Err(e) =
-        require_admin(&state, &headers, &Method::POST, ADMIN_DELETE_USER_BOX_PATH).await
+    if let Err(e) = require_admin(&state, &headers, &Method::POST, ADMIN_DELETE_USER_BOX_PATH).await
     {
         return e;
     }

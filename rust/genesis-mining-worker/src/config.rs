@@ -300,6 +300,10 @@ pub struct WorkerConfig {
     pub genesis_hardware_url: Option<String>,
     /// `PARTNER_GAMES_MAINTENANCE` — `1`/`true` = hub in maintenance (mining-worker SoT).
     pub partner_games_maintenance: bool,
+    /// TopIdle vote webhook HMAC secret. `None` = webhook returns 503.
+    pub topidle_webhook_secret: Option<String>,
+    /// Optional second HMAC secret (panel rotation / Definauta alt).
+    pub topidle_webhook_secret_alt: Option<String>,
 }
 
 impl WorkerConfig {
@@ -489,6 +493,8 @@ impl WorkerConfig {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
             partner_games_maintenance: partner_games_maintenance_from_env(),
+            topidle_webhook_secret: env_opt("TOPIDLE_WEBHOOK_SECRET"),
+            topidle_webhook_secret_alt: env_opt("TOPIDLE_WEBHOOK_SECRET_ALT"),
         })
     }
 

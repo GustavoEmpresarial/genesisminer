@@ -38,8 +38,8 @@ fn generate_refresh_raw() -> Result<String, AuthPgError> {
 
 fn refresh_expires_at_ms(ttl_sec: u64) -> Result<(i64, u64), AuthPgError> {
     let now = current_unix_ms();
-    let ttl_ms = i64::try_from(ttl_sec.saturating_mul(MS_PER_SECOND))
-        .map_err(AuthPgError::transport)?;
+    let ttl_ms =
+        i64::try_from(ttl_sec.saturating_mul(MS_PER_SECOND)).map_err(AuthPgError::transport)?;
     Ok((now.saturating_add(ttl_ms), ttl_sec))
 }
 

@@ -765,11 +765,7 @@ async fn try_mutate_delete(
 }
 
 fn unique_actor_ids(actor: &ChatActor) -> Vec<i64> {
-    let mut ids = vec![actor.session_user_id];
-    if actor.real_user_id != actor.session_user_id {
-        ids.push(actor.real_user_id);
-    }
-    ids
+    actor.unique_user_ids()
 }
 
 async fn on_disconnect<A: Adapter>(

@@ -8,12 +8,17 @@ import {
   type PublicSupportTicketSummary
 } from '../../../shared/api/public-support';
 import {
+  SUPPORT_ATTACHMENT_MAX_BYTES,
   SUPPORT_ATTACHMENT_MAX_COUNT,
+  SUPPORT_ATTACHMENT_MIN_BYTES,
   SUPPORT_CONTACT_EMAIL_MAX,
   SUPPORT_CONTACT_NAME_MAX,
   SUPPORT_TICKET_MESSAGE_MAX,
   SUPPORT_TICKET_SUBJECT_MAX
 } from '../../../shared/constants/formLimits';
+import { SUPPORT_FILE_ACCEPT } from '../lib/supportAccept';
+import { mergeSupportPicks } from '../lib/mergeSupportPicks';
+import { prepareSupportAttachment } from '../lib/prepareSupportAttachment';
 
 type Tab = 'new' | 'lookup';
 
@@ -43,9 +48,44 @@ export function PublicSupportPage({ onBackHome, onGoLogin }: PublicSupportPagePr
   }, [files.length]);
 
   const onPickFiles = (list: FileList | null) => {
-    if (!list) return;
-    const next = [...files, ...Array.from(list)].slice(0, SUPPORT_ATTACHMENT_MAX_COUNT);
-    setFiles(next);
+    const picked = list ? Array.from(list) : [];
+    if (picked.length === 0) return;
+    const maxMb = Math.floor(SUPPORT_ATTACHMENT_MAX_BYTES / (1024 * 1024));
+    void (async () => {
+      const prepared: File[] = [];
+      let prepareReason: string | null = null;
+      for (const file of picked) {
+        const result = await prepareSupportAttachment(file);
+        if ('error' in result) {
+          if (!prepareReason) {
+            if (result.error === 'too-large') {
+              prepareReason = `«${result.name}» ultrapassa o limite de ${maxMb} MB por ficheiro.`;
+            } else if (result.error === 'unreadable') {
+              prepareReason = `«${result.name}» não deu para ler. Envia PNG, JPG, GIF, WEBP ou um vídeo MP4/WEBM/MOV.`;
+            } else {
+              prepareReason = `«${result.name}» tipo não permitido. Usa PNG, JPG, GIF, WEBP ou vídeo MP4/WEBM/MOV.`;
+            }
+          }
+          continue;
+        }
+        prepared.push(result.file);
+      }
+      setFiles((prev) => {
+        const { next, rejectReason } = mergeSupportPicks(
+          prev,
+          prepared,
+          SUPPORT_ATTACHMENT_MAX_COUNT,
+          SUPPORT_ATTACHMENT_MAX_BYTES,
+          SUPPORT_ATTACHMENT_MIN_BYTES,
+          (name, mb) => `«${name}» ultrapassa o limite de ${mb} MB por ficheiro.`,
+          (max) => `Máximo de ${max} anexos.`,
+          (name) => `«${name}» tipo não permitido. Usa PNG, JPG, GIF, WEBP ou vídeo MP4/WEBM/MOV.`,
+          (name) => `«${name}» ficheiro inválido ou vazio.`
+        );
+        setError(rejectReason ?? prepareReason);
+        return next;
+      });
+    })();
   };
 
   const submitNew = async (e: FormEvent) => {
@@ -222,10 +262,13 @@ export function PublicSupportPage({ onBackHome, onGoLogin }: PublicSupportPagePr
                   {fileLabel}
                   <input
                     type="file"
-                    accept="image/*,video/*"
+                    accept={SUPPORT_FILE_ACCEPT}
                     multiple
-                    className="hidden"
-                    onChange={(e) => onPickFiles(e.target.files)}
+                    className="sr-only"
+                    onChange={(e) => {
+                      onPickFiles(e.target.files);
+                      e.target.value = '';
+                    }}
                   />
                 </label>
                 {files.length > 0 ? (

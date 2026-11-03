@@ -6,9 +6,7 @@ use tokio_postgres::Row;
 
 use crate::errors::AuthPgError;
 use crate::pg_types::pg_user_id;
-use crate::session::{
-    run_session_load, SessionLoadOk, SESSION_MANAGER_MODE_ON,
-};
+use crate::session::{run_session_load, SessionLoadOk, SESSION_MANAGER_MODE_ON};
 use genesis_core::get_email_verification_flags;
 
 pub const SESSION_HYDRATE_PATH: &str = "/v1/auth/session/hydrate";
@@ -112,7 +110,10 @@ pub fn assemble_public_profile(
     account_manager_enabled: bool,
     merge_enabled: bool,
 ) -> PublicProfile {
-    let ev = get_email_verification_flags(i64::from(email_verified), i64::from(email_verification_required));
+    let ev = get_email_verification_flags(
+        i64::from(email_verified),
+        i64::from(email_verification_required),
+    );
     PublicProfile {
         id: user_id.to_string(),
         username: username.to_string(),
@@ -149,7 +150,9 @@ pub fn assemble_public_profile(
 fn user_id_i64(raw: &serde_json::Value) -> Result<i64, AuthPgError> {
     match raw {
         serde_json::Value::Number(n) => {
-            let i = n.as_i64().ok_or_else(|| AuthPgError::bad("invalid userId"))?;
+            let i = n
+                .as_i64()
+                .ok_or_else(|| AuthPgError::bad("invalid userId"))?;
             if i <= 0 {
                 return Err(AuthPgError::bad("invalid userId"));
             }
@@ -193,8 +196,7 @@ pub async fn resolve_merge_enabled(pool: &Pool) -> bool {
             let machine: Option<i32> = r.get(1);
             let multiplier: Option<i32> = r.get(2);
             let infra: Option<i32> = r.get(3);
-            flag_on(enabled)
-                && (flag_on(machine) || flag_on(multiplier) || flag_on(infra))
+            flag_on(enabled) && (flag_on(machine) || flag_on(multiplier) || flag_on(infra))
         }
         _ => true,
     }
@@ -355,7 +357,9 @@ pub async fn run_session_hydrate(
     ))
 }
 
-pub fn parse_hydrate_ids(body: &SessionHydrateRequest) -> Result<(Option<i64>, Option<String>), AuthPgError> {
+pub fn parse_hydrate_ids(
+    body: &SessionHydrateRequest,
+) -> Result<(Option<i64>, Option<String>), AuthPgError> {
     let user_id = match body.user_id.as_ref() {
         None | Some(serde_json::Value::Null) => None,
         Some(v) => Some(user_id_i64(v)?),
@@ -379,7 +383,10 @@ mod tests {
     fn parse_admin_permissions_null_and_json() {
         assert_eq!(parse_admin_permissions(None), serde_json::Value::Null);
         assert_eq!(parse_admin_permissions(Some("")), serde_json::Value::Null);
-        assert_eq!(parse_admin_permissions(Some("not-json")), serde_json::Value::Null);
+        assert_eq!(
+            parse_admin_permissions(Some("not-json")),
+            serde_json::Value::Null
+        );
         let v = parse_admin_permissions(Some(r#"{"users":true}"#));
         assert_eq!(v["users"], true);
     }

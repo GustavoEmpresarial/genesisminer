@@ -16,7 +16,6 @@ import { getMiningCoins } from '../../../shared/api/admin-economy';
 import { List, Cpu, Server, Battery, Plug, Zap, PlusCircle, Hexagon, ChevronRight, ChevronDown } from 'lucide-react';
 import {
     SHOP_PRODUCT_ID_RE,
-    makeSafeShopProductId,
     applyAdminCatalogItemSave
 } from '../lib/upgradeCatalogIds';
 import { mergeCatalogRootId } from '../../servers/lib/upgradeRackCompat';
@@ -215,7 +214,6 @@ export const AdminEditor: React.FC<AdminEditorProps> = ({ gameUpgrades, onUpdate
 
     const handleSaveItem = async () => {
         if (!onUpdateGameUpgrades || !itemForm.name) return;
-        if (!isPersistedIdEdit && !String(itemForm.id || '').trim()) return;
         setIsSaving(true);
         try {
             const amt = Math.floor(Number(itemForm.asicDurationAmount) || 0);
@@ -230,7 +228,8 @@ export const AdminEditor: React.FC<AdminEditorProps> = ({ gameUpgrades, onUpdate
                 asicDurationAmount: timed ? amt : 0,
                 asicDurationUnit: timed ? unit : undefined
             };
-            const { upgrades, fixes, lockedId } = applyAdminCatalogItemSave({
+            const wasCreate = editingSourceId == null;
+            const { upgrades, fixes, lockedId, isCreate } = applyAdminCatalogItemSave({
                 gameUpgrades,
                 editingSourceId,
                 itemForm: formForSave
@@ -252,6 +251,19 @@ export const AdminEditor: React.FC<AdminEditorProps> = ({ gameUpgrades, onUpdate
                         compatibleRacks: updated.compatibleRacks || []
                     });
                 }
+                // CREATE: focar a lista no item novo (evita parecer que o catálogo “sumiu”).
+                if (wasCreate || isCreate) {
+                    setCatalogSearch(String(updated?.name || lockedId));
+                    setLifecycleFilter('active');
+                    setEditorFilter('all');
+                    setRarityFilter('all');
+                }
+                const displayName = String(updated?.name || itemForm.name || lockedId);
+                alert(
+                    wasCreate || isCreate
+                        ? `Item criado com sucesso.\n\nNome: ${displayName}\nID: ${lockedId}`
+                        : `Item atualizado com sucesso.\n\nNome: ${displayName}\nID: ${lockedId}`
+                );
             }
             if (ok !== false && fixes.length > 0) {
                 const preview = fixes
@@ -264,19 +276,23 @@ export const AdminEditor: React.FC<AdminEditorProps> = ({ gameUpgrades, onUpdate
                         : '';
                 alert(`IDs de itens NOVOS inválidos corrigidos no save:\n\n${preview}${extra}`);
             }
-        } catch (e: any) {
-            const rawMessage = String(e?.message || 'Erro desconhecido');
-            if (rawMessage.startsWith('ID inválido') || rawMessage.startsWith('ID obrigatório')) {
+        } catch (e: unknown) {
+            const rawMessage = String(
+                e instanceof Error ? e.message : 'Erro desconhecido'
+            );
+            if (
+                rawMessage.startsWith('ID inválido') ||
+                rawMessage.startsWith('ID obrigatório') ||
+                rawMessage.startsWith('Nome obrigatório')
+            ) {
                 alert(rawMessage);
             } else {
                 const invalidIdMatch = rawMessage.match(/^ID de item inválido:\s*(.+?)\.\s*Use apenas/i);
                 if (invalidIdMatch) {
                     const badId = invalidIdMatch[1]?.trim() || 'desconhecido';
-                    const suggestedId = makeSafeShopProductId(badId);
                     alert(
                         `O servidor rejeitou um ID: ${badId}.\n\n` +
-                        `IDs já persistidos não são remapeados no admin.\n` +
-                        (suggestedId ? `Sugestão só para CREATE: ${suggestedId}` : '')
+                        `IDs já persistidos não são remapeados no admin.`
                     );
                 } else {
                     alert(rawMessage);
@@ -316,8 +332,8 @@ export const AdminEditor: React.FC<AdminEditorProps> = ({ gameUpgrades, onUpdate
             }
             if (mode === 'retire') setLifecycleFilter('retired');
             else setLifecycleFilter('active');
-        } catch (e: any) {
-            alert(String(e?.message || 'Falha na acção de lifecycle.'));
+        } catch (e: unknown) {
+            alert(String(e instanceof Error ? e.message : 'Falha na acção de lifecycle.'));
         } finally {
             setIsLifecycleBusy(false);
         }
@@ -657,36 +673,6 @@ export const AdminEditor: React.FC<AdminEditorProps> = ({ gameUpgrades, onUpdate
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
-                                {!isPersistedIdEdit && (
-                                <div>
-                                    <div className="flex items-center justify-between gap-2 mb-1">
-                                        <label className="text-xs font-bold text-slate-500 block">
-                                            ID Único
-                                        </label>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                setItemForm({
-                                                    ...itemForm,
-                                                    id: makeSafeShopProductId(String(itemForm.id || itemForm.name || ''))
-                                                })
-                                            }
-                                            className="text-[10px] uppercase font-bold px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white"
-                                        >
-                                            Gerar ID seguro
-                                        </button>
-                                    </div>
-                                    <input
-                                        type="text"
-                                        value={itemForm.id}
-                                        onChange={(e) => setItemForm({ ...itemForm, id: e.target.value })}
-                                        className="w-full border rounded p-2 text-sm bg-slate-900 border-slate-600 text-white"
-                                    />
-                                    <p className="mt-1 text-[10px] text-slate-500">
-                                        CREATE: letras, números, ponto, underscore ou hífen. IDs já no catálogo nunca são remapeados.
-                                    </p>
-                                </div>
-                                )}
                                 <div><label className="text-xs font-bold text-slate-500 block mb-1">Nome</label><input type="text" value={itemForm.name} onChange={e => setItemForm({ ...itemForm, name: e.target.value })} className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white text-sm" /></div>
                                 <div>
                                     <label className="text-xs font-bold text-slate-500 block mb-1">Classe</label>

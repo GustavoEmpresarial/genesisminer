@@ -27,7 +27,8 @@ use crate::config::{AppState, COOKIE_SID};
 use crate::facade::{forward_mining, worker_to_response};
 use crate::session::{cookies_from_req, json_status, require_player};
 use crate::workers::{
-    post_auth, post_hardware, post_mining, post_wallet, worker_infra_status, worker_unavailable_body,
+    post_auth, post_hardware, post_mining, post_wallet, worker_infra_status,
+    worker_unavailable_body,
 };
 
 /// Public paths owned here.
@@ -59,8 +60,7 @@ const HARDWARE_WIPE_USER_PATH: &str = "/v1/hardware/wipe-user";
 const ADMIN_GAME_STATE_BY_EMAIL_PATH: &str = "/v1/game-state/by-email";
 const MINING_PROGRESS_PATH: &str = "/v1/mining/progress";
 const HARDWARE_PERSIST_PATH: &str = "/v1/hardware/persist";
-const ADMIN_SAVE_GAME_OVERRIDE_FINALIZE_PATH: &str =
-    "/v1/admin/users/save-game-override-finalize";
+const ADMIN_SAVE_GAME_OVERRIDE_FINALIZE_PATH: &str = "/v1/admin/users/save-game-override-finalize";
 const WALLET_ADMIN_SAVE_GAME_BALANCES_PATH: &str = "/v1/wallet/admin/save-game-balances";
 const ADMIN_OWNED_ROOMS_PREPARE_PATH: &str = "/v1/admin/users/owned-rooms-prepare";
 const ADMIN_OWNED_ROOMS_FINALIZE_PATH: &str = "/v1/admin/users/owned-rooms-finalize";
@@ -108,8 +108,7 @@ const ADMIN_EDIT_ON: &str = "1";
 const ERR_INVALID_EMAIL: &str = "Email inválido";
 const ERR_USER_ID_REQUIRED: &str = "User id is required.";
 const ERR_INVALID_USER_ID: &str = "Invalid user id.";
-const ERR_PROGRESS_FAILED: &str =
-    "Não foi possível liquidar a mineração antes de guardar.";
+const ERR_PROGRESS_FAILED: &str = "Não foi possível liquidar a mineração antes de guardar.";
 const ERR_ROOM_IDS: &str = "roomIds must be an array of strings.";
 const ERR_COULD_NOT_RENEW: &str = "Could not renew session.";
 const CODE_VALIDATION: &str = "VALIDATION";
@@ -571,11 +570,12 @@ fn normalize_coin_balances_for_wallet(raw: &Value) -> Map<String, Value> {
 }
 
 /// Node `applyAdminSaveGameOverride` orchestration across mining / hardware / wallet.
-async fn save_game_override_chain(state: &AppState, target_user_id: i64, changes: &Value) -> Response {
-    let has_stock = changes
-        .get("stock")
-        .map(|v| v.is_object())
-        .unwrap_or(false);
+async fn save_game_override_chain(
+    state: &AppState,
+    target_user_id: i64,
+    changes: &Value,
+) -> Response {
+    let has_stock = changes.get("stock").map(|v| v.is_object()).unwrap_or(false);
     let placed_racks_norm = changes
         .get("placedRacks")
         .and_then(normalize_placed_racks_for_persist);
@@ -624,8 +624,9 @@ async fn save_game_override_chain(state: &AppState, target_user_id: i64, changes
     if has_stock || placed_racks_norm.is_some() {
         let mut persist = json!({ "userId": target_user_id });
         if has_stock {
-            persist["stock"] =
-                Value::Object(normalize_admin_stock_snapshot(changes.get("stock").unwrap()));
+            persist["stock"] = Value::Object(normalize_admin_stock_snapshot(
+                changes.get("stock").unwrap(),
+            ));
             persist["stockMode"] = json!(STOCK_MODE_MERGE);
         }
         if let Some(racks) = &placed_racks_norm {
@@ -1106,10 +1107,7 @@ async fn post_impersonate(
     }
 }
 
-async fn post_stop_impersonate(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Response {
+async fn post_stop_impersonate(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     // Node uses `authenticateToken` (not isAdmin) — JWT is the target's.
     if let Err(e) = require_player(&state, &headers).await {
         return e;
@@ -1195,11 +1193,7 @@ async fn mining_items_array(state: &AppState, path: &str, body: Value) -> Respon
 async fn mining_assignments_map(state: &AppState, path: &str, body: Value) -> Response {
     match post_mining(&state.cfg, &state.http, path, &body).await {
         Ok(r) if r.status == HTTP_OK && r.body["ok"] == true => {
-            let map = r
-                .body
-                .get("assignments")
-                .cloned()
-                .unwrap_or(json!({}));
+            let map = r.body.get("assignments").cloned().unwrap_or(json!({}));
             json_status(HTTP_OK, map)
         }
         Ok(r) => worker_to_response(r),
@@ -1222,10 +1216,7 @@ async fn mining_strip_ok(state: &AppState, path: &str, body: Value) -> Response 
     }
 }
 
-async fn get_referral_models(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Response {
+async fn get_referral_models(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if let Err(e) = require_admin(&state, &headers, &Method::GET, REFERRAL_MODELS_PATH).await {
         return e;
     }
@@ -1278,11 +1269,7 @@ async fn delete_referral_model(
         return e;
     }
     let trimmed = id_raw.trim();
-    let id = trimmed
-        .parse::<i64>()
-        .ok()
-        .filter(|n| *n > 0)
-        .unwrap_or(0);
+    let id = trimmed.parse::<i64>().ok().filter(|n| *n > 0).unwrap_or(0);
     match post_mining(
         &state.cfg,
         &state.http,
@@ -1292,7 +1279,11 @@ async fn delete_referral_model(
     .await
     {
         Ok(r) if r.status == HTTP_OK && r.body["ok"] == true => {
-            let deleted = r.body.get("deleted").and_then(Value::as_bool).unwrap_or(false);
+            let deleted = r
+                .body
+                .get("deleted")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             json_status(HTTP_OK, json!({ "ok": deleted }))
         }
         Ok(r) => worker_to_response(r),
@@ -1304,8 +1295,7 @@ async fn get_access_level_referral_assignments(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(e) =
-        require_admin(&state, &headers, &Method::GET, ACCESS_LEVEL_REFERRAL_PATH).await
+    if let Err(e) = require_admin(&state, &headers, &Method::GET, ACCESS_LEVEL_REFERRAL_PATH).await
     {
         return e;
     }
@@ -1317,8 +1307,7 @@ async fn post_access_level_referral_assignments(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
-    if let Err(e) =
-        require_admin(&state, &headers, &Method::POST, ACCESS_LEVEL_REFERRAL_PATH).await
+    if let Err(e) = require_admin(&state, &headers, &Method::POST, ACCESS_LEVEL_REFERRAL_PATH).await
     {
         return e;
     }
@@ -1387,7 +1376,10 @@ pub fn router() -> Router<Arc<AppState>> {
             ACCESS_LEVEL_REFERRAL_PATH,
             get(get_access_level_referral_assignments).post(post_access_level_referral_assignments),
         )
-        .route(ACCOUNTS_DORMANT_MINING_PATH, get(get_accounts_dormant_mining))
+        .route(
+            ACCOUNTS_DORMANT_MINING_PATH,
+            get(get_accounts_dormant_mining),
+        )
 }
 
 #[cfg(test)]
@@ -1448,10 +1440,7 @@ mod tests {
         assert_eq!(STOP_IMPERSONATE_PATH, "/api/admin/stop-impersonate");
         assert_eq!(USER_ACTIVITY_PATH, "/api/admin/user-activity");
         assert_eq!(REFERRAL_MODELS_PATH, "/api/admin/referral-models");
-        assert_eq!(
-            REFERRAL_MODELS_ITEM_PATH,
-            "/api/admin/referral-models/{id}"
-        );
+        assert_eq!(REFERRAL_MODELS_ITEM_PATH, "/api/admin/referral-models/{id}");
         assert_eq!(
             ACCESS_LEVEL_REFERRAL_PATH,
             "/api/admin/access-level-referral-assignments"

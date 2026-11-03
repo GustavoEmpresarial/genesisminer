@@ -17,8 +17,12 @@ mod tests {
 
     #[test]
     fn milestone_only_on_multiples() {
-        assert!(should_grant_streak_milestone_reward(CHECKIN_REWARD_EVERY_DAYS));
-        assert!(should_grant_streak_milestone_reward(2 * CHECKIN_REWARD_EVERY_DAYS));
+        assert!(should_grant_streak_milestone_reward(
+            CHECKIN_REWARD_EVERY_DAYS
+        ));
+        assert!(should_grant_streak_milestone_reward(
+            2 * CHECKIN_REWARD_EVERY_DAYS
+        ));
         assert!(!should_grant_streak_milestone_reward(1));
         assert!(!should_grant_streak_milestone_reward(0));
         assert!(!should_grant_streak_milestone_reward(-7));

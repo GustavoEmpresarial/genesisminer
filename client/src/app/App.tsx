@@ -40,6 +40,11 @@ const PUBLIC_CONTENT_VIEWS: ReadonlySet<AppView> = new Set([
   'public_support'
 ]);
 
+function pageHostname(): string {
+  if (typeof window === 'undefined') return '';
+  return window.location.hostname;
+}
+
 function bootFromLocation(): { view: AppView; authMode: AuthMode } {
   if (typeof window === 'undefined') return { view: 'home', authMode: 'login' };
   const loc = classifyLocation(window.location.pathname);
@@ -70,7 +75,7 @@ export function App() {
 
         if (sess) setUser(sess);
 
-        if (shouldBlockGameAndLanding(maintenanceOn, !!sess?.isAdmin)) {
+        if (shouldBlockGameAndLanding(maintenanceOn, !!sess?.isAdmin, pageHostname())) {
           const loc = classifyLocation(path);
           if (!sess && loc.kind === 'auth') {
             setAuthMode(loc.mode);
@@ -152,7 +157,7 @@ export function App() {
       const loc = classifyLocation(path);
 
       if (user) {
-        if (shouldBlockGameAndLanding(siteMaintenance, !!user.isAdmin)) {
+        if (shouldBlockGameAndLanding(siteMaintenance, !!user.isAdmin, pageHostname())) {
           setView('home');
           return;
         }
@@ -270,7 +275,7 @@ export function App() {
   }, [user, enterAdmin]);
 
   const enterGame = useCallback(() => {
-    if (shouldBlockGameAndLanding(siteMaintenance, !!user?.isAdmin)) return;
+    if (shouldBlockGameAndLanding(siteMaintenance, !!user?.isAdmin, pageHostname())) return;
     pushPath('/servers');
     setView('game');
   }, [siteMaintenance, user?.isAdmin]);
@@ -280,7 +285,7 @@ export function App() {
     setSessionHint(true);
     const maintenanceOn = resolveMaintenanceFlag(sessionUser.siteMaintenance, siteMaintenance);
     setSiteMaintenance(maintenanceOn);
-    if (shouldBlockGameAndLanding(maintenanceOn, !!sessionUser.isAdmin)) {
+    if (shouldBlockGameAndLanding(maintenanceOn, !!sessionUser.isAdmin, pageHostname())) {
       setView('home');
       return;
     }
@@ -299,7 +304,7 @@ export function App() {
         setUser(sess);
         // Se o login omitiu isAdmin e a session completa confirma admin → painel.
         setSiteMaintenance(resolveMaintenanceFlag(sess.siteMaintenance, maintenanceOn));
-        if (shouldBlockGameAndLanding(resolveMaintenanceFlag(sess.siteMaintenance, maintenanceOn), !!sess.isAdmin)) {
+        if (shouldBlockGameAndLanding(resolveMaintenanceFlag(sess.siteMaintenance, maintenanceOn), !!sess.isAdmin, pageHostname())) {
           setView('home');
           return;
         }
@@ -378,7 +383,7 @@ export function App() {
     );
   }
 
-  if (shouldBlockGameAndLanding(siteMaintenance, !!user?.isAdmin)) {
+  if (shouldBlockGameAndLanding(siteMaintenance, !!user?.isAdmin, pageHostname())) {
     if (view === 'auth' && !user) {
       return (
         <div className="flex min-h-[100dvh] flex-col bg-slate-50 text-slate-900 transition-colors duration-300 dark:bg-[#0f0c08] dark:text-slate-100">

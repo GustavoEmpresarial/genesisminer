@@ -51,7 +51,11 @@ pub struct CoinYieldInput {
 /// `active` = Σ hashrate ativo real da moeda no tick. Divisor com clamp em
 /// [`DIST_MIN_HASHRATE`] → total pago nunca passa do orçamento (só sub-distribui abaixo do piso).
 /// `active <= MIN_NETWORK_HASHRATE` ⇒ ninguém minerando ⇒ yield 0.
-pub fn usd_month_yield(distribution_usd_month: f64, price_usd: f64, active: f64) -> (f64, f64, f64) {
+pub fn usd_month_yield(
+    distribution_usd_month: f64,
+    price_usd: f64,
+    active: f64,
+) -> (f64, f64, f64) {
     let usd_month = if distribution_usd_month.is_finite() && distribution_usd_month > 0.0 {
         distribution_usd_month
     } else {
@@ -187,7 +191,13 @@ pub fn build_yield_history_rows_for_boundary(
 mod tests {
     use super::*;
 
-    fn legacy_coin(id: &str, block_reward: f64, block_time: f64, net: f64, independent: bool) -> CoinYieldInput {
+    fn legacy_coin(
+        id: &str,
+        block_reward: f64,
+        block_time: f64,
+        net: f64,
+        independent: bool,
+    ) -> CoinYieldInput {
         CoinYieldInput {
             id: id.into(),
             block_reward,

@@ -162,7 +162,7 @@ export function SupportTicketDetailView({
               <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 text-xs text-slate-400">
                 <Paperclip size={14} />
                 {t('support.attachments')}
-                <input type="file" accept={SUPPORT_FILE_ACCEPT} multiple className="hidden" onChange={onPickFollow} />
+                <input type="file" accept={SUPPORT_FILE_ACCEPT} multiple className="sr-only" onChange={onPickFollow} />
               </label>
               {followFiles.length > 0 ? (
                 <ul className="space-y-1 text-[11px] text-slate-400">

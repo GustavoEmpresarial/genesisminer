@@ -91,6 +91,12 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
   const application = auth.application ?? null;
   const profile = state.creatorProfile ?? null;
   const nftRoom = state.nftRoom ?? null;
+  /** Default allow when field missing (old payloads); only block on explicit `false`. */
+  const canSubmitToday = isPartner && auth.canSubmitToday !== false;
+  const submissionsToday =
+    typeof auth.submissionsToday === 'number' && Number.isFinite(auth.submissionsToday)
+      ? Math.max(0, Math.floor(auth.submissionsToday))
+      : 0;
 
   const [applyOpen, setApplyOpen] = useState(true);
   const [channelName, setChannelName] = useState('');
@@ -524,9 +530,11 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
         </button>
         {formOpen && (
           <div className="p-4 sm:p-5 border-t border-slate-800 space-y-3">
-            {!auth.canSubmitToday && (
+            {!canSubmitToday && (
               <div className="text-sm text-amber-200/90 bg-amber-950/25 border border-amber-900/40 rounded-lg px-3 py-2">
-                {t('partners.studioDailyLimit')}
+                {submissionsToday > 0
+                  ? t('partners.studioAlreadySubmittedToday')
+                  : t('partners.studioDailyLimit')}
               </div>
             )}
             <form onSubmit={onSubmitVideo} className="space-y-3">
@@ -537,7 +545,8 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
                 required
                 minLength={3}
                 placeholder={t('partners.studioVideoTitlePh')}
-                className="w-full rounded-lg bg-slate-950 border border-slate-600 px-3 py-2 text-sm"
+                disabled={!canSubmitToday || submitting}
+                className="w-full rounded-lg bg-slate-950 border border-slate-600 px-3 py-2 text-sm disabled:opacity-50"
               />
               <input
                 value={youtubeUrl}
@@ -545,7 +554,8 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
                 maxLength={PARTNER_VIDEO_YOUTUBE_URL_MAX}
                 required
                 placeholder={t('partners.studioYoutubeUrlPh')}
-                className="w-full rounded-lg bg-slate-950 border border-slate-600 px-3 py-2 text-sm"
+                disabled={!canSubmitToday || submitting}
+                className="w-full rounded-lg bg-slate-950 border border-slate-600 px-3 py-2 text-sm disabled:opacity-50"
               />
               <textarea
                 value={videoDesc}
@@ -553,13 +563,14 @@ export function YoutubePartnerStudio({ state, mySubs, onReload }: Props) {
                 maxLength={PARTNER_VIDEO_DESCRIPTION_MAX}
                 rows={2}
                 placeholder={t('partners.studioVideoDescPh')}
-                className="w-full rounded-lg bg-slate-950 border border-slate-600 px-3 py-2 text-sm resize-y"
+                disabled={!canSubmitToday || submitting}
+                className="w-full rounded-lg bg-slate-950 border border-slate-600 px-3 py-2 text-sm resize-y disabled:opacity-50"
               />
               {submitErr && <p className="text-sm text-red-400">{submitErr}</p>}
               {okMsg && <p className="text-sm text-emerald-400">{okMsg}</p>}
               <button
                 type="submit"
-                disabled={submitting || !auth.canSubmitToday}
+                disabled={submitting || !canSubmitToday}
                 className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-white text-sm font-black uppercase"
               >
                 {submitting ? <Loader2 className="animate-spin" size={18} /> : <Rocket size={18} />}

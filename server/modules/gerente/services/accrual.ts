@@ -12,7 +12,7 @@ import { utcWeekStartMs } from '../../../shared/utils/utc-week.js';
 export type MiningGainEntry = { coinId: string; amount: number };
 
 /**
- * Acumula 10% do minerado do dono na semana UTC corrente (mesma TX do crédito).
+ * Acumula `ACCOUNT_MANAGER_SHARE` do minerado do dono na semana UTC corrente (mesma TX do crédito).
  * Não altera `coin_balances` do dono — só o ledger de accrual do gerente.
  */
 export async function accrueManagerMiningShare(client: PoolClient, ownerUserId: number, gains: MiningGainEntry[], nowMs: number = Date.now()): Promise<void> {

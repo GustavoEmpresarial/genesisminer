@@ -132,8 +132,7 @@ pub async fn run_admin_shop_checkouts(
                         $3 = ''
                         OR strpos(lower(COALESCE(u.username, '')), lower($3)) > 0
                         OR strpos(lower(COALESCE(u.email, '')), lower($3)) > 0
-                      )"#
-                ,
+                      )"#,
                 LINES_JSONB = LINES_JSONB,
             ),
             &[item, &uid, search],
@@ -169,8 +168,7 @@ pub async fn run_admin_shop_checkouts(
                         OR strpos(lower(COALESCE(u.email, '')), lower($3)) > 0
                       )
                     ORDER BY c.created_at DESC
-                    LIMIT $4"#
-                ,
+                    LIMIT $4"#,
                 LINES_JSONB = LINES_JSONB,
             ),
             &[item, &uid, search, &SHOP_CHECKOUT_HISTORY_LIMIT],

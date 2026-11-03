@@ -1,8 +1,11 @@
-//! Elegibilidade check-in premium por gasto USDC vitalício + flag unlock.
-//! Espelha `server/modules/checkin/services/premium-policy.ts`.
+//! Elegibilidade check-in premium (legado).
+//!
+//! Produto: check-in é **só diário** — `premium_weekly` fica sempre `false`.
+//! Settings / unlock / spend permanecem na BD mas são inertes para o cadenciamento.
 
-use genesis_core::checkin::{DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS, DEFAULT_CHECKIN_PREMIUM_MIN_USDC};
-use tracing::warn;
+use genesis_core::checkin::{
+    DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS, DEFAULT_CHECKIN_PREMIUM_MIN_USDC,
+};
 
 const UNLOCKED_FLAG: i32 = 1;
 
@@ -36,6 +39,7 @@ FROM (
 "#;
 
 /// Se já unlocked OU gasto ≥ min → true; ao cruzar limiar persiste unlock.
+/// Mantido para admin/grant legado; o check-in runtime já não usa isto para cadência.
 pub async fn user_has_premium_usdc_spend(
     client: &tokio_postgres::Client,
     user_id: i32,
@@ -72,98 +76,14 @@ pub async fn user_has_premium_usdc_spend(
     Ok(true)
 }
 
-/// Carrega settings + resolve elegibilidade (igual `load_premium` / progress).
+/// Sempre diário: `premium_weekly` é sempre `false`.
 pub async fn resolve_premium_weekly_checkin(
-    client: &tokio_postgres::Client,
-    user_id: i32,
+    _client: &tokio_postgres::Client,
+    _user_id: i32,
 ) -> PremiumWeeklyContext {
-    let fallback = PremiumWeeklyContext {
+    PremiumWeeklyContext {
         premium_weekly: false,
         interval_days: DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS,
         min_usdc: DEFAULT_CHECKIN_PREMIUM_MIN_USDC,
-    };
-
-    let setting_keys: Vec<String> = vec![
-        "checkin_premium_enabled".to_string(),
-        "checkin_premium_min_usdc".to_string(),
-        "checkin_premium_interval_days".to_string(),
-    ];
-    let settings_rows = match client
-        .query(
-            r#"SELECT key, value FROM settings WHERE key = ANY($1)"#,
-            &[&setting_keys],
-        )
-        .await
-    {
-        Ok(rows) => rows,
-        Err(e) => {
-            warn!(user_id, err = %e, "premium settings query failed — non-premium");
-            return fallback;
-        }
-    };
-
-    let mut enabled_raw: Option<String> = None;
-    let mut min_usdc_raw: Option<String> = None;
-    let mut interval_days_raw: Option<String> = None;
-    for row in &settings_rows {
-        let key: String = row.get("key");
-        let value: String = row.try_get("value").unwrap_or_default();
-        match key.as_str() {
-            "checkin_premium_enabled" => enabled_raw = Some(value),
-            "checkin_premium_min_usdc" => min_usdc_raw = Some(value),
-            "checkin_premium_interval_days" => interval_days_raw = Some(value),
-            _ => {}
-        }
-    }
-
-    let enabled = match enabled_raw.as_deref() {
-        None | Some("") => true,
-        Some(v) => v == "1",
-    };
-
-    let min_parsed = min_usdc_raw
-        .as_deref()
-        .and_then(|s| s.parse::<f64>().ok())
-        .unwrap_or(DEFAULT_CHECKIN_PREMIUM_MIN_USDC);
-    let min_usdc = if min_parsed.is_finite() && min_parsed >= 0.0 {
-        min_parsed
-    } else {
-        DEFAULT_CHECKIN_PREMIUM_MIN_USDC
-    };
-
-    let days_parsed = interval_days_raw
-        .as_deref()
-        .and_then(|s| s.parse::<i32>().ok())
-        .unwrap_or(DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS);
-    let interval_days = if days_parsed >= 1 {
-        days_parsed
-    } else {
-        DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS
-    };
-
-    if !enabled {
-        return PremiumWeeklyContext {
-            premium_weekly: false,
-            interval_days,
-            min_usdc,
-        };
-    }
-
-    let eligible = match user_has_premium_usdc_spend(client, user_id, min_usdc).await {
-        Ok(v) => v,
-        Err(e) => {
-            warn!(
-                user_id,
-                err = %e,
-                "premium USDC spend query failed — non-premium"
-            );
-            false
-        }
-    };
-
-    PremiumWeeklyContext {
-        premium_weekly: eligible,
-        interval_days,
-        min_usdc,
     }
 }

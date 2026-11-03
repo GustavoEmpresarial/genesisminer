@@ -71,12 +71,12 @@ fn catalog_fail(e: CatalogError) -> (StatusCode, Json<CatalogBody>) {
             )
         }
         CatalogError::Transport(err) => {
-            warn!(err = %err, "catalog transport");
+            warn!(error = %err, detail = ?err, "catalog transport");
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Json(CatalogBody {
                     ok: false,
-                    error: Some(err.to_string()),
+                    error: Some(format!("{err:#}")),
                     ..Default::default()
                 }),
             )

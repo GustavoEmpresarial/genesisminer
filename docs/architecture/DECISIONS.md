@@ -3521,3 +3521,64 @@ yield_per_hash        = 0 se real_active_hashrate <= MIN_NETWORK_HASHRATE(1)
 morto no DB, some só da UI); consolidar `AdminEconomy.tsx` no editor principal.
 **Caveat:** não re-rodar `scripts/ops/fix-gho-nft-network-floor-20260831.sql`
 contra moedas em `usd_month`.
+
+## 125. Gerente — share 5% (sem teto de contas)
+
+**Problema:** comissão do gerente era 10% do minerado do dono, calibrada quando
+havia teto de contas geridas. O teto já foi removido (#115); o share ficou alto
+para N contas.
+
+**Decisão:** `ACCOUNT_MANAGER_SHARE = 0.05` (5%) em
+`server/modules/gerente/services/constants.ts` e o espelho
+`rust/genesis-core/src/gerente.rs`. Accrual (Node + mining-worker) e
+`sharePercent` em GET `/me` leem a constante. Accrual já gravado no ledger
+não é reescrito.
+
+**Fora de escopo:** clawback/ajuste de `manager_share_amount` já accrued;
+reintroduzir teto de contas.
+
+## 126. Chat gerência — DMs sem TTL de 1h
+
+**Problema:** `CHAT_MESSAGE_TTL_MS` (1h) aplicava-se a todos os canais. O cron
+de purge e o `GET /history` apagavam/escondiam DMs dono↔gerente (`am:owner:manager`)
+ao fim de uma hora — o mini-chat da Gestão ficava vazio.
+
+**Decisão:** TTL de 1h só no canal `global`. Histórico AM não filtra por cutoff;
+purge SQL `AND channel = 'global'`; o cliente não faz prune local nas DMs.
+Limite de histórico AM continua `CHAT_HISTORY_DEFAULT` / `CHAT_HISTORY_MAX`.
+
+**Fora de escopo:** retenção por contrato encerrado; aumentar o histórico AM.
+
+## 127. Cadastro — verificação de email não é obrigatória
+
+**Problema:** o signup marcava `email_verification_required = 1` e o login
+rejeitava `EMAIL_NOT_VERIFIED`. Conta nova ficava bloqueada até clicar no
+link do correio.
+
+**Decisão:** cadastro grava `email_verified=1` e `email_verification_required=0`;
+não envia mail de ativação; resposta `email_verification_required` não é true;
+login não bloqueia por email não verificado; o crédito de referral USDC corre
+no register (mesmo endpoint idempotente do verify). Request/complete de verify
+ficam só para links antigos.
+
+**Fora de escopo:** backfill `email_verified=1` em massa; apagar os endpoints
+de verify; desligar SMTP noutros fluxos.
+
+## 128. TopIdle — webhook de voto + prémio + botão in-game
+
+**Problema:** o jogo está listado no TopIdle
+(`genesis-miner-cea25b`) mas um voto não creditava nada no Genesis Miner.
+
+**Decisão:** `POST /api/webhooks/topidle` (HTTPS, genesis-api) encaminha o
+body cru + `X-TopIdle-Timestamp` + `X-TopIdle-Signature` ao mining-worker.
+HMAC-SHA256 de `{timestamp}.{rawBody}` com `TOPIDLE_WEBHOOK_SECRET`; skew
+300s. `vote.test` → 200 sem persistir. Jogador `lower(email)` inexistente →
+404 sem gravar `eventId`. `vote.created` soma `TOPIDLE_VOTE_REWARD_HPS` (1 HS)
+em `game_states.checkin_bonus_hps` (mesmo campo do bónus de check-in) e
+grava `topidle_vote_events`. `eventId` duplicado → 200 `duplicate`
+(sem segundo prémio). Segredo em falta → 503. Botão in-game (nav `topidle`)
+abre `https://topidle.com/jogo/genesis-miner-cea25b?votar=1`; GET
+`/api/topidle/status` devolve `nextVoteAtMs`.
+
+**Fora de escopo:** loot box / USDC no voto; HS noutro campo que não
+`checkin_bonus_hps`.

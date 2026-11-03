@@ -1,16 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Briefcase,
   Check,
   Globe2,
   MessageCircle,
-  Mic,
   Minus,
   Pencil,
   Send,
-  Smile,
-  Square,
   Trash2,
   Users,
   X
@@ -19,7 +15,6 @@ import {
   getChatHistory,
   getChatPeers,
   searchChatMentions,
-  uploadChatAudio,
   sendChatMessage,
   editChatMessage,
   deleteChatMessage,
@@ -27,6 +22,14 @@ import {
   type ChatMentionDto,
   type ChatMessageDto
 } from '../../../shared/api/admin-legacy';
+import {
+  amPeerPickerHeading,
+  amPeerThreadLabel,
+  CHAT_CHANNEL_GLOBAL,
+  CHAT_MESSAGE_TTL_MS,
+  chatChannelUsesMessageTtl,
+  pickInitialAmPeerChannel
+} from '../lib/chatPlacement';
 
 type Props = {
   /** user.id da sessão (dono quando em modo gerência). */
@@ -35,33 +38,13 @@ type Props = {
   /** Humano real (gerente se estiver a gerir). */
   realUserId?: number | null;
   isManagingAccount?: boolean;
+  /** `panel` = embutido na página Gestão (sempre aberto, tab gerência). */
+  variant?: 'floating' | 'panel';
+  initialTab?: TabId;
+  startOpen?: boolean;
 };
 
 type TabId = 'global' | 'am';
-
-const CHAT_AUDIO_MAX_MS = 30_000;
-/** Alinhado com backend: mensagens > 1h somem do chat. */
-const CHAT_MESSAGE_TTL_MS = 60 * 60 * 1000;
-
-/** Emojis comuns em chats (reação / status / jogo). */
-const CHAT_EMOJI_GROUPS: Array<{ label: string; emojis: string[] }> = [
-  {
-    label: 'Frequentes',
-    emojis: ['😀', '😂', '🤣', '😊', '😍', '😎', '🤔', '😅', '😭', '😡', '👍', '👎', '👏', '🙏', '🔥', '❤️', '💯', '✨']
-  },
-  {
-    label: 'Gestos',
-    emojis: ['👋', '🤝', '✌️', '🤞', '💪', '👀', '🙌', '👌', '🫡', '🤙', '👊', '🤘']
-  },
-  {
-    label: 'Miner / game',
-    emojis: ['⛏️', '💎', '🪙', '💰', '📈', '📉', '⚡', '🔋', '🖥️', '🕹️', '🚀', '🎯', '🏆', '🎁', '📦', '🛒']
-  },
-  {
-    label: 'Status',
-    emojis: ['✅', '❌', '⚠️', '❓', '❗', '💤', '🕐', '🟢', '🔴', '🟡', '⭐', '📌']
-  }
-];
 
 function formatChatTime(ms: number): string {
   if (!ms) return '';
@@ -72,16 +55,14 @@ function formatChatTime(ms: number): string {
   }
 }
 
-function formatAudioSecs(ms: number): string {
-  const s = Math.max(0, Math.ceil(ms / 1000));
-  return `0:${String(s).padStart(2, '0')}`;
-}
-
 /** Defesa XSS no cliente (React já escapa texto; isto remove vectores residuais). */
 function sanitizeClientChatText(raw: unknown, maxLen = 280): string {
   if (raw == null || typeof raw === 'object') return '';
   let s = String(raw)
+    // C0/DEL + bidi overrides — iguais ao sanitize do servidor; \u0000-\u001F dispara no-control-regex.
+    // eslint-disable-next-line no-control-regex -- strip NUL
     .replace(/\u0000/g, '')
+    // eslint-disable-next-line no-control-regex -- strip C0, DEL, bidi
     .replace(/[\u0001-\u001F\u007F\u202A-\u202E\u2066-\u2069]/g, '')
     .replace(/<[^>]*>/g, '')
     .replace(/[<>`]/g, '')
@@ -91,16 +72,6 @@ function sanitizeClientChatText(raw: unknown, maxLen = 280): string {
     .replace(/\s+/g, ' ')
     .trim();
   if (s.length > maxLen) s = s.slice(0, maxLen);
-  return s;
-}
-
-function isSafeClientChatAudioUrl(url: unknown): string | null {
-  const s = String(url || '').trim();
-  if (!s.startsWith('/img/chat-audio/')) return null;
-  if (s.includes('..') || s.includes('\\') || s.includes('://') || s.includes('?') || s.includes('#')) {
-    return null;
-  }
-  if (!/^\/img\/chat-audio\/[a-zA-Z0-9._-]+\.(webm|ogg|mp3|m4a|mp4|aac|wav)$/i.test(s)) return null;
   return s;
 }
 
@@ -160,19 +131,15 @@ function normalizeIncomingChatMessage(raw: ChatMessageDto | null | undefined): C
   const id = String(raw.id);
   if (!/^\d+$/.test(id)) return null;
   const kind = String(raw.kind || '').toLowerCase() === 'audio' ? 'audio' : 'text';
-  const audioUrl = kind === 'audio' ? isSafeClientChatAudioUrl(raw.audioUrl) : null;
   const body = sanitizeClientChatText(raw.body);
   const deletedAt = raw.deletedAt != null ? Number(raw.deletedAt) || null : null;
-  if (!body && !audioUrl && !deletedAt) return null;
+  if (!body && kind !== 'audio' && !deletedAt) return null;
   return {
     ...raw,
     id,
     kind,
-    audioUrl,
-    durationMs:
-      kind === 'audio' && raw.durationMs != null && Number.isFinite(Number(raw.durationMs))
-        ? Math.max(0, Math.floor(Number(raw.durationMs)))
-        : null,
+    audioUrl: null,
+    durationMs: null,
     body,
     username: sanitizeClientChatText(raw.username, 64) || 'Jogador',
     channel: String(raw.channel || 'global').slice(0, 64),
@@ -185,25 +152,6 @@ function normalizeIncomingChatMessage(raw: ChatMessageDto | null | undefined): C
           .filter((x) => x.userId > 0 && x.username)
       : undefined
   };
-}
-
-function pickRecorderMime(): string {
-  if (typeof MediaRecorder === 'undefined') return '';
-  const candidates = [
-    'audio/webm;codecs=opus',
-    'audio/webm',
-    'audio/ogg;codecs=opus',
-    'audio/mp4',
-    'audio/aac'
-  ];
-  for (const c of candidates) {
-    try {
-      if (MediaRecorder.isTypeSupported(c)) return c;
-    } catch {
-      /* ignore */
-    }
-  }
-  return '';
 }
 
 function upsertMessage(prev: ChatMessageDto[], msg: ChatMessageDto): ChatMessageDto[] {
@@ -221,7 +169,12 @@ function removeMessage(prev: ChatMessageDto[], id: string): ChatMessageDto[] {
   return prev.filter((m) => m.id !== id);
 }
 
-function pruneExpiredMessages(prev: ChatMessageDto[], nowMs = Date.now()): ChatMessageDto[] {
+function pruneExpiredMessages(
+  prev: ChatMessageDto[],
+  channel: string | null | undefined,
+  nowMs = Date.now()
+): ChatMessageDto[] {
+  if (!chatChannelUsesMessageTtl(channel)) return prev;
   const cutoff = nowMs - CHAT_MESSAGE_TTL_MS;
   const next = prev.filter((m) => (Number(m.createdAt) || 0) >= cutoff);
   return next.length === prev.length ? prev : next;
@@ -231,13 +184,17 @@ export const PlayerChatWidget: React.FC<Props> = ({
   currentUserId,
   currentUsername,
   realUserId: realUserIdProp,
-  isManagingAccount
+  isManagingAccount,
+  variant = 'floating',
+  initialTab,
+  startOpen = false
 }) => {
   const connected = true;
+  const isPanel = variant === 'panel';
   const realUserId = Number(realUserIdProp) > 0 ? Number(realUserIdProp) : currentUserId;
 
-  const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<TabId>('global');
+  const [open, setOpen] = useState(() => isPanel || startOpen);
+  const [tab, setTab] = useState<TabId>(() => initialTab ?? (isPanel ? 'am' : 'global'));
   const [peers, setPeers] = useState<ChatAmPeerDto[]>([]);
   const [activePeerChannel, setActivePeerChannel] = useState<string | null>(null);
   const [globalMessages, setGlobalMessages] = useState<ChatMessageDto[]>([]);
@@ -251,9 +208,6 @@ export const PlayerChatWidget: React.FC<Props> = ({
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState('');
-  const [emojiOpen, setEmojiOpen] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [recordElapsedMs, setRecordElapsedMs] = useState(0);
   const [mentionUsers, setMentionUsers] = useState<ChatMentionDto[]>([]);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -261,15 +215,7 @@ export const PlayerChatWidget: React.FC<Props> = ({
   const listRef = useRef<HTMLDivElement | null>(null);
   const draftInputRef = useRef<HTMLInputElement | null>(null);
   const editInputRef = useRef<HTMLInputElement | null>(null);
-  const emojiPanelRef = useRef<HTMLDivElement | null>(null);
   const mentionTimerRef = useRef<number | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const mediaStreamRef = useRef<MediaStream | null>(null);
-  const recordChunksRef = useRef<BlobPart[]>([]);
-  const recordStartedAtRef = useRef(0);
-  const recordTimerRef = useRef<number | null>(null);
-  const recordMaxTimerRef = useRef<number | null>(null);
-  const recordCancelRef = useRef(false);
   const openRef = useRef(open);
   const tabRef = useRef(tab);
   const peerRef = useRef(activePeerChannel);
@@ -277,7 +223,7 @@ export const PlayerChatWidget: React.FC<Props> = ({
   tabRef.current = tab;
   peerRef.current = activePeerChannel;
 
-  const activeChannel = tab === 'global' ? 'global' : activePeerChannel;
+  const activeChannel = tab === 'global' ? CHAT_CHANNEL_GLOBAL : activePeerChannel;
   const messages = tab === 'global' ? globalMessages : amMessages;
   const unreadTotal = unreadGlobal + unreadAm;
 
@@ -295,63 +241,27 @@ export const PlayerChatWidget: React.FC<Props> = ({
   const refreshPeers = useCallback(async () => {
     const res = await getChatPeers();
     if (!res.ok || !res.peers) return;
-    setPeers(res.peers);
+    const nextPeers = res.peers;
+    setPeers(nextPeers);
     setActivePeerChannel((prev) => {
-      if (prev && res.peers!.some((p) => p.channel === prev)) return prev;
-      return res.peers![0]?.channel ?? null;
+      if (prev && nextPeers.some((p) => p.channel === prev)) return prev;
+      return pickInitialAmPeerChannel(nextPeers, currentUserId);
     });
-  }, []);
-
-  const stopTracks = useCallback(() => {
-    const stream = mediaStreamRef.current;
-    mediaStreamRef.current = null;
-    if (stream) {
-      for (const t of stream.getTracks()) {
-        try {
-          t.stop();
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-  }, []);
-
-  const clearRecordTimers = useCallback(() => {
-    if (recordTimerRef.current != null) {
-      window.clearInterval(recordTimerRef.current);
-      recordTimerRef.current = null;
-    }
-    if (recordMaxTimerRef.current != null) {
-      window.clearTimeout(recordMaxTimerRef.current);
-      recordMaxTimerRef.current = null;
-    }
-  }, []);
-
-  const cancelRecording = useCallback(() => {
-    recordCancelRef.current = true;
-    clearRecordTimers();
-    const rec = mediaRecorderRef.current;
-    mediaRecorderRef.current = null;
-    try {
-      if (rec && rec.state !== 'inactive') rec.stop();
-    } catch {
-      /* ignore */
-    }
-    stopTracks();
-    recordChunksRef.current = [];
-    setRecording(false);
-    setRecordElapsedMs(0);
-  }, [clearRecordTimers, stopTracks]);
+  }, [currentUserId]);
 
   useEffect(() => {
     void refreshPeers();
   }, [refreshPeers, realUserId, isManagingAccount]);
 
   useEffect(() => {
-    return () => {
-      cancelRecording();
-    };
-  }, [cancelRecording]);
+    if (isPanel) return;
+    if (startOpen) setOpen(true);
+  }, [isPanel, startOpen]);
+
+  useEffect(() => {
+    if (isPanel) return;
+    if (initialTab) setTab(initialTab);
+  }, [isPanel, initialTab]);
 
   useEffect(() => {
     if (!open || !activeChannel) return;
@@ -365,7 +275,7 @@ export const PlayerChatWidget: React.FC<Props> = ({
       setLoadingHistory(false);
       if (!res.ok || !res.messages) return;
       const setter = tab === 'global' ? setGlobalMessages : setAmMessages;
-      setter(pruneExpiredMessages(res.messages!));
+      setter(pruneExpiredMessages(res.messages!, activeChannel));
     });
     return () => {
       cancelled = true;
@@ -391,7 +301,7 @@ export const PlayerChatWidget: React.FC<Props> = ({
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       void getChatHistory(60, activeChannel).then((res) => {
         if (cancelled || !res.ok || !res.messages) return;
-        const next = pruneExpiredMessages(res.messages);
+        const next = pruneExpiredMessages(res.messages, activeChannel);
         setter((prev) => {
           const same =
             prev.length === next.length &&
@@ -419,40 +329,12 @@ export const PlayerChatWidget: React.FC<Props> = ({
   /** Limpeza local a cada minuto (mesmo sem evento do servidor). */
   useEffect(() => {
     const tick = () => {
-      setGlobalMessages((prev) => pruneExpiredMessages(prev));
-      setAmMessages((prev) => pruneExpiredMessages(prev));
+      setGlobalMessages((prev) => pruneExpiredMessages(prev, CHAT_CHANNEL_GLOBAL));
     };
     tick();
     const id = window.setInterval(tick, 30_000);
     return () => window.clearInterval(id);
   }, []);
-
-  useEffect(() => {
-    if (!emojiOpen) return;
-    const onDoc = (ev: MouseEvent) => {
-      const t = ev.target as Node | null;
-      if (!t) return;
-      if (emojiPanelRef.current?.contains(t)) return;
-      setEmojiOpen(false);
-    };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, [emojiOpen]);
-
-  const insertEmoji = (emoji: string) => {
-    if (editingId) {
-      setEditDraft((prev) => {
-        if (prev.length + emoji.length > 280) return prev;
-        return prev + emoji;
-      });
-      return;
-    }
-    setDraft((prev) => {
-      if (prev.length + emoji.length > 280) return prev;
-      return prev + emoji;
-    });
-    draftInputRef.current?.focus();
-  };
 
   const closeMentions = useCallback(() => {
     setMentionOpen(false);
@@ -545,14 +427,13 @@ export const PlayerChatWidget: React.FC<Props> = ({
       !!activeChannel &&
       sanitizeClientChatText(draft).length > 0 &&
       !sending &&
-      !editingId &&
-      !recording
+      !editingId
     );
-  }, [connected, activeChannel, draft, sending, editingId, recording]);
+  }, [connected, activeChannel, draft, sending, editingId]);
 
   const send = () => {
     const body = sanitizeClientChatText(draft);
-    if (!body || sending || !activeChannel || recording) return;
+    if (!body || sending || !activeChannel) return;
     if (tab === 'am' && !activePeerChannel) {
       setError('Sem gerente/dono activo para conversar.');
       return;
@@ -577,151 +458,6 @@ export const PlayerChatWidget: React.FC<Props> = ({
       }
     });
   };
-
-  const finishRecordingAndSend = useCallback(
-    async (blob: Blob, durationMs: number) => {
-      if (!activeChannel) {
-        setError('Sem canal activo.');
-        return;
-      }
-      if (durationMs < 400) {
-        setError('Áudio demasiado curto.');
-        return;
-      }
-      setSending(true);
-      setError(null);
-      const res = await uploadChatAudio(blob, { channel: activeChannel, durationMs });
-      setSending(false);
-      if (!res.ok) {
-        setError(res.error || 'Falha ao enviar áudio.');
-        return;
-      }
-      if (res.message) {
-        const msg = normalizeIncomingChatMessage(res.message);
-        if (msg) {
-          const ch = String(msg.channel || 'global');
-          if (ch === 'global') setGlobalMessages((prev) => upsertMessage(prev, msg));
-          else if (peerRef.current === ch) setAmMessages((prev) => upsertMessage(prev, msg));
-        }
-      }
-    },
-    [activeChannel]
-  );
-
-  const stopRecording = useCallback(
-    (opts?: { cancel?: boolean }) => {
-      if (opts?.cancel) {
-        cancelRecording();
-        return;
-      }
-      clearRecordTimers();
-      const rec = mediaRecorderRef.current;
-      if (!rec || rec.state === 'inactive') {
-        setRecording(false);
-        stopTracks();
-        return;
-      }
-      try {
-        rec.stop();
-      } catch {
-        setRecording(false);
-        stopTracks();
-      }
-    },
-    [cancelRecording, clearRecordTimers, stopTracks]
-  );
-
-  const startRecording = useCallback(async () => {
-    if (recording || sending || editingId || !activeChannel) return;
-    if (tab === 'am' && !activePeerChannel) {
-      setError('Sem gerente/dono activo para conversar.');
-      return;
-    }
-    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      setError('O teu browser não permite gravar áudio.');
-      return;
-    }
-    if (typeof MediaRecorder === 'undefined') {
-      setError('Gravação de áudio não suportada neste browser.');
-      return;
-    }
-    setEmojiOpen(false);
-    setError(null);
-    recordCancelRef.current = false;
-    recordChunksRef.current = [];
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true
-        }
-      });
-      mediaStreamRef.current = stream;
-      const mime = pickRecorderMime();
-      const rec = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
-      mediaRecorderRef.current = rec;
-      rec.ondataavailable = (ev) => {
-        if (ev.data && ev.data.size > 0) recordChunksRef.current.push(ev.data);
-      };
-      rec.onstop = () => {
-        clearRecordTimers();
-        setRecording(false);
-        stopTracks();
-        mediaRecorderRef.current = null;
-        const cancelled = recordCancelRef.current;
-        const chunks = recordChunksRef.current;
-        recordChunksRef.current = [];
-        const elapsed = Math.min(CHAT_AUDIO_MAX_MS, Date.now() - recordStartedAtRef.current);
-        setRecordElapsedMs(0);
-        if (cancelled) return;
-        const type = rec.mimeType || mime || 'audio/webm';
-        const blob = new Blob(chunks, { type });
-        if (!blob.size) {
-          setError('Não foi possível gravar o áudio.');
-          return;
-        }
-        void finishRecordingAndSend(blob, elapsed);
-      };
-      recordStartedAtRef.current = Date.now();
-      setRecordElapsedMs(0);
-      setRecording(true);
-      rec.start(250);
-      recordTimerRef.current = window.setInterval(() => {
-        setRecordElapsedMs(Math.min(CHAT_AUDIO_MAX_MS, Date.now() - recordStartedAtRef.current));
-      }, 200);
-      recordMaxTimerRef.current = window.setTimeout(() => {
-        stopRecording();
-      }, CHAT_AUDIO_MAX_MS);
-    } catch (err) {
-      stopTracks();
-      setRecording(false);
-      const name = err && typeof err === 'object' && 'name' in err ? String((err as { name?: unknown }).name) : '';
-      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-        setError(
-          'Microfone bloqueado. Se a permissão do site já está ligada, recarrega a página (Ctrl+F5) — o servidor precisa permitir microfone.'
-        );
-      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-        setError('Nenhum microfone encontrado neste dispositivo.');
-      } else if (name === 'NotReadableError' || name === 'TrackStartError') {
-        setError('Microfone ocupado por outra aplicação. Fecha Zoom/Discord/etc. e tenta de novo.');
-      } else if (name === 'SecurityError') {
-        setError('Microfone bloqueado pela política de segurança do site.');
-      } else {
-        setError('Não foi possível aceder ao microfone.');
-      }
-    }
-  }, [
-    recording,
-    sending,
-    editingId,
-    activeChannel,
-    tab,
-    activePeerChannel,
-    clearRecordTimers,
-    stopTracks,
-    finishRecordingAndSend,
-    stopRecording
-  ]);
 
   const startEdit = (m: ChatMessageDto) => {
     if (m.kind === 'audio') return;
@@ -776,24 +512,25 @@ export const PlayerChatWidget: React.FC<Props> = ({
     });
   };
 
-  if (typeof document === 'undefined') return null;
-
   const hasAmTab = peers.length > 0;
-  const amLabel = activePeer?.role === 'owner' ? 'Gerente' : activePeer?.role === 'manager' ? 'Dono' : 'Gerente';
-  const composerDisabled = (tab === 'am' && !activePeerChannel) || !!editingId || recording;
+  const composerDisabled = (tab === 'am' && !activePeerChannel) || !!editingId;
+  const showPanel = isPanel || open;
+  const shellClass = isPanel
+    ? 'flex h-[min(460px,72vh)] w-full flex-col overflow-hidden rounded-2xl border border-amber-500/40 bg-slate-900 dark:bg-slate-950'
+    : 'pointer-events-auto flex h-[min(460px,72vh)] w-[min(380px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-slate-600/80 bg-slate-900 shadow-2xl dark:bg-slate-950';
 
-  return createPortal(
-    <div className="pointer-events-none fixed bottom-4 right-4 z-[220] flex flex-col items-end gap-2">
-      {open && (
+  const dialog = showPanel ? (
         <div
-          className="pointer-events-auto flex h-[min(460px,72vh)] w-[min(380px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-slate-600/80 bg-slate-900 shadow-2xl dark:bg-slate-950"
+          className={shellClass}
           role="dialog"
-          aria-label="Bate-papo"
+          aria-label="Mini-chat da gerência"
         >
           <div className="flex items-center gap-2 border-b border-slate-700/80 bg-slate-950/80 px-3 py-2.5">
             <MessageCircle size={16} className="shrink-0 text-amber-400" aria-hidden />
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-black uppercase tracking-widest text-white">Bate-papo</div>
+              <div className="text-[11px] font-black uppercase tracking-widest text-white">
+                Mini-chat da gerência
+              </div>
               <div className="flex items-center gap-1 text-[10px] text-slate-400">
                 {tab === 'global' ? (
                   <>
@@ -804,14 +541,14 @@ export const PlayerChatWidget: React.FC<Props> = ({
                   <>
                     <Briefcase size={11} aria-hidden />
                     <span>
-                      {activePeer
-                        ? `${amLabel}: ${activePeer.peerUsername}`
-                        : 'Precisas de gerente activo'}
+                      {activePeer ? amPeerThreadLabel(activePeer) : 'Precisas de gerente activo'}
                     </span>
                   </>
                 )}
               </div>
             </div>
+            {isPanel ? null : (
+              <>
             <button
               type="button"
               onClick={() => setOpen(false)}
@@ -828,6 +565,8 @@ export const PlayerChatWidget: React.FC<Props> = ({
             >
               <X size={16} />
             </button>
+              </>
+            )}
           </div>
 
           <div className="flex gap-1 border-b border-amber-500/25 bg-slate-950 p-1.5">
@@ -836,7 +575,6 @@ export const PlayerChatWidget: React.FC<Props> = ({
               onClick={() => {
                 setTab('global');
                 cancelEdit();
-                if (recording) cancelRecording();
               }}
               className={`flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-2 text-[11px] font-black uppercase tracking-wide transition ${
                 tab === 'global'
@@ -855,7 +593,6 @@ export const PlayerChatWidget: React.FC<Props> = ({
               onClick={() => {
                 setTab('am');
                 cancelEdit();
-                if (recording) cancelRecording();
                 if (!peers.length) void refreshPeers();
               }}
               className={`flex flex-1 items-center justify-center gap-1 rounded-lg px-2 py-2 text-[11px] font-black uppercase tracking-wide transition ${
@@ -873,26 +610,38 @@ export const PlayerChatWidget: React.FC<Props> = ({
             </button>
           </div>
 
-          {tab === 'am' && peers.length > 1 && (
+          {tab === 'am' && peers.length > 0 ? (
             <div className="border-b border-slate-800 px-2 py-1.5">
-              <select
-                value={activePeerChannel || ''}
-                onChange={(e) => {
-                  setActivePeerChannel(e.target.value || null);
-                  setAmMessages([]);
-                  cancelEdit();
-                  if (recording) cancelRecording();
-                }}
-                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-[11px] text-white outline-none"
-              >
-                {peers.map((p) => (
-                  <option key={p.channel} value={p.channel}>
-                    {p.role === 'owner' ? 'Gerente' : 'Dono'}: {p.peerUsername}
-                  </option>
-                ))}
-              </select>
+              <div className="mb-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                {amPeerPickerHeading(peers)}
+              </div>
+              <div className="flex max-h-28 flex-col gap-1 overflow-y-auto">
+                {peers.map((p) => {
+                  const selected = p.channel === activePeerChannel;
+                  return (
+                    <button
+                      key={p.channel}
+                      type="button"
+                      onClick={() => {
+                        if (p.channel === activePeerChannel) return;
+                        setActivePeerChannel(p.channel);
+                        setAmMessages([]);
+                        cancelEdit();
+                      }}
+                      aria-pressed={selected}
+                      className={`w-full truncate rounded-lg border px-2 py-1.5 text-left text-[11px] font-semibold transition ${
+                        selected
+                          ? 'border-amber-500/60 bg-amber-500/15 text-amber-200'
+                          : 'border-slate-700 bg-slate-900 text-slate-200 hover:border-slate-500 hover:text-white'
+                      }`}
+                    >
+                      {amPeerThreadLabel(p)}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          )}
+          ) : null}
 
           <div ref={listRef} className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-2">
             {tab === 'am' && !activePeerChannel ? (
@@ -919,7 +668,7 @@ export const PlayerChatWidget: React.FC<Props> = ({
               messages.map((m) => {
                 const mine = Number(m.userId) === realUserId || Number(m.userId) === currentUserId;
                 const isEditing = editingId === m.id;
-                const isAudio = m.kind === 'audio' && !!m.audioUrl;
+                const isAudio = m.kind === 'audio';
                 return (
                   <div key={m.id} className={`group flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
                     <div
@@ -998,20 +747,7 @@ export const PlayerChatWidget: React.FC<Props> = ({
                           </div>
                         </div>
                       ) : isAudio ? (
-                        <div className="space-y-1">
-                          <audio
-                            controls
-                            preload="metadata"
-                            src={m.audioUrl!}
-                            className="h-8 max-w-full"
-                            style={{ width: '220px' }}
-                          />
-                          {m.durationMs != null && m.durationMs > 0 && (
-                            <div className={`text-[10px] ${mine ? 'text-white/70' : 'text-slate-400'}`}>
-                              {formatAudioSecs(m.durationMs)}
-                            </div>
-                          )}
-                        </div>
+                        <div className="italic text-white/70">Mensagem de áudio</div>
                       ) : (
                         <div className="whitespace-pre-wrap break-words">
                           {renderChatBody(m.body, {
@@ -1062,7 +798,7 @@ export const PlayerChatWidget: React.FC<Props> = ({
           )}
 
           <div className="relative border-t border-slate-700/80 bg-slate-950/60 p-2">
-            {mentionOpen && mentionUsers.length > 0 && !recording && (
+            {mentionOpen && mentionUsers.length > 0 && (
               <div className="absolute bottom-full left-0 right-0 z-20 mb-1 overflow-hidden rounded-xl border border-sky-500/40 bg-slate-900 shadow-2xl">
                 <div className="border-b border-slate-700/80 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">
                   Mencionar
@@ -1093,95 +829,13 @@ export const PlayerChatWidget: React.FC<Props> = ({
               </div>
             )}
 
-            {emojiOpen && !recording && (
-              <div
-                ref={emojiPanelRef}
-                className="absolute bottom-full left-0 right-0 z-10 mb-1 max-h-48 overflow-y-auto rounded-xl border border-slate-600 bg-slate-900 p-2 shadow-2xl custom-scrollbar"
-              >
-                {CHAT_EMOJI_GROUPS.map((g) => (
-                  <div key={g.label} className="mb-2 last:mb-0">
-                    <div className="mb-1 px-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">
-                      {g.label}
-                    </div>
-                    <div className="grid grid-cols-8 gap-0.5">
-                      {g.emojis.map((em) => (
-                        <button
-                          key={`${g.label}-${em}`}
-                          type="button"
-                          onClick={() => insertEmoji(em)}
-                          className="flex h-8 items-center justify-center rounded-lg text-base transition hover:bg-slate-800"
-                          aria-label={`Emoji ${em}`}
-                        >
-                          {em}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {recording ? (
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => stopRecording({ cancel: true })}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-300 transition hover:border-red-500/50 hover:text-red-300"
-                  aria-label="Cancelar gravação"
-                  title="Cancelar"
-                >
-                  <X size={16} />
-                </button>
-                <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border border-red-500/40 bg-red-950/30 px-3 py-2">
-                  <span className="h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-500" />
-                  <span className="text-xs font-semibold text-red-200">
-                    A gravar… {formatAudioSecs(recordElapsedMs)} / 0:30
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => stopRecording()}
-                  disabled={sending}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-orange-600 text-white transition hover:bg-orange-500 disabled:opacity-40"
-                  aria-label="Parar e enviar áudio"
-                  title="Enviar áudio"
-                >
-                  <Square size={14} fill="currentColor" />
-                </button>
-              </div>
-            ) : (
-              <form
+            <form
                 className="flex items-center gap-1.5"
                 onSubmit={(e) => {
                   e.preventDefault();
                   send();
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => setEmojiOpen((v) => !v)}
-                  disabled={composerDisabled && !editingId}
-                  className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition ${
-                    emojiOpen
-                      ? 'border-amber-500/60 bg-amber-500/15 text-amber-300'
-                      : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500 hover:text-amber-300'
-                  } disabled:cursor-not-allowed disabled:opacity-40`}
-                  aria-label="Abrir emojis"
-                  aria-expanded={emojiOpen}
-                  title="Emojis"
-                >
-                  <Smile size={16} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void startRecording()}
-                  disabled={composerDisabled || sending || !connected}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-300 transition hover:border-amber-500/50 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-40"
-                  aria-label="Gravar áudio (máx. 30s)"
-                  title="Áudio (máx. 30s)"
-                >
-                  <Mic size={16} />
-                </button>
                 <input
                   ref={draftInputRef}
                   type="text"
@@ -1192,7 +846,6 @@ export const PlayerChatWidget: React.FC<Props> = ({
                     setDraft(v);
                     refreshMentionSuggestions(v, e.target.selectionStart ?? v.length, false);
                   }}
-                  onFocus={() => setEmojiOpen(false)}
                   onKeyDown={(e) => {
                     if (mentionOpen && mentionUsers.length > 0) {
                       if (e.key === 'ArrowDown') {
@@ -1237,16 +890,20 @@ export const PlayerChatWidget: React.FC<Props> = ({
                   <Send size={15} />
                 </button>
               </form>
-            )}
           </div>
         </div>
-      )}
+  ) : null;
 
+  if (isPanel) return dialog;
+
+  return (
+    <div className="flex flex-col items-end gap-2">
+      {dialog}
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="pointer-events-auto relative inline-flex h-14 w-14 items-center justify-center rounded-full border-2 border-amber-500/70 bg-slate-900 text-amber-400 shadow-[0_8px_30px_rgba(0,0,0,0.55)] transition hover:bg-slate-800 hover:text-amber-300 dark:bg-slate-950"
-        aria-label={open ? 'Fechar bate-papo' : 'Abrir bate-papo'}
+        className="relative inline-flex h-14 w-14 items-center justify-center rounded-full border-2 border-amber-500/70 bg-slate-900 text-amber-400 shadow-[0_8px_30px_rgba(0,0,0,0.55)] transition hover:bg-slate-800 hover:text-amber-300 dark:bg-slate-950"
+        aria-label={open ? 'Fechar mini-chat da gerência' : 'Abrir mini-chat da gerência'}
         aria-expanded={open}
       >
         <MessageCircle size={26} />
@@ -1256,7 +913,6 @@ export const PlayerChatWidget: React.FC<Props> = ({
           </span>
         )}
       </button>
-    </div>,
-    document.body
+    </div>
   );
 };

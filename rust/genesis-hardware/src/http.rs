@@ -25,14 +25,16 @@ use crate::adjust::{adjust_stock, AdjustLine};
 use crate::admin_catalog::http::{
     post_access_levels_replace, post_admin_delete_user_box, post_admin_user_boxes,
     post_loot_box_delete, post_loot_box_redemptions, post_loot_boxes_upsert,
-    post_mining_coins_economy_settings, post_mining_coins_set_active, post_mining_coins_upsert, post_news_delete, post_news_expire_days_persist, post_news_fee_persist,
-    post_news_upsert, post_rig_rooms_upsert, post_season_passes_replace,
+    post_mining_coins_economy_settings, post_mining_coins_set_active, post_mining_coins_upsert,
+    post_news_delete, post_news_expire_days_persist, post_news_fee_persist, post_news_upsert,
+    post_rig_rooms_upsert, post_season_passes_replace,
 };
 use crate::admin_catalog::{
     ACCESS_LEVELS_REPLACE_PATH, ADMIN_DELETE_USER_BOX_PATH, ADMIN_USER_BOXES_PATH,
     LOOT_BOXES_DELETE_PATH, LOOT_BOXES_UPSERT_PATH, LOOT_BOX_REDEMPTIONS_PATH,
-    MINING_COINS_ECONOMY_SETTINGS_PATH, MINING_COINS_SET_ACTIVE_PATH, MINING_COINS_UPSERT_PATH, NEWS_DELETE_PATH, NEWS_EXPIRE_DAYS_PERSIST_PATH, NEWS_FEE_PERSIST_PATH,
-    NEWS_UPSERT_PATH, RIG_ROOMS_UPSERT_PATH, SEASON_PASSES_REPLACE_PATH,
+    MINING_COINS_ECONOMY_SETTINGS_PATH, MINING_COINS_SET_ACTIVE_PATH, MINING_COINS_UPSERT_PATH,
+    NEWS_DELETE_PATH, NEWS_EXPIRE_DAYS_PERSIST_PATH, NEWS_FEE_PERSIST_PATH, NEWS_UPSERT_PATH,
+    RIG_ROOMS_UPSERT_PATH, SEASON_PASSES_REPLACE_PATH,
 };
 use crate::catalog::http::post_upgrades_replace as post_catalog_upgrades_replace;
 use crate::catalog::CATALOG_UPGRADES_REPLACE_PATH;
@@ -53,21 +55,24 @@ use crate::lucky_boxes::http::{
 };
 use crate::lucky_boxes::{LUCKY_BOX_BUY_PATH, LUCKY_BOX_OPEN_PATH, LUCKY_BOX_PROMO_REDEEM_PATH};
 use crate::market::http::{
-    post_buy, post_buy_cached, post_cancel, post_cancel_reserve, post_claim_all, post_claim_item,
-    post_admin_listings, post_claim_proceeds, post_custody, post_history, post_listings,
-    post_my_listings, post_reclaim,
-    post_reserve, post_sell, post_sellable_stock, post_state,
+    post_admin_listings, post_buy, post_buy_cached, post_cancel, post_cancel_reserve,
+    post_claim_all, post_claim_item, post_claim_proceeds, post_custody, post_history,
+    post_listings, post_my_listings, post_reclaim, post_reserve, post_sell, post_sellable_stock,
+    post_state,
 };
 use crate::market::{
-    MARKET_BUY_CACHED_PATH, MARKET_BUY_PATH, MARKET_CANCEL_PATH, MARKET_CANCEL_RESERVE_PATH,
-    MARKET_CLAIM_ALL_PATH, MARKET_CLAIM_ITEM_PATH, MARKET_CLAIM_PROCEEDS_PATH, MARKET_CUSTODY_PATH,
-    MARKET_HISTORY_PATH, MARKET_LISTINGS_PATH, MARKET_MY_LISTINGS_PATH, MARKET_RECLAIM_PATH,
-    MARKET_ADMIN_LISTINGS_PATH, MARKET_RESERVE_PATH, MARKET_SELLABLE_STOCK_PATH, MARKET_SELL_PATH,
-    MARKET_STATE_PATH,
+    MARKET_ADMIN_LISTINGS_PATH, MARKET_BUY_CACHED_PATH, MARKET_BUY_PATH, MARKET_CANCEL_PATH,
+    MARKET_CANCEL_RESERVE_PATH, MARKET_CLAIM_ALL_PATH, MARKET_CLAIM_ITEM_PATH,
+    MARKET_CLAIM_PROCEEDS_PATH, MARKET_CUSTODY_PATH, MARKET_HISTORY_PATH, MARKET_LISTINGS_PATH,
+    MARKET_MY_LISTINGS_PATH, MARKET_RECLAIM_PATH, MARKET_RESERVE_PATH, MARKET_SELLABLE_STOCK_PATH,
+    MARKET_SELL_PATH, MARKET_STATE_PATH,
 };
 use crate::merge::http::post_execute as post_merge_execute;
 use crate::merge::MERGE_EXECUTE_PATH;
 use crate::p2p::{p2p_instances, P2pInstancesInput, P2P_INSTANCES_PATH};
+use crate::partners_streamer::{
+    deactivate_streamer_room, STREAMER_ROOM_DEACTIVATE_PATH, STREAMER_ROOM_ID,
+};
 use crate::persist::{
     credit_stock, fold_warehouse_ids, persist_hardware, PersistInput, StockMode,
     FOLD_WAREHOUSE_PATH,
@@ -86,19 +91,16 @@ use crate::upgrades::http::post_purchase as post_upgrades_purchase;
 use crate::upgrades::UPGRADE_PACKAGE_PURCHASE_PATH;
 use crate::wheel::http::{
     post_admin_wheel_players_add, post_admin_wheel_players_list, post_admin_wheel_players_remove,
-    post_admin_wheel_prizes_list,
-    post_admin_wheel_prizes_replace, post_admin_wheel_runtime_config_get,
-    post_admin_wheel_runtime_config_set, post_paid_spin as post_wheel_paid_spin,
-    post_redeem_code as post_wheel_redeem_code, post_roleta_claim, post_roll as post_wheel_roll,
+    post_admin_wheel_prizes_list, post_admin_wheel_prizes_replace,
+    post_admin_wheel_runtime_config_get, post_admin_wheel_runtime_config_set,
+    post_paid_spin as post_wheel_paid_spin, post_redeem_code as post_wheel_redeem_code,
+    post_roleta_claim, post_roll as post_wheel_roll,
 };
 use crate::wheel::{
     ROLETA_CLAIM_PATH, WHEEL_ADMIN_PLAYERS_ADD_PATH, WHEEL_ADMIN_PLAYERS_PATH,
-    WHEEL_ADMIN_PLAYERS_REMOVE_PATH, WHEEL_ADMIN_PRIZES_PATH, WHEEL_ADMIN_PRIZES_REPLACE_PATH, WHEEL_ADMIN_RUNTIME_CONFIG_PATH,
-    WHEEL_ADMIN_RUNTIME_CONFIG_SET_PATH, WHEEL_PAID_SPIN_PATH, WHEEL_REDEEM_CODE_PATH,
-    WHEEL_ROLL_PATH,
-};
-use crate::partners_streamer::{
-    deactivate_streamer_room, STREAMER_ROOM_DEACTIVATE_PATH, STREAMER_ROOM_ID,
+    WHEEL_ADMIN_PLAYERS_REMOVE_PATH, WHEEL_ADMIN_PRIZES_PATH, WHEEL_ADMIN_PRIZES_REPLACE_PATH,
+    WHEEL_ADMIN_RUNTIME_CONFIG_PATH, WHEEL_ADMIN_RUNTIME_CONFIG_SET_PATH, WHEEL_PAID_SPIN_PATH,
+    WHEEL_REDEEM_CODE_PATH, WHEEL_ROLL_PATH,
 };
 use crate::wipe_user::{wipe_user, WIPE_USER_PATH};
 
@@ -267,7 +269,10 @@ pub fn router(state: AppState) -> Router {
             WHEEL_ADMIN_RUNTIME_CONFIG_SET_PATH,
             post(post_admin_wheel_runtime_config_set),
         )
-        .route(WHEEL_ADMIN_PLAYERS_PATH, post(post_admin_wheel_players_list))
+        .route(
+            WHEEL_ADMIN_PLAYERS_PATH,
+            post(post_admin_wheel_players_list),
+        )
         .route(
             WHEEL_ADMIN_PLAYERS_ADD_PATH,
             post(post_admin_wheel_players_add),
@@ -295,8 +300,14 @@ pub fn router(state: AppState) -> Router {
         .route(ADMIN_USER_BOXES_PATH, post(post_admin_user_boxes))
         .route(ADMIN_DELETE_USER_BOX_PATH, post(post_admin_delete_user_box))
         .route(MINING_COINS_UPSERT_PATH, post(post_mining_coins_upsert))
-        .route(MINING_COINS_ECONOMY_SETTINGS_PATH, post(post_mining_coins_economy_settings))
-        .route(MINING_COINS_SET_ACTIVE_PATH, post(post_mining_coins_set_active))
+        .route(
+            MINING_COINS_ECONOMY_SETTINGS_PATH,
+            post(post_mining_coins_economy_settings),
+        )
+        .route(
+            MINING_COINS_SET_ACTIVE_PATH,
+            post(post_mining_coins_set_active),
+        )
         .route(NEWS_UPSERT_PATH, post(post_news_upsert))
         .route(NEWS_DELETE_PATH, post(post_news_delete))
         .route(NEWS_FEE_PERSIST_PATH, post(post_news_fee_persist))

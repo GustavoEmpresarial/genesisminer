@@ -4,8 +4,8 @@ use deadpool_postgres::{GenericClient, Pool};
 use genesis_core::checkin::{
     has_checked_in_current_period, is_premium_within_active_window,
     is_within_active_checkin_window, next_checkin_period_start_ms, premium_interval_ms,
-    should_grant_streak_milestone_reward, utc_day_from_ms, CHECKIN_GRACE_MS, CHECKIN_REWARD_EVERY_DAYS,
-    CHECKIN_TIMEZONE, CHECKIN_WINDOW_MS,
+    should_grant_streak_milestone_reward, utc_day_from_ms, CHECKIN_GRACE_MS,
+    CHECKIN_REWARD_EVERY_DAYS, CHECKIN_TIMEZONE, CHECKIN_WINDOW_MS,
 };
 use genesis_core::hardware::duration::{
     format_asic_duration_label_pt, is_timed_asic_duration, normalize_asic_duration_config,
@@ -267,7 +267,8 @@ pub async fn run_checkin_perform(
     .await?;
     tx.commit().await?;
     let streak_grant =
-        maybe_grant_streak_reward(pool, http, cfg, user_id, uid, next_streak, &policy, now_ms).await;
+        maybe_grant_streak_reward(pool, http, cfg, user_id, uid, next_streak, &policy, now_ms)
+            .await;
     best_effort_bump_checkin_quests(pool, uid, now_ms).await;
     Ok(build_status(
         &day,
@@ -791,8 +792,12 @@ mod tests {
 
     #[test]
     fn should_grant_mirrors_node_every_days() {
-        assert!(should_grant_streak_milestone_reward(CHECKIN_REWARD_EVERY_DAYS));
-        assert!(should_grant_streak_milestone_reward(2 * CHECKIN_REWARD_EVERY_DAYS));
+        assert!(should_grant_streak_milestone_reward(
+            CHECKIN_REWARD_EVERY_DAYS
+        ));
+        assert!(should_grant_streak_milestone_reward(
+            2 * CHECKIN_REWARD_EVERY_DAYS
+        ));
         assert!(!should_grant_streak_milestone_reward(1));
         assert!(!should_grant_streak_milestone_reward(0));
     }

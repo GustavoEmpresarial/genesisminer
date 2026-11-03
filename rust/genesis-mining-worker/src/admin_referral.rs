@@ -39,7 +39,10 @@ fn i64_col(r: &tokio_postgres::Row, c: &str) -> i64 {
     r.try_get::<_, Option<i64>>(c).ok().flatten().unwrap_or(0)
 }
 fn s_col(r: &tokio_postgres::Row, c: &str) -> String {
-    r.try_get::<_, Option<String>>(c).ok().flatten().unwrap_or_default()
+    r.try_get::<_, Option<String>>(c)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
 }
 fn opt_s(r: &tokio_postgres::Row, c: &str) -> Value {
     match r.try_get::<_, Option<String>>(c).ok().flatten() {
@@ -197,7 +200,12 @@ fn rebuild_commissions_where(f: &CommissionsRequest, for_csv: bool) -> Where {
         binds.push(Bind::I64(v));
         add(format!("l.created_at <= ${p}"), &mut sql);
     }
-    if let Some(r) = f.referrer.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(r) = f
+        .referrer
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         let p = ph!();
         binds.push(Bind::S(r.to_lowercase()));
         add(
@@ -205,7 +213,12 @@ fn rebuild_commissions_where(f: &CommissionsRequest, for_csv: bool) -> Where {
             &mut sql,
         );
     }
-    if let Some(r) = f.referred.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+    if let Some(r) = f
+        .referred
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
         let p = ph!();
         binds.push(Bind::S(r.to_lowercase()));
         add(
@@ -242,7 +255,10 @@ fn bind_refs(binds: &[Bind]) -> Vec<&(dyn tokio_postgres::types::ToSql + Sync)> 
     binds.iter().map(Bind::as_sql).collect()
 }
 
-pub async fn run_commissions(pool: &Pool, req: CommissionsRequest) -> Result<Value, PlayerReadError> {
+pub async fn run_commissions(
+    pool: &Pool,
+    req: CommissionsRequest,
+) -> Result<Value, PlayerReadError> {
     let page = req.page.unwrap_or(1).clamp(1, PAGE_MAX);
     let limit = req.limit.unwrap_or(50).clamp(1, LIMIT_MAX);
     let offset = (page - 1) * limit;
@@ -319,7 +335,10 @@ fn iso_ms(ms: i64) -> String {
         .unwrap_or_default()
 }
 
-pub async fn run_export_csv(pool: &Pool, req: CommissionsRequest) -> Result<Value, PlayerReadError> {
+pub async fn run_export_csv(
+    pool: &Pool,
+    req: CommissionsRequest,
+) -> Result<Value, PlayerReadError> {
     let w = rebuild_commissions_where(&req, true);
     let c = pool.get().await?;
     let params = bind_refs(&w.binds);
@@ -345,7 +364,14 @@ pub async fn run_export_csv(pool: &Pool, req: CommissionsRequest) -> Result<Valu
     );
     for r in &rows {
         let ms = i64_col(r, "created_at");
-        let st = { let s = s_col(r, "source_type"); if s.is_empty() { "deposit".to_string() } else { s } };
+        let st = {
+            let s = s_col(r, "source_type");
+            if s.is_empty() {
+                "deposit".to_string()
+            } else {
+                s
+            }
+        };
         let cells = [
             s_col(r, "id"),
             iso_ms(ms),
@@ -361,7 +387,13 @@ pub async fn run_export_csv(pool: &Pool, req: CommissionsRequest) -> Result<Valu
             format!("{:.8}", f64_col(r, "commission_usdc")),
             "paid".to_string(),
         ];
-        out.push_str(&cells.iter().map(|c| csv_cell(c)).collect::<Vec<_>>().join(","));
+        out.push_str(
+            &cells
+                .iter()
+                .map(|c| csv_cell(c))
+                .collect::<Vec<_>>()
+                .join(","),
+        );
         out.push('\n');
     }
     Ok(json!({ "csv": out }))
@@ -386,15 +418,23 @@ pub async fn run_links(pool: &Pool, req: LinksRequest) -> Result<Value, PlayerRe
     let page = req.page.unwrap_or(1).clamp(1, PAGE_MAX);
     let limit = req.limit.unwrap_or(50).clamp(1, LIMIT_MAX);
     let offset = (page - 1) * limit;
-    let like = req.q.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(like_of);
+    let like = req
+        .q
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(like_of);
     let where_sql = if like.is_some() {
         " WHERE (LOWER(COALESCE(ur.username,'')) LIKE $1 OR LOWER(COALESCE(ur.email,'')) LIKE $1 OR LOWER(COALESCE(ud.username,'')) LIKE $1 OR LOWER(COALESCE(ud.email,'')) LIKE $1)"
     } else {
         ""
     };
     let c = pool.get().await?;
-    let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
-        if let Some(ref l) = like { vec![l] } else { vec![] };
+    let params: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = if let Some(ref l) = like {
+        vec![l]
+    } else {
+        vec![]
+    };
 
     let total = c
         .query_one(
@@ -611,7 +651,10 @@ pub async fn run_lookup(pool: &Pool, req: LookupRequest) -> Result<(u16, Value),
             })).collect::<Vec<_>>(),
         }));
     }
-    Ok((200, json!({ "ok": true, "results": results, "notFound": not_found })))
+    Ok((
+        200,
+        json!({ "ok": true, "results": results, "notFound": not_found }),
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -663,7 +706,10 @@ pub async fn run_network_block(
 ) -> Result<(u16, Value), PlayerReadError> {
     let c = pool.get().await?;
     let Some(target) = resolve_target(&c, &req).await? else {
-        return Ok((404, json!({ "ok": false, "error": "Utilizador não encontrado." })));
+        return Ok((
+            404,
+            json!({ "ok": false, "error": "Utilizador não encontrado." }),
+        ));
     };
     let tid = i64_col(&target, "id") as i32;
     let referred = network_rows(&c, tid).await?;
@@ -745,7 +791,12 @@ async fn delete_user_by_email(
         exec_ignore_missing(tx, sql, uid).await?;
     }
 
-    exec_ignore_missing(tx, "DELETE FROM support_ticket_replies WHERE admin_user_id = $1", uid).await?;
+    exec_ignore_missing(
+        tx,
+        "DELETE FROM support_ticket_replies WHERE admin_user_id = $1",
+        uid,
+    )
+    .await?;
     exec_ignore_missing(tx, "DELETE FROM support_tickets WHERE user_id = $1", uid).await?;
     exec_ignore_missing(
         tx,
@@ -789,7 +840,8 @@ async fn delete_user_by_email(
     if let Some(w) = wallet.as_deref().filter(|s| !s.is_empty()) {
         exec_ignore_missing_s(tx, "DELETE FROM nft_items WHERE owner_address = $1", w).await?;
     }
-    tx.execute("DELETE FROM users WHERE id = $1", &[&uid]).await?;
+    tx.execute("DELETE FROM users WHERE id = $1", &[&uid])
+        .await?;
     Ok(true)
 }
 

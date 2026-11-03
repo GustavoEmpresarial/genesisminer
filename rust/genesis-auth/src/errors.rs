@@ -8,10 +8,7 @@ pub const CODE_EXPIRED: &str = "expired";
 #[derive(Debug)]
 pub enum AuthPgError {
     BadRequest(String),
-    Unauthorized {
-        error: String,
-        code: Option<String>,
-    },
+    Unauthorized { error: String, code: Option<String> },
     Transport(anyhow::Error),
 }
 

@@ -23,6 +23,7 @@ import {
   callMiningWorkerChatSender,
   type MiningWorkerChatRow
 } from '../../mining-engine/services/mining-worker-client.js';
+import { MS_PER_DAY } from '../../../shared/utils/time.js';
 
 export const CHAT_CHANNEL_GLOBAL = 'global';
 export const CHAT_MAX_BODY_LEN = 280;
@@ -38,11 +39,9 @@ export const CHAT_AUDIO_MAX_DURATION_MS = 30_000;
 export const CHAT_AUDIO_MAX_BYTES = 1_500_000;
 /** Path público relativo sob /img/ para áudios do chat. */
 export const CHAT_AUDIO_PUBLIC_PREFIX = '/img/chat-audio/';
-/** Mensagens expiram e são apagadas após 1 hora (histórico + limpeza). */
-const CHAT_MESSAGE_TTL_HOURS = 1;
-const MS_PER_MINUTE = 60_000;
-const MINUTES_PER_HOUR = 60;
-export const CHAT_MESSAGE_TTL_MS = CHAT_MESSAGE_TTL_HOURS * MINUTES_PER_HOUR * MS_PER_MINUTE;
+/** Chat público: retenção mínima 90 dias. DMs `am:*` não usam este TTL. */
+const CHAT_MESSAGE_TTL_DAYS = 90;
+export const CHAT_MESSAGE_TTL_MS = CHAT_MESSAGE_TTL_DAYS * MS_PER_DAY;
 
 const MENTION_SEARCH_DEFAULT_LIMIT = 8;
 const MENTION_SEARCH_MAX_LIMIT = 10;
@@ -262,6 +261,11 @@ export function chatMessageCutoffMs(nowMs = Date.now()): number {
   return nowMs - CHAT_MESSAGE_TTL_MS;
 }
 
+/** TTL de 90d só no canal `global`. Conversas dono↔gerente (`am:owner:manager`) persistem. */
+export function chatChannelUsesMessageTtl(channel: string | undefined): boolean {
+  return normalizeChatChannel(channel) === CHAT_CHANNEL_GLOBAL;
+}
+
 export function isChatMessageExpired(createdAt: number, nowMs = Date.now()): boolean {
   const t = Number(createdAt) || 0;
   return t > 0 && t < chatMessageCutoffMs(nowMs);
@@ -278,8 +282,8 @@ const PURGE_DEFAULT_LIMIT = 2000;
 const PURGE_MAX_LIMIT = 5000;
 
 /**
- * Apaga fisicamente mensagens com mais de 1h via `genesis-mining-worker`
- * (`POST /v1/chat/purge-expired`). Fail-closed — sem DELETE local.
+ * Apaga fisicamente mensagens **globais** com mais de 90d via `genesis-mining-worker`
+ * (`POST /v1/chat/purge-expired`). DMs `am:*` não entram. Fail-closed — sem DELETE local.
  * Devolve ids/canais/áudios para limpeza em disco + socket (Node).
  */
 export async function purgeExpiredChatMessages(opts?: { nowMs?: number; limit?: number }): Promise<{ deleted: number; ids: string[]; channels: string[]; audioUrls: string[]; beforeMs: number }> {

@@ -39,7 +39,10 @@ fn is_undefined_table(e: &tokio_postgres::Error) -> bool {
 }
 
 fn utc_day_start_ms(ts: i64) -> i64 {
-    let dt = Utc.timestamp_millis_opt(ts).single().unwrap_or_else(Utc::now);
+    let dt = Utc
+        .timestamp_millis_opt(ts)
+        .single()
+        .unwrap_or_else(Utc::now);
     Utc.with_ymd_and_hms(dt.year(), dt.month(), dt.day(), 0, 0, 0)
         .single()
         .map(|d| d.timestamp_millis())
@@ -70,7 +73,10 @@ fn i64_col(r: &Row, c: &str) -> i64 {
     r.try_get::<_, Option<i64>>(c).ok().flatten().unwrap_or(0)
 }
 fn str_col(r: &Row, c: &str) -> String {
-    r.try_get::<_, Option<String>>(c).ok().flatten().unwrap_or_default()
+    r.try_get::<_, Option<String>>(c)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
 }
 fn opt_str_col(r: &Row, c: &str) -> Value {
     match r.try_get::<_, Option<String>>(c).ok().flatten() {
@@ -142,9 +148,7 @@ pub async fn run_overview(pool: &Pool, req: OverviewRequest) -> Result<Value, Pl
     let last30 = aggregate(pool, last30_start, now).await?;
 
     let custom = match (req.custom_from, req.custom_to) {
-        (Some(f), Some(t)) if t >= f => {
-            Some(period("custom", f, t, aggregate(pool, f, t).await?))
-        }
+        (Some(f), Some(t)) if t >= f => Some(period("custom", f, t, aggregate(pool, f, t).await?)),
         _ => None,
     };
 
@@ -195,7 +199,9 @@ pub async fn run_by_coin(pool: &Pool, req: RangeRequest) -> Result<Value, Player
     {
         Ok(r) => r,
         Err(e) if is_undefined_table(&e) => {
-            return Ok(json!({ "fromMs": from_ms, "toMs": to_ms, "rows": [], "totals": empty_totals() }));
+            return Ok(
+                json!({ "fromMs": from_ms, "toMs": to_ms, "rows": [], "totals": empty_totals() }),
+            );
         }
         Err(e) => return Err(e.into()),
     };
@@ -276,7 +282,11 @@ pub async fn run_timeline(pool: &Pool, req: TimelineRequest) -> Result<Value, Pl
     } else {
         "day"
     };
-    let coin = req.coin_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let coin = req
+        .coin_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let conn = pool.get().await?;
     let sql = format!(
         "SELECT (EXTRACT(EPOCH FROM date_trunc('{bucket}', to_timestamp(h.window_end_ms / 1000.0) AT TIME ZONE 'UTC')) * 1000)::bigint AS bucket_start_ms,
@@ -371,8 +381,18 @@ fn build_credits_where(req: &CreditsRequest) -> CreditsWhere {
     let mut sql = String::from("h.window_end_ms >= $1 AND h.window_end_ms <= $2");
     let mut n = 2;
     let user_id = req.user_id.and_then(|v| i32::try_from(v).ok());
-    let coin_id = req.coin_id.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
-    let room_id = req.room_id.as_deref().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string);
+    let coin_id = req
+        .coin_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let room_id = req
+        .room_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
     let q_norm = req
         .q
         .as_deref()
@@ -402,7 +422,14 @@ fn build_credits_where(req: &CreditsRequest) -> CreditsWhere {
     } else {
         (None, None)
     };
-    CreditsWhere { sql, user_id, coin_id, room_id, like, q_lower }
+    CreditsWhere {
+        sql,
+        user_id,
+        coin_id,
+        room_id,
+        like,
+        q_lower,
+    }
 }
 
 fn credits_params<'a>(
@@ -429,7 +456,8 @@ fn credits_params<'a>(
     p
 }
 
-const LEDGER_SELECT: &str = "h.id, h.user_id, u.username, u.email, h.coin_id, c.symbol AS coin_symbol,
+const LEDGER_SELECT: &str =
+    "h.id, h.user_id, u.username, u.email, h.coin_id, c.symbol AS coin_symbol,
      h.room_id, h.window_start_ms, h.window_end_ms, h.credit_blocks, h.amount_coins, h.amount_usd,
      h.user_hash_hps, h.network_hashrate, h.block_reward, h.block_time, h.created_at";
 
@@ -593,7 +621,10 @@ pub struct UserSummaryRequest {
     pub to_ms: i64,
 }
 
-pub async fn run_user_summary(pool: &Pool, req: UserSummaryRequest) -> Result<Value, PlayerReadError> {
+pub async fn run_user_summary(
+    pool: &Pool,
+    req: UserSummaryRequest,
+) -> Result<Value, PlayerReadError> {
     if let Some(msg) = validate_range(req.from_ms, req.to_ms, false) {
         return Err(PlayerReadError::bad(msg));
     }
@@ -694,7 +725,10 @@ pub async fn run_rebuild_rollups(
     let (from_ymd, to_ymd) = match (req.from_day.as_deref(), req.to_day.as_deref()) {
         (Some(f), Some(t)) if is_ymd(f) && is_ymd(t) => (f.to_string(), t.to_string()),
         _ => {
-            let days_back = req.days_back.filter(|d| *d > 0).unwrap_or(DEFAULT_ROLLUP_DAYS_BACK);
+            let days_back = req
+                .days_back
+                .filter(|d| *d > 0)
+                .unwrap_or(DEFAULT_ROLLUP_DAYS_BACK);
             let now = Utc::now().timestamp_millis();
             let to_ymd = ymd_from_ms(now);
             let from_ms = utc_day_start_ms(now) - (days_back - 1) * MS_PER_DAY;

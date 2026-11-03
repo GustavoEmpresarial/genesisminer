@@ -200,6 +200,28 @@ fn ext_of(name: &str) -> String {
         .unwrap_or_default()
 }
 
+/// Filename extension when it is allowed; otherwise the MIME table shared
+/// with the client `MIME_TO_EXT`. HEIC stays rejected — there is no decoder.
+fn resolve_support_ext(original_name: &str, mime: &str) -> Option<String> {
+    let ext = ext_of(original_name);
+    if SUPPORT_ALLOWED_EXT.contains(&ext.as_str()) {
+        return Some(ext);
+    }
+    let owned = mime.to_ascii_lowercase();
+    let base = owned.split(';').next().unwrap_or("").trim();
+    let mapped = match base {
+        "image/png" => ".png",
+        "image/jpeg" | "image/jpg" | "image/pjpeg" => ".jpg",
+        "image/gif" => ".gif",
+        "image/webp" => ".webp",
+        "video/mp4" => ".mp4",
+        "video/webm" => ".webm",
+        "video/quicktime" => ".mov",
+        _ => return None,
+    };
+    Some(mapped.to_string())
+}
+
 fn resolve_audio_ext(original_name: &str, mime: &str) -> Option<String> {
     let mime = mime
         .to_ascii_lowercase()
@@ -420,12 +442,9 @@ pub async fn run_upload_support_attachment(
     if incoming.bytes.len() < MAGIC_BYTES_MIN_LEN {
         return Err(UploadError::validation("File too small or empty."));
     }
-    let ext = ext_of(&incoming.original_name);
-    if !SUPPORT_ALLOWED_EXT.contains(&ext.as_str()) {
-        return Err(UploadError::validation(
-            "File type not allowed (images or mp4/webm/mov video).",
-        ));
-    }
+    let ext = resolve_support_ext(&incoming.original_name, &incoming.mime).ok_or_else(|| {
+        UploadError::validation("File type not allowed (images or mp4/webm/mov video).")
+    })?;
     let prefix = match incoming.name_prefix.trim() {
         "support-reply" => "support-reply",
         _ => "support",
@@ -665,6 +684,24 @@ mod tests {
 
         assert_eq!(out, (stored.clone(), public_url));
         assert!(dir.0.join(&stored).is_file());
+    }
+
+    #[test]
+    fn support_ext_uses_filename_or_mime() {
+        assert_eq!(
+            resolve_support_ext("shot.png", "application/octet-stream").as_deref(),
+            Some(".png")
+        );
+        assert_eq!(
+            resolve_support_ext("blob", "image/jpeg").as_deref(),
+            Some(".jpg")
+        );
+        assert_eq!(
+            resolve_support_ext("blob", "image/jpeg; charset=binary").as_deref(),
+            Some(".jpg")
+        );
+        assert_eq!(resolve_support_ext("photo.heic", "image/heic"), None);
+        assert_eq!(resolve_support_ext("notes.pdf", "application/pdf"), None);
     }
 
     #[test]

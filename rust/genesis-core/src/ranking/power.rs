@@ -367,10 +367,7 @@ mod tests {
     fn nft_room_credits_coins_but_not_general() {
         use crate::calculator::constants::NFT_AUTO_ROOM_ID;
         let mut ups = HashMap::new();
-        ups.insert(
-            "nft1".into(),
-            nft_collectible("nft_miner_1", 500.0, "gemt"),
-        );
+        ups.insert("nft1".into(), nft_collectible("nft_miner_1", 500.0, "gemt"));
         let racks = vec![RankingRackInput {
             id: "rack_1".into(),
             user_id: 1,
@@ -408,10 +405,7 @@ mod tests {
     fn empty_nft_room_ids_canonical_collectible_coins_not_general() {
         use crate::calculator::constants::NFT_AUTO_ROOM_ID;
         let mut ups = HashMap::new();
-        ups.insert(
-            "nft1".into(),
-            nft_collectible("nft_miner_1", 250.0, "gemt"),
-        );
+        ups.insert("nft1".into(), nft_collectible("nft_miner_1", 250.0, "gemt"));
         let racks = vec![RankingRackInput {
             id: "rack_1".into(),
             user_id: 1,

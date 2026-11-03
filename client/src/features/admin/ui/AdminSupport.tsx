@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment -- template legado; tipar o ficheiro inteiro fica fora deste fix de suporte
 // @ts-nocheck — template legado 1:1.
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
@@ -32,12 +33,16 @@ import type { GameUserActivityEntry } from '../lib/adminTypes';
 import { ACTIVITY_LOG_FILTER_GROUPS, filterUserActivityLogs, formatAccountCreatedBrt } from '../utils/adminUserActivityLog';
 import { AdminActivityLogTable } from './AdminActivityLogTable';
 import { AdminUserAccountTracePanel } from './AdminUserAccountTracePanel';
+import { AdminSupportManagerPanel } from './AdminSupportManagerPanel';
 import { safeSupportAttachmentHref } from '../../../shared/utils/supportAttachmentUrls';
+import { SUPPORT_FILE_ACCEPT } from '../../support/lib/supportAccept';
+import { mergeSupportPicks } from '../../support/lib/mergeSupportPicks';
+import { prepareSupportAttachment } from '../../support/lib/prepareSupportAttachment';
 import {
-  SUPPORT_FILE_ACCEPT,
-  isAllowedSupportAttachmentExt,
-  supportAttachmentExt,
-} from '../../support/lib/supportAccept';
+  supportHistoryAttention,
+  supportTicketAttention,
+  type SupportTicketAttention,
+} from '../../support/lib/supportTicketAttention';
 
 export type AdminSupportOpenPlayerPayload = { userId: number; email: string; username: string };
 
@@ -105,6 +110,13 @@ const ReplyAttachments: React.FC<{ items: SupportTicketReplyRow['attachments'] }
   );
 };
 
+function ticketAttentionPill(kind: SupportTicketAttention | 'archived'): { label: string; className: string } {
+  if (kind === 'archived') return { label: 'Arquivado', className: 'bg-slate-700 text-slate-400' };
+  if (kind === 'answered') return { label: 'Respondido', className: 'bg-emerald-900/40 text-emerald-300' };
+  if (kind === 'player_followup') return { label: 'Nova resposta', className: 'bg-sky-900/40 text-sky-300' };
+  return { label: 'Aberto', className: 'bg-amber-900/50 text-amber-300' };
+}
+
 export const AdminSupport: React.FC<AdminSupportProps> = ({
     canOpenPlayerProfile = false,
     onOpenPlayerProfile,
@@ -128,6 +140,7 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
   const [copiedTicketId, setCopiedTicketId] = useState<string | null>(null);
   type SupportListTab = 'open' | 'archived' | 'userHistory';
   const [listTab, setListTab] = useState<SupportListTab>('open');
+  const [ticketSearch, setTicketSearch] = useState('');
   /** Evita duplo clique em Arquivar/Reabrir e mostra estado no botão. */
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
 
@@ -160,6 +173,14 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
   }, [load]);
 
   useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [load]);
+
+  useEffect(() => {
     setReplyMessage('');
     setReplyFiles([]);
     setReplyErr(null);
@@ -187,13 +208,18 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
 
   const openTicketCount = useMemo(() => tickets.filter((x) => x.status !== 'archived').length, [tickets]);
   const archivedTicketCount = useMemo(() => tickets.filter((x) => x.status === 'archived').length, [tickets]);
-  const filteredTickets = useMemo(
-    () =>
+  const filteredTickets = useMemo(() => {
+    const byStatus =
       listTab === 'archived'
         ? tickets.filter((x) => x.status === 'archived')
-        : tickets.filter((x) => x.status !== 'archived'),
-    [tickets, listTab]
-  );
+        : tickets.filter((x) => x.status !== 'archived');
+    const q = ticketSearch.trim().toLowerCase();
+    if (!q) return byStatus;
+    return byStatus.filter((t) => {
+      const hay = `${t.subject || ''} ${t.email || ''} ${t.username || ''} ${t.preview || ''}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [tickets, listTab, ticketSearch]);
 
   const filteredHistoryTickets = useMemo(() => {
     if (!historyData?.tickets) return [];
@@ -414,44 +440,45 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
   };
 
   const onPickReplyFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const list = e.target.files;
-    if (!list?.length) return;
-    let rejected = 0;
-    let rejectReason: string | null = null;
-    const accepted: File[] = [];
-    for (let i = 0; i < list.length; i++) {
-      const f = list.item(i);
-      if (!f) continue;
-      if (f.size > SUPPORT_ATTACHMENT_MAX_BYTES) {
-        rejected += 1;
-        rejectReason = `«${f.name}» ultrapassa o limite de ${Math.floor(SUPPORT_ATTACHMENT_MAX_BYTES / (1024 * 1024))} MB por ficheiro.`;
-        continue;
-      }
-      if (f.size < SUPPORT_ATTACHMENT_MIN_BYTES) {
-        rejected += 1;
-        rejectReason = `«${f.name}» ficheiro inválido ou vazio.`;
-        continue;
-      }
-      const ext = supportAttachmentExt(f.name);
-      if (!isAllowedSupportAttachmentExt(ext)) {
-        rejected += 1;
-        rejectReason = `«${f.name}» tipo não permitido. Usa PNG, JPG, GIF, WEBP ou vídeo MP4/WEBM/MOV (não HEIC).`;
-        continue;
-      }
-      accepted.push(f);
-    }
-    // #endregion
-    if (rejectReason) setReplyErr(rejectReason);
-    else setReplyErr(null);
-    setReplyFiles((prev) => {
-      const next = [...prev];
-      for (const f of accepted) {
-        if (next.length >= SUPPORT_ATTACHMENT_MAX_COUNT) break;
-        next.push(f);
-      }
-      return next;
-    });
+    const picked = e.target.files ? Array.from(e.target.files) : [];
     e.target.value = '';
+    if (picked.length === 0) return;
+    const maxMb = Math.floor(SUPPORT_ATTACHMENT_MAX_BYTES / (1024 * 1024));
+    void (async () => {
+      const prepared: File[] = [];
+      let prepareReason: string | null = null;
+      for (const f of picked) {
+        const result = await prepareSupportAttachment(f);
+        if ('error' in result) {
+          if (!prepareReason) {
+            if (result.error === 'too-large') {
+              prepareReason = `«${result.name}» ultrapassa o limite de ${maxMb} MB por ficheiro.`;
+            } else if (result.error === 'unreadable') {
+              prepareReason = `«${result.name}» não deu para ler. Envia PNG, JPG, GIF, WEBP ou um vídeo MP4/WEBM/MOV.`;
+            } else {
+              prepareReason = `«${result.name}» tipo não permitido. Usa PNG, JPG, GIF, WEBP ou vídeo MP4/WEBM/MOV.`;
+            }
+          }
+          continue;
+        }
+        prepared.push(result.file);
+      }
+      setReplyFiles((prev) => {
+        const { next, rejectReason } = mergeSupportPicks(
+          prev,
+          prepared,
+          SUPPORT_ATTACHMENT_MAX_COUNT,
+          SUPPORT_ATTACHMENT_MAX_BYTES,
+          SUPPORT_ATTACHMENT_MIN_BYTES,
+          (name, mb) => `«${name}» ultrapassa o limite de ${mb} MB por ficheiro.`,
+          (max) => `Máximo de ${max} anexos.`,
+          (name) => `«${name}» tipo não permitido. Usa PNG, JPG, GIF, WEBP ou vídeo MP4/WEBM/MOV.`,
+          (name) => `«${name}» ficheiro inválido ou vazio.`
+        );
+        setReplyErr(rejectReason ?? prepareReason);
+        return next;
+      });
+    })();
   };
 
   const removeReplyFile = (idx: number) => {
@@ -611,8 +638,11 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
               Gerir perfil
             </button>
           )}
+          <AdminSupportManagerPanel ownerUserId={ticketUserNumericId(t)} variant="toolbar" />
         </div>
       </div>
+
+      <AdminSupportManagerPanel ownerUserId={ticketUserNumericId(t)} />
 
       {detailTab === 'thread' ? (
         <>
@@ -662,7 +692,7 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
                 <label className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs cursor-pointer hover:bg-slate-800">
                   <Paperclip size={14} />
                   Anexar foto/vídeo
-                  <input type="file" accept={SUPPORT_FILE_ACCEPT} multiple className="hidden" onChange={onPickReplyFiles} />
+                  <input type="file" accept={SUPPORT_FILE_ACCEPT} multiple className="sr-only" onChange={onPickReplyFiles} />
                 </label>
                 {replyFiles.length > 0 && (
                   <span className="text-[11px] text-slate-500">{replyFiles.length}/5 ficheiros</span>
@@ -823,7 +853,9 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
             <Inbox size={22} className="text-amber-500" />
             Pedidos de suporte
           </h2>
-          <p className="text-xs text-slate-500 mt-1">Mensagens e anexos dos jogadores; pode responder por texto e anexar foto ou vídeo.</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Lista + detalhe: responder tickets, ver atividade e demitir gerente da conta do jogador quando necessário.
+          </p>
         </div>
         <button
           type="button"
@@ -835,6 +867,9 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
           Atualizar
         </button>
       </div>
+
+      <AdminSupportManagerPanel showEmailLookup />
+
       <div className="inline-flex flex-wrap rounded-lg border border-slate-600 overflow-hidden text-[11px] font-bold">
         <button
           type="button"
@@ -997,7 +1032,15 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
 
               {filteredHistoryTickets.length > 0 ? (
                 <div className="space-y-2">
-                  {filteredHistoryTickets.map((ht) => (
+                  {filteredHistoryTickets.map((ht) => {
+                    const pill = ticketAttentionPill(
+                      supportHistoryAttention({
+                        status: ht.status,
+                        assignedTo: ht.assignedTo,
+                        messageCount: ht.messageCount,
+                      })
+                    );
+                    return (
                     <div
                       key={ht.id}
                       className="rounded-xl border border-slate-700 bg-slate-900/60 px-4 py-3 flex flex-wrap items-center justify-between gap-3"
@@ -1005,12 +1048,8 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
                       <div className="min-w-0 flex-1">
                         <div className="font-bold text-white truncate">{ht.subject}</div>
                         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
-                          <span
-                            className={`uppercase font-bold px-1.5 py-0.5 rounded ${
-                              ht.status === 'archived' ? 'bg-slate-700 text-slate-400' : 'bg-amber-900/50 text-amber-300'
-                            }`}
-                          >
-                            {ht.status === 'archived' ? 'Arquivado' : 'Aberto'}
+                          <span className={`uppercase font-bold px-1.5 py-0.5 rounded ${pill.className}`}>
+                            {pill.label}
                           </span>
                           <span className="font-mono">{fmt(ht.createdAt)}</span>
                           <span>· última: {fmt(ht.lastMessageAt)}</span>
@@ -1067,7 +1106,8 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : null}
 
@@ -1096,386 +1136,94 @@ export const AdminSupport: React.FC<AdminSupportProps> = ({
       ) : null}
 
       {listTab !== 'userHistory' && err && <div className="text-red-400 text-sm">{err}</div>}
-      {listTab !== 'userHistory' &&
-        (loading && tickets.length === 0 ? (
-        <div className="text-slate-500 text-sm py-12 text-center">A carregar…</div>
-      ) : tickets.length === 0 ? (
-        <div className="text-slate-500 text-sm py-12 text-center">Nenhum pedido ainda.</div>
-      ) : filteredTickets.length === 0 ? (
-        <div className="text-slate-500 text-sm py-12 text-center">
-          {listTab === 'archived' ? 'Nenhum ticket arquivado.' : 'Nenhum ticket aberto.'}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {filteredTickets.map((t) => (
-            <div key={t.id} className="rounded-xl border border-slate-700 bg-slate-900/60 overflow-hidden">
-              {/* Não usar <button> aqui: filhos com botões (copiar / perfil) são HTML inválido e partem cliques. */}
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => setOpenId((v) => (v === t.id ? null : t.id))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setOpenId((v) => (v === t.id ? null : t.id));
-                  }
-                }}
-                className="w-full text-left px-4 py-3 flex flex-wrap items-center justify-between gap-2 hover:bg-slate-800/50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/50 rounded-t-xl"
-              >
-                <div className="min-w-0">
-                  <div className="font-bold text-white truncate">{t.subject}</div>
-                  <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 min-w-0">
-                    <span className="font-mono truncate max-w-[min(100%,14rem)]" title={t.email}>
-                      {t.email}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void copyPlayerEmail(t.email, t.id);
-                      }}
-                      className="shrink-0 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[10px] font-bold uppercase text-amber-500/95 hover:bg-amber-950/40 hover:text-amber-400"
-                      title="Copiar email do jogador"
-                    >
-                      <Copy size={11} />
-                      {copiedTicketId === t.id ? 'Copiado' : 'Copiar email'}
-                    </button>
-                    {onOpenPlayerProfile && ticketUserNumericId(t) > 0 && (
-                      <button
-                        type="button"
-                        disabled={!canOpenPlayerProfile}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!canOpenPlayerProfile) return;
-                          onOpenPlayerProfile({
-                            userId: ticketUserNumericId(t),
-                            email: t.email,
-                            username: t.username,
-                          });
-                        }}
-                        className="shrink-0 inline-flex items-center gap-0.5 rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase border-amber-600/70 text-amber-500 hover:bg-amber-950/35 hover:text-amber-400 disabled:pointer-events-none disabled:opacity-40 disabled:cursor-not-allowed"
-                        title={
-                          canOpenPlayerProfile
-                            ? 'Abrir editor de perfil, estoque e dados do jogador (separador Utilizadores)'
-                            : 'Precisa da permissão Utilizadores para abrir o editor de perfil'
-                        }
-                      >
-                        <UserCog size={11} />
-                        Gerir perfil
-                      </button>
-                    )}
-                    <span className="text-slate-600">·</span>
-                    <span className="truncate">{t.username}</span>
-                    {ticketUserNumericId(t) <= 0 ? (
-                      <span className="shrink-0 rounded bg-sky-950/60 px-1.5 py-0.5 text-[10px] font-bold uppercase text-sky-300">
-                        Guest
-                      </span>
-                    ) : null}
-                    <span className="text-slate-600">·</span>
-                    <span className="font-mono shrink-0">{fmt(t.createdAt)}</span>
-                    {Array.isArray(t.replies) && t.replies.length > 0 && (
-                      <span className="text-amber-600/90">· {t.replies.length} resposta(s)</span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span
-                    className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${
-                      t.status === 'archived' ? 'bg-slate-700 text-slate-400' : 'bg-amber-900/50 text-amber-300'
-                    }`}
-                  >
-                    {t.status === 'archived' ? 'Arquivado' : 'Aberto'}
-                  </span>
-                </div>
-              </div>
-              {openId === t.id && (
-                <div className="px-4 pb-4 pt-2 border-t border-slate-800 space-y-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="inline-flex rounded-lg border border-slate-600 overflow-hidden text-[11px] font-bold">
-                        <button
-                          type="button"
-                          onClick={() => setDetailTab('thread')}
-                          className={`px-3 py-1.5 inline-flex items-center gap-1 ${
-                            detailTab === 'thread'
-                              ? 'bg-amber-600 text-white'
-                              : 'bg-slate-900 text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          Conversa
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDetailTab('activity')}
-                          className={`px-3 py-1.5 inline-flex items-center gap-1 ${
-                            detailTab === 'activity'
-                              ? 'bg-amber-600 text-white'
-                              : 'bg-slate-900 text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          <History size={12} /> Atividade
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDetailTab('trace')}
-                          className={`px-3 py-1.5 inline-flex items-center gap-1 ${
-                            detailTab === 'trace'
-                              ? 'bg-amber-600 text-white'
-                              : 'bg-slate-900 text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          <Search size={12} /> Rastreio
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => void copyPlayerEmail(t.email, t.id)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-600 px-2 py-1 text-[10px] font-bold uppercase text-amber-500/95 hover:bg-slate-800"
-                        title="Copiar email do jogador"
-                      >
-                        <Copy size={12} />
-                        {copiedTicketId === t.id ? 'Copiado' : 'Copiar email'}
-                      </button>
-                      {onOpenPlayerProfile && (
-                        <button
-                          type="button"
-                          disabled={!canOpenPlayerProfile}
-                          onClick={() => {
-                            if (!canOpenPlayerProfile) return;
-                            onOpenPlayerProfile({
-                              userId: ticketUserNumericId(t),
-                              email: t.email,
-                              username: t.username,
-                            });
-                          }}
-                          className="inline-flex items-center gap-1 rounded-lg border border-amber-600/70 px-2 py-1 text-[10px] font-bold uppercase text-amber-500 hover:bg-amber-950/30 hover:bg-slate-800/80 disabled:pointer-events-none disabled:opacity-40 disabled:cursor-not-allowed"
-                          title={
-                            canOpenPlayerProfile
-                              ? 'Abrir editor de perfil, estoque e dados do jogador'
-                              : 'Precisa da permissão Utilizadores'
-                          }
-                        >
-                          <UserCog size={12} />
-                          Gerir perfil
-                        </button>
-                      )}
-                    </div>
-                  </div>
 
-                  {detailTab === 'thread' ? (
-                    <>
-                      <div className="text-[10px] font-bold text-slate-500 uppercase">Conversa (ordem cronológica)</div>
-                      <ul className="space-y-3">
-                        {buildAdminTimeline(t).map((e, idx) => (
-                          <li
-                            key={`${e.k}-${idx}-${e.at}`}
-                            className={`text-sm rounded-lg p-3 border ${
-                              e.k === 'admin'
-                                ? 'border-emerald-900/50 bg-emerald-950/15'
-                                : e.k === 'player'
-                                  ? 'border-slate-600 bg-slate-950/60'
-                                  : 'border-amber-900/30 bg-amber-950/10'
-                            }`}
-                          >
-                            <div className="text-[10px] text-slate-500 mb-1">
-                              {e.k === 'open' && <span className="text-amber-200/90 font-semibold">Pedido inicial</span>}
-                              {e.k === 'player' && <span className="text-slate-300 font-semibold">Jogador (seguimento)</span>}
-                              {e.k === 'admin' && (
-                                <span className="text-emerald-400 font-semibold">
-                                  Equipe - {e.adminUsername || 'admin'}
-                                </span>
-                              )}
-                              {' · '}
-                              {fmt(e.at)}
-                            </div>
-                            {e.message ? (
-                              <pre className="whitespace-pre-wrap text-slate-300 font-sans text-[13px]">{e.message}</pre>
-                            ) : null}
-                            <ReplyAttachments items={e.attachments} />
-                          </li>
-                        ))}
-                      </ul>
+      {listTab !== 'userHistory' && (
+        <div className="space-y-3">
+          <div className="relative max-w-xl">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+            <input
+              type="search"
+              value={ticketSearch}
+              onChange={(e) => setTicketSearch(e.target.value)}
+              placeholder="Filtrar por email, username ou assunto…"
+              className="w-full rounded-lg border border-slate-600 bg-slate-950/60 py-2 pl-9 pr-3 text-sm text-slate-100 placeholder:text-slate-600 focus:border-amber-500 focus:outline-none"
+            />
+          </div>
 
-                      <div className="rounded-lg border border-amber-900/30 bg-slate-950/50 p-3 space-y-2">
-                        <div className="text-xs font-bold text-amber-500/90 uppercase">Responder ao jogador</div>
-                        {replyErr && <div className="text-xs text-red-400">{replyErr}</div>}
-                        <textarea
-                          value={replyMessage}
-                          onChange={(e) => setReplyMessage(e.target.value)}
-                          rows={4}
-                          maxLength={SUPPORT_TICKET_MESSAGE_MAX}
-                          placeholder="Texto da resposta (mín. 3 caracteres se não enviar anexos)"
-                          className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-600 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/40 resize-y"
-                        />
-                        <div className="flex flex-wrap items-center gap-2">
-                          <label className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-600 text-slate-300 text-xs cursor-pointer hover:bg-slate-800">
-                            <Paperclip size={14} />
-                            Anexar foto/vídeo
-                            <input type="file" accept={SUPPORT_FILE_ACCEPT} multiple className="hidden" onChange={onPickReplyFiles} />
-                          </label>
-                          {replyFiles.length > 0 && (
-                            <span className="text-[11px] text-slate-500">{replyFiles.length}/5 ficheiros</span>
-                          )}
-                        </div>
-                        {replyFiles.length > 0 && (
-                          <ul className="flex flex-wrap gap-2">
-                            {replyFiles.map((f, i) => (
-                              <li
-                                key={`${f.name}-${i}`}
-                                className="flex items-center gap-1 text-[11px] bg-slate-800 rounded px-2 py-1 text-slate-300 max-w-full"
-                              >
-                                <span className="truncate">{f.name}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => removeReplyFile(i)}
-                                  className="p-0.5 text-slate-500 hover:text-white shrink-0"
-                                  aria-label="Remover"
-                                >
-                                  <X size={12} />
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        <button
-                          type="button"
-                          disabled={replying || !canSendReply}
-                          onClick={() => void sendReply(t.id)}
-                          className="px-3 py-2 rounded-lg bg-amber-600 text-white text-xs font-bold flex items-center gap-2 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {replying ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
-                          Enviar resposta
-                        </button>
-                      </div>
-
-                      <div className="flex gap-2">
-                        {t.status !== 'archived' ? (
-                          <button
-                            type="button"
-                            disabled={!!statusBusyId}
-                            onClick={() => void archive(t.id)}
-                            className="px-3 py-1.5 rounded-lg bg-slate-700 text-white text-xs font-bold flex items-center gap-1 hover:bg-slate-600 disabled:opacity-50 disabled:cursor-wait"
-                          >
-                            {statusBusyId === t.id ? (
-                              <Loader2 size={14} className="animate-spin shrink-0" />
-                            ) : (
-                              <Archive size={14} />
-                            )}
-                            Arquivar
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={!!statusBusyId}
-                            onClick={() => void reopen(t.id)}
-                            className="px-3 py-1.5 rounded-lg bg-slate-700 text-white text-xs font-bold hover:bg-slate-600 disabled:opacity-50 disabled:cursor-wait inline-flex items-center gap-1"
-                          >
-                            {statusBusyId === t.id ? <Loader2 size={14} className="animate-spin shrink-0" /> : null}
-                            Reabrir
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  ) : detailTab === 'activity' ? (
-                    <div className="space-y-3">
-                      <p className="text-[11px] text-slate-500">
-                        Eventos Mongo <span className="font-mono text-slate-400">game_activity_logs</span> +{' '}
-                        <span className="font-mono text-slate-400">action_logs</span> (login, signup, …) para{' '}
-                        <span className="font-mono text-slate-300">{t.email}</span>
-                        {ticketUserNumericId(t) > 0 ? (
-                          <span className="text-slate-500"> (user #{ticketUserNumericId(t)})</span>
-                        ) : null}
-                        : caixas, roleta, resgate de códigos, depósitos quando o servidor regista o evento.
-                      </p>
-                      {formatAccountCreatedBrt(activityAccountCreatedAtMs) ? (
-                        <div className="rounded-lg border border-emerald-900/40 bg-emerald-950/20 px-3 py-2 text-[11px] text-emerald-100/95">
-                          <span className="font-bold text-emerald-400/95">Conta criada (estimativa): </span>
-                          {formatAccountCreatedBrt(activityAccountCreatedAtMs)} (Brasília), a partir de{' '}
-                          <span className="font-mono text-slate-300">game_states.start_time</span> no PostgreSQL — coincide com o
-                          instante em que o save do jogador foi criado no registo.
-                        </div>
-                      ) : (
-                        <div className="rounded-lg border border-slate-700/80 bg-slate-900/40 px-3 py-2 text-[11px] text-slate-500">
-                          Sem data de criação no save (sem linha em <span className="font-mono">game_states</span> para este utilizador).
-                        </div>
-                      )}
-                      <div className="flex flex-col gap-2 rounded-lg border border-slate-700/80 bg-slate-950/50 p-2 sm:flex-row sm:flex-wrap sm:items-end">
-                        <div className="flex min-w-0 flex-1 flex-col gap-1 sm:max-w-[14rem]">
-                          <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500" htmlFor={`activity-filter-${t.id}`}>
-                            Tipo de evento
-                          </label>
-                          <select
-                            id={`activity-filter-${t.id}`}
-                            value={activityFilterId}
-                            onChange={(e) => setActivityFilterId(e.target.value)}
-                            className="rounded border border-slate-600 bg-slate-900 px-2 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
-                          >
-                            {ACTIVITY_LOG_FILTER_GROUPS.map((g) => (
-                              <option key={g.id} value={g.id}>
-                                {g.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="min-w-0 flex-1 flex-col gap-1 sm:min-w-[12rem] sm:flex-[2]">
-                          <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500" htmlFor={`activity-search-${t.id}`}>
-                            Pesquisar no resumo legível…
-                          </label>
-                          <input
-                            id={`activity-search-${t.id}`}
-                            type="search"
-                            value={activitySearch}
-                            onChange={(e) => setActivitySearch(e.target.value)}
-                            placeholder="ex: deposit, rackId, mining_rack…"
-                            className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1.5 font-mono text-[11px] text-slate-200 placeholder:text-slate-600 focus:border-amber-500 focus:outline-none"
-                          />
-                        </div>
-                        <p className="w-full text-[10px] text-slate-600 sm:order-last">
-                          {activityLogs.length > 0
-                            ? `A mostrar ${filteredActivityLogs.length} de ${activityLogs.length} evento(s) carregados.`
-                            : null}
-                        </p>
-                      </div>
-                      {activityLoading && (
-                        <div className="flex items-center justify-center gap-2 py-8 text-slate-400 text-sm">
-                          <Loader2 className="animate-spin" size={18} /> A carregar…
-                        </div>
-                      )}
-                      {!activityLoading && activityError && (
-                        <div className="rounded-lg border border-amber-700/50 bg-amber-950/30 px-3 py-2 text-sm text-amber-200">{activityError}</div>
-                      )}
-                      {!activityLoading && !activityError && (
-                        <AdminActivityLogTable
-                          rows={filteredActivityLogs}
-                          loading={activityLoading}
-                          emptyMessage={
-                            activityLogs.length > 0
-                              ? 'Nenhum evento corresponde ao filtro ou à pesquisa. Ajuste o tipo ou limpe a pesquisa.'
-                              : 'Nenhum evento registado para esta conta (ou a tabela de logs ainda não recebeu dados).'
-                          }
-                          expandedTech={activityExpandedTech}
-                          setExpandedTech={setActivityExpandedTech}
-                        />
-                      )}
-                      {!activityLoading && !activityError && (
-                        <button
-                          type="button"
-                          onClick={() => void refreshTicketActivity(t)}
-                          className="text-xs font-bold text-amber-500 hover:text-amber-400 uppercase"
-                        >
-                          Atualizar lista
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <AdminUserAccountTracePanel userId={ticketUserNumericId(t) > 0 ? ticketUserNumericId(t) : null} />
-                  )}
-                </div>
-              )}
+          {loading && tickets.length === 0 ? (
+            <div className="text-slate-500 text-sm py-12 text-center">A carregar…</div>
+          ) : tickets.length === 0 ? (
+            <div className="text-slate-500 text-sm py-12 text-center">Nenhum pedido ainda.</div>
+          ) : filteredTickets.length === 0 ? (
+            <div className="text-slate-500 text-sm py-12 text-center">
+              {ticketSearch.trim()
+                ? 'Nenhum ticket corresponde ao filtro.'
+                : listTab === 'archived'
+                  ? 'Nenhum ticket arquivado.'
+                  : 'Nenhum ticket aberto.'}
             </div>
-          ))}
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] lg:items-start">
+              <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
+                {filteredTickets.map((t) => {
+                  const selected = openId === t.id;
+                  const pill = ticketAttentionPill(
+                    supportTicketAttention({
+                      status: t.status,
+                      replies: t.replies || [],
+                      playerReplies: t.playerReplies || [],
+                    })
+                  );
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setOpenId((v) => (v === t.id ? null : t.id))}
+                      className={`w-full text-left rounded-xl border px-3 py-3 transition-colors ${
+                        selected
+                          ? 'border-amber-500/70 bg-amber-950/25'
+                          : 'border-slate-700 bg-slate-900/60 hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-bold text-white truncate">{t.subject}</div>
+                          <div className="mt-0.5 text-[11px] text-slate-500 truncate">
+                            {t.email}
+                            <span className="text-slate-600"> · </span>
+                            {t.username}
+                            {ticketUserNumericId(t) <= 0 ? (
+                              <span className="ml-1 rounded bg-sky-950/60 px-1 py-0.5 text-[10px] font-bold uppercase text-sky-300">
+                                Guest
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="mt-0.5 font-mono text-[10px] text-slate-600">{fmt(t.createdAt)}</div>
+                        </div>
+                        <span
+                          className={`shrink-0 text-[10px] uppercase font-bold px-2 py-0.5 rounded ${pill.className}`}
+                        >
+                          {pill.label}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="rounded-xl border border-slate-700 bg-slate-900/60 min-h-[12rem]">
+                {openTicket && listTab !== 'userHistory' ? (
+                  renderTicketDetailPanel(openTicket)
+                ) : (
+                  <div className="flex h-full min-h-[12rem] items-center justify-center px-4 py-10 text-center text-sm text-slate-500">
+                    Seleciona um ticket à esquerda para ver a conversa, atividade e gerência.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
-      ))}
+      )}
+
     </div>
   );
 };

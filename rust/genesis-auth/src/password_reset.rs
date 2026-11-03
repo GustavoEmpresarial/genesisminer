@@ -51,7 +51,10 @@ pub struct PasswordResetCompleteBody {
 impl std::fmt::Debug for PasswordResetCompleteBody {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PasswordResetCompleteBody")
-            .field("reset_token", &self.reset_token.as_ref().map(|_| "<redacted>"))
+            .field(
+                "reset_token",
+                &self.reset_token.as_ref().map(|_| "<redacted>"),
+            )
             .field(
                 "new_password",
                 &self.new_password.as_ref().map(|_| "<redacted>"),
@@ -167,7 +170,11 @@ pub async fn run_password_reset_request(
     Ok(())
 }
 
-async fn try_issue_reset(pool: &Pool, cfg: &WorkerConfig, raw_email: &str) -> Result<(), anyhow::Error> {
+async fn try_issue_reset(
+    pool: &Pool,
+    cfg: &WorkerConfig,
+    raw_email: &str,
+) -> Result<(), anyhow::Error> {
     let client = pool.get().await?;
     let row = client
         .query_opt(
@@ -183,7 +190,8 @@ async fn try_issue_reset(pool: &Pool, cfg: &WorkerConfig, raw_email: &str) -> Re
     let now = current_unix_ms();
     let ttl = i64::try_from(PASSWORD_RESET_TTL_MS)?;
     let expiry = now.saturating_add(ttl);
-    let reset_token = build_signed_password_reset_token(&email, expiry, &cfg.auth_flow_token_secret);
+    let reset_token =
+        build_signed_password_reset_token(&email, expiry, &cfg.auth_flow_token_secret);
     let token_hash = hash_token_sha256(&reset_token);
     client
         .execute(
@@ -215,7 +223,9 @@ pub async fn run_password_reset_complete(
     let reset_token = body.reset_token.as_deref().unwrap_or("");
     let new_password = body.new_password.as_deref().unwrap_or("");
     if reset_token.is_empty() || new_password.is_empty() {
-        return Err(PasswordResetCompleteError::BadRequest(ERR_INCOMPLETE.into()));
+        return Err(PasswordResetCompleteError::BadRequest(
+            ERR_INCOMPLETE.into(),
+        ));
     }
     let pv = validate_signup_password(Some(new_password), true);
     if !pv.is_ok() {
@@ -224,17 +234,17 @@ pub async fn run_password_reset_complete(
         ));
     }
     let now = current_unix_ms();
-    let parsed = match parse_signed_password_reset_token(
-        reset_token,
-        &cfg.auth_flow_token_secret,
-        now,
-    ) {
-        Ok(p) => p,
-        Err(fail) => return Err(map_parse_fail(fail.status, fail.error)),
-    };
+    let parsed =
+        match parse_signed_password_reset_token(reset_token, &cfg.auth_flow_token_secret, now) {
+            Ok(p) => p,
+            Err(fail) => return Err(map_parse_fail(fail.status, fail.error)),
+        };
 
     let token_hash = hash_token_sha256(reset_token);
-    let client = pool.get().await.map_err(PasswordResetCompleteError::transport)?;
+    let client = pool
+        .get()
+        .await
+        .map_err(PasswordResetCompleteError::transport)?;
     let user_row = client
         .query_opt(
             "SELECT id, password_reset_token_hash, password_reset_token_expires_at
@@ -275,7 +285,10 @@ pub async fn run_password_reset_complete(
         tracing::error!(err = ?e, "reset-password revoke refresh");
     }
     let pg_uid = pg_user_id(uid).map_err(PasswordResetCompleteError::transport)?;
-    let client = pool.get().await.map_err(PasswordResetCompleteError::transport)?;
+    let client = pool
+        .get()
+        .await
+        .map_err(PasswordResetCompleteError::transport)?;
     client
         .execute(
             "UPDATE users SET

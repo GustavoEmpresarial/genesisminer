@@ -2,6 +2,7 @@ import {
   filterNftRoomExclusiveMiningCoins,
   formatAsicRemainingUntil,
   isNftRoomCatalogMachine,
+  isTimedAsicLeasePast,
   normalizeMiningCoinSymbolKey,
   normalizePlacedRackRoomId,
   NFT_ROOM_EXCLUSIVE_MINING_COIN_SYMBOLS,
@@ -153,6 +154,7 @@ export function computeNftRoomPaybackStats(
       if (!lease) {
         lease = leaseByRackSlot.get(`${rack.id}:${slotIdx}`);
       }
+      if (lease && isTimedAsicLeasePast(lease.expiresAt, nowMs)) continue;
       const expiresAt = lease?.expiresAt != null ? Number(lease.expiresAt) : null;
       const remainingLabel =
         expiresAt != null && expiresAt > nowMs

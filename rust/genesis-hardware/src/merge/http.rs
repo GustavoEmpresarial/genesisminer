@@ -43,7 +43,11 @@ fn merge_fail(e: MergeError) -> Response {
             code,
         } => {
             let sc = StatusCode::from_u16(status).unwrap_or(StatusCode::BAD_REQUEST);
-            (sc, Json(json!({ "ok": false, "error": error, "code": code }))).into_response()
+            (
+                sc,
+                Json(json!({ "ok": false, "error": error, "code": code })),
+            )
+                .into_response()
         }
         MergeError::Transport(err) => {
             warn!(err = %err, "merge transport");

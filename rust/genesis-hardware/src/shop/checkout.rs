@@ -338,14 +338,9 @@ async fn checkout_on_tx<C: GenericClient>(
     // sent neither a cart nor an id (genesis-api forwards just `{idempotencyKey}`)
     // — the user's own cart from the DB.
     let effective_cart_id: Option<Uuid> = match clear_cart_id {
-        Some(c) => Some(
-            Uuid::parse_str(c.trim()).map_err(|_| ShopError::bad(ERR_CART_NOT_FOUND))?,
-        ),
+        Some(c) => Some(Uuid::parse_str(c.trim()).map_err(|_| ShopError::bad(ERR_CART_NOT_FOUND))?),
         None if request_cart.is_empty() => client
-            .query_opt(
-                "SELECT id FROM shop_carts WHERE user_id = $1",
-                &[&uid_pg],
-            )
+            .query_opt("SELECT id FROM shop_carts WHERE user_id = $1", &[&uid_pg])
             .await
             .map_err(ShopError::transport)?
             .map(|r| r.get::<_, Uuid>("id")),

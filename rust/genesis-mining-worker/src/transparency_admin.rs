@@ -365,8 +365,9 @@ mod tests {
     fn create_requires_valid_category_and_title() {
         assert!(plan_create(&json!({ "category": "nope", "title": "x" })).is_err());
         assert!(plan_create(&json!({ "category": "pool", "title": "  " })).is_err());
-        let p = plan_create(&json!({ "category": "pool", "title": " Fundo ", "amountUsdc": "12.5" }))
-            .unwrap();
+        let p =
+            plan_create(&json!({ "category": "pool", "title": " Fundo ", "amountUsdc": "12.5" }))
+                .unwrap();
         assert_eq!(p.title, "Fundo");
         assert_eq!(p.amount_usdc, Some(12.5));
         assert_eq!(p.body, None);
@@ -432,7 +433,11 @@ fn settings_to_json(s: &HealthSettings, updated_at: i64, updated_by: Option<&str
     })
 }
 
-fn req_f64(m: &serde_json::Map<String, Value>, key: &str, label: &str) -> Result<f64, PlayerReadError> {
+fn req_f64(
+    m: &serde_json::Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<f64, PlayerReadError> {
     let v = match m.get(key) {
         Some(Value::Number(n)) => n.as_f64(),
         Some(Value::String(s)) => s.trim().replace(',', ".").parse::<f64>().ok(),
@@ -445,7 +450,11 @@ fn req_f64(m: &serde_json::Map<String, Value>, key: &str, label: &str) -> Result
     Ok(n)
 }
 
-fn req_i32(m: &serde_json::Map<String, Value>, key: &str, label: &str) -> Result<i32, PlayerReadError> {
+fn req_i32(
+    m: &serde_json::Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<i32, PlayerReadError> {
     let n = req_f64(m, key, label)?;
     if n.fract() != 0.0 {
         return Err(bad(&format!("{label} tem de ser inteiro")));
@@ -453,7 +462,11 @@ fn req_i32(m: &serde_json::Map<String, Value>, key: &str, label: &str) -> Result
     Ok(n as i32)
 }
 
-fn req_bool(m: &serde_json::Map<String, Value>, key: &str, label: &str) -> Result<bool, PlayerReadError> {
+fn req_bool(
+    m: &serde_json::Map<String, Value>,
+    key: &str,
+    label: &str,
+) -> Result<bool, PlayerReadError> {
     match m.get(key) {
         Some(Value::Bool(b)) => Ok(*b),
         Some(Value::String(s)) => match s.trim() {
@@ -562,7 +575,11 @@ pub async fn run_transparency_health_settings_get(pool: &Pool) -> Result<Value, 
         ),
         None => (0, None),
     };
-    Ok(settings_to_json(&settings, updated_at, updated_by.as_deref()))
+    Ok(settings_to_json(
+        &settings,
+        updated_at,
+        updated_by.as_deref(),
+    ))
 }
 
 pub async fn run_transparency_health_settings_update(

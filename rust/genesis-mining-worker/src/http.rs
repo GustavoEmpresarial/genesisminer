@@ -16,16 +16,45 @@ use serde::Deserialize;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
+use crate::admin_dashboard::{
+    run_dashboard_stats, run_ranking_exclusion, run_site_metrics, run_users_map,
+    RankingExclusionRequest, DASHBOARD_METRICS_PATH, DASHBOARD_RANKING_EXCLUSION_PATH,
+    DASHBOARD_STATS_PATH, DASHBOARD_USERS_MAP_PATH,
+};
+use crate::admin_economy_reports::{
+    run_distribution_preview, run_economy_coin_stats, run_mining_runtime_summary,
+    DISTRIBUTION_PREVIEW_PATH, ECONOMY_STATS_PATH, MINING_RUNTIME_SUMMARY_PATH,
+};
 use crate::admin_gate::{run_admin_gate, AdminGateRequest, USERS_ADMIN_GATE_PATH};
-use crate::admin_shop_checkouts::{
-    run_admin_shop_checkouts, ShopCheckoutsRequest, ADMIN_SHOP_CHECKOUTS_PATH,
+use crate::admin_mining_dist::{
+    run_by_coin, run_credits, run_credits_csv, run_overview, run_rebuild_rollups, run_timeline,
+    run_user_summary, CreditsRequest, OverviewRequest, RangeRequest, RebuildRollupsRequest,
+    TimelineRequest, UserSummaryRequest, MINING_DIST_BY_COIN_PATH, MINING_DIST_CREDITS_CSV_PATH,
+    MINING_DIST_CREDITS_PATH, MINING_DIST_OVERVIEW_PATH, MINING_DIST_REBUILD_ROLLUPS_PATH,
+    MINING_DIST_TIMELINE_PATH, MINING_DIST_USER_SUMMARY_PATH,
 };
 use crate::admin_purchases_report::{
     run_admin_purchases_report, PurchasesReportRequest, ADMIN_PURCHASES_REPORT_PATH,
 };
+use crate::admin_referral::{
+    run_commissions, run_export_csv, run_links, run_lookup, run_network_block, run_network_delete,
+    run_summary as run_ref_summary, CommissionsRequest, LinksRequest, LookupRequest,
+    NetworkTargetRequest, REF_COMMISSIONS_PATH, REF_EXPORT_CSV_PATH, REF_LINKS_PATH,
+    REF_LOOKUP_PATH, REF_NETWORK_BLOCK_PATH, REF_NETWORK_DELETE_PATH, REF_SUMMARY_PATH,
+};
+use crate::admin_security::{
+    run_blacklist_add, run_blacklist_remove, run_bulk_config_get, run_bulk_config_set,
+    run_device_fingerprints, run_inactive_block_apply, run_inactive_block_preview,
+    run_pw_reset_apply, run_pw_reset_preview, run_security_stats, SECURITY_BLACKLIST_ADD_PATH,
+    SECURITY_BLACKLIST_REMOVE_PATH, SECURITY_BULK_CONFIG_GET_PATH, SECURITY_BULK_CONFIG_SET_PATH,
+    SECURITY_FINGERPRINTS_PATH, SECURITY_INACTIVE_APPLY_PATH, SECURITY_INACTIVE_PREVIEW_PATH,
+    SECURITY_PWRESET_APPLY_PATH, SECURITY_PWRESET_PREVIEW_PATH, SECURITY_STATS_PATH,
+};
+use crate::admin_shop_checkouts::{
+    run_admin_shop_checkouts, ShopCheckoutsRequest, ADMIN_SHOP_CHECKOUTS_PATH,
+};
 use crate::admin_users::access_level_referral::{
-    run_access_level_referral_list, run_access_level_referral_save,
-    AccessLevelReferralSaveRequest,
+    run_access_level_referral_list, run_access_level_referral_save, AccessLevelReferralSaveRequest,
 };
 use crate::admin_users::delete::{
     run_admin_delete_resolve, run_admin_delete_user, AdminUserDeleteRequest,
@@ -59,8 +88,8 @@ use crate::admin_users::{
     ADMIN_IMPERSONATE_STOP_PATH, ADMIN_OWNED_ROOMS_FINALIZE_PATH, ADMIN_OWNED_ROOMS_PREPARE_PATH,
     ADMIN_REFERRAL_MODELS_DELETE_PATH, ADMIN_REFERRAL_MODELS_LIST_PATH,
     ADMIN_REFERRAL_MODELS_UPSERT_PATH, ADMIN_SAVE_GAME_OVERRIDE_FINALIZE_PATH,
-    ADMIN_USER_ACTIVITY_PATH, ADMIN_USERS_BLOCK_PATH, ADMIN_USERS_DELETE_PATH,
-    ADMIN_USERS_DELETE_RESOLVE_PATH, ADMIN_USERS_LIST_PATH, ADMIN_USERS_UPDATE_PATH,
+    ADMIN_USERS_BLOCK_PATH, ADMIN_USERS_DELETE_PATH, ADMIN_USERS_DELETE_RESOLVE_PATH,
+    ADMIN_USERS_LIST_PATH, ADMIN_USERS_UPDATE_PATH, ADMIN_USER_ACTIVITY_PATH,
     ADMIN_WALLET_HISTORY_PATH,
 };
 use crate::announcements::{
@@ -73,6 +102,9 @@ use crate::announcements::{
     ANNOUNCEMENTS_CREATE_PATH, ANNOUNCEMENTS_DELETE_PATH, ANNOUNCEMENTS_GET_PATH,
     ANNOUNCEMENTS_MARK_READ_PATH, ANNOUNCEMENTS_MINI_BLOG_PATH, ANNOUNCEMENTS_PENDING_PATH,
     ANNOUNCEMENTS_UPDATE_PATH,
+};
+use crate::backup_admin::{
+    run_backup_create, run_backup_verify, BACKUP_CREATE_PATH, BACKUP_VERIFY_PATH,
 };
 use crate::chat_presence::{
     run_chat_presence, run_chat_rate_limit, ChatPresenceRequest, ChatPresenceResponse,
@@ -98,14 +130,16 @@ use crate::chat_writes::{
 use crate::config::{WorkerConfig, MINING_WORKER_AUTH_HEADER};
 use crate::dashboard::{run_dashboard_state, DashboardStateRequest, DASHBOARD_STATE_PATH};
 use crate::gerente::{
-    run_accept, run_apply, run_decline, run_enter, run_fire, run_hire, run_leave, run_me,
-    run_resign, GerenteActorRequest, GerenteContractIdRequest, GerenteEnterRequest,
-    GerenteMeRequest, GerenteResignRequest, GerenteTargetRequest, GERENTE_ACCEPT_PATH,
+    run_accept, run_admin_fire, run_admin_status, run_apply, run_decline, run_enter, run_fire,
+    run_hire, run_leave, run_me, run_resign, GerenteActorRequest, GerenteAdminOwnerRequest,
+    GerenteContractIdRequest, GerenteEnterRequest, GerenteMeRequest, GerenteResignRequest,
+    GerenteTargetRequest, GERENTE_ACCEPT_PATH, GERENTE_ADMIN_FIRE_PATH, GERENTE_ADMIN_STATUS_PATH,
     GERENTE_APPLY_PATH, GERENTE_DECLINE_PATH, GERENTE_ENTER_PATH, GERENTE_FIRE_PATH,
     GERENTE_HIRE_PATH, GERENTE_LEAVE_PATH, GERENTE_ME_PATH, GERENTE_RESIGN_PATH,
 };
 use crate::gerente_payout::{pay_closed_manager_weeks, GerentePayoutResult, GERENTE_PAYOUT_PATH};
 use crate::kafka::SharedKafka;
+use crate::mining_projection::{run_mining_projection, ProjectionRequest, MINING_PROJECTION_PATH};
 use crate::partner_games::{
     run_config as run_partner_games_config, run_heartbeat as run_partner_games_heartbeat,
     run_stop as run_partner_games_stop, run_visit as run_partner_games_visit,
@@ -120,44 +154,6 @@ use crate::partners::{
     PARTNERS_MY_SUBMISSIONS_PATH, PARTNERS_PROFILE_PATH, PARTNERS_STATE_PATH, PARTNERS_SUBMIT_PATH,
     PARTNERS_VIDEOS_PATH, PARTNERS_VIDEO_BY_ID_PATH,
 };
-use crate::quests_admin::{
-    run_quests_admin_list, run_quests_admin_save, QuestSaveRequest, QUESTS_ADMIN_LIST_PATH,
-    QUESTS_ADMIN_SAVE_PATH,
-};
-use crate::price_sync_loop::{run_price_sync_once, SYNC_LIVE_PRICES_PATH};
-use crate::backup_admin::{
-    run_backup_create, run_backup_verify, BACKUP_CREATE_PATH, BACKUP_VERIFY_PATH,
-};
-use crate::admin_security::{
-    run_blacklist_add, run_blacklist_remove, run_bulk_config_get, run_bulk_config_set,
-    run_device_fingerprints, run_inactive_block_apply, run_inactive_block_preview,
-    run_pw_reset_apply, run_pw_reset_preview, run_security_stats, SECURITY_BLACKLIST_ADD_PATH,
-    SECURITY_BLACKLIST_REMOVE_PATH, SECURITY_BULK_CONFIG_GET_PATH, SECURITY_BULK_CONFIG_SET_PATH,
-    SECURITY_FINGERPRINTS_PATH, SECURITY_INACTIVE_APPLY_PATH, SECURITY_INACTIVE_PREVIEW_PATH,
-    SECURITY_PWRESET_APPLY_PATH, SECURITY_PWRESET_PREVIEW_PATH, SECURITY_STATS_PATH,
-};
-use crate::admin_economy_reports::{
-    run_distribution_preview, run_economy_coin_stats, run_mining_runtime_summary,
-    DISTRIBUTION_PREVIEW_PATH, ECONOMY_STATS_PATH, MINING_RUNTIME_SUMMARY_PATH,
-};
-use crate::admin_referral::{
-    run_commissions, run_export_csv, run_links, run_lookup, run_network_block, run_network_delete,
-    run_summary as run_ref_summary, CommissionsRequest, LinksRequest, LookupRequest,
-    NetworkTargetRequest, REF_COMMISSIONS_PATH, REF_EXPORT_CSV_PATH, REF_LINKS_PATH,
-    REF_LOOKUP_PATH, REF_NETWORK_BLOCK_PATH, REF_NETWORK_DELETE_PATH, REF_SUMMARY_PATH,
-};
-use crate::admin_mining_dist::{
-    run_by_coin, run_credits, run_credits_csv, run_overview, run_rebuild_rollups, run_timeline,
-    run_user_summary, CreditsRequest, OverviewRequest, RangeRequest, RebuildRollupsRequest,
-    TimelineRequest, UserSummaryRequest, MINING_DIST_BY_COIN_PATH, MINING_DIST_CREDITS_CSV_PATH,
-    MINING_DIST_CREDITS_PATH, MINING_DIST_OVERVIEW_PATH, MINING_DIST_REBUILD_ROLLUPS_PATH,
-    MINING_DIST_TIMELINE_PATH, MINING_DIST_USER_SUMMARY_PATH,
-};
-use crate::admin_dashboard::{
-    run_dashboard_stats, run_ranking_exclusion, run_site_metrics, run_users_map,
-    RankingExclusionRequest, DASHBOARD_METRICS_PATH, DASHBOARD_RANKING_EXCLUSION_PATH,
-    DASHBOARD_STATS_PATH, DASHBOARD_USERS_MAP_PATH,
-};
 use crate::partners_admin::{
     run_admin_allowlist_add, run_admin_allowlist_remove, run_admin_application_approve,
     run_admin_application_reject, run_admin_applications_list, run_admin_creator_get,
@@ -166,14 +162,11 @@ use crate::partners_admin::{
     PartnersAdminAllowlistAddRequest, PartnersAdminCreatorPutRequest, PartnersAdminIdActionRequest,
     PartnersAdminIdRequest, PartnersAdminListRequest, PartnersAdminUserIdRequest,
     PARTNERS_ADMIN_ALLOWLIST_ADD_PATH, PARTNERS_ADMIN_ALLOWLIST_REMOVE_PATH,
-    PARTNERS_ADMIN_APPLICATION_APPROVE_PATH, PARTNERS_ADMIN_APPLICATION_REJECT_PATH,
-    PARTNERS_ADMIN_APPLICATIONS_LIST_PATH, PARTNERS_ADMIN_CREATOR_GET_PATH,
+    PARTNERS_ADMIN_APPLICATIONS_LIST_PATH, PARTNERS_ADMIN_APPLICATION_APPROVE_PATH,
+    PARTNERS_ADMIN_APPLICATION_REJECT_PATH, PARTNERS_ADMIN_CREATOR_GET_PATH,
     PARTNERS_ADMIN_CREATOR_PUT_PATH, PARTNERS_ADMIN_PARTNERS_LIST_PATH,
-    PARTNERS_ADMIN_STREAMER_USERS_PATH, PARTNERS_ADMIN_SUBMISSION_DELETE_PATH,
-    PARTNERS_ADMIN_SUBMISSION_REJECT_PATH, PARTNERS_ADMIN_SUBMISSIONS_LIST_PATH,
-};
-use crate::mining_projection::{
-    run_mining_projection, ProjectionRequest, MINING_PROJECTION_PATH,
+    PARTNERS_ADMIN_STREAMER_USERS_PATH, PARTNERS_ADMIN_SUBMISSIONS_LIST_PATH,
+    PARTNERS_ADMIN_SUBMISSION_DELETE_PATH, PARTNERS_ADMIN_SUBMISSION_REJECT_PATH,
 };
 use crate::player_reads::checkin::{run_checkin_perform, run_checkin_status, CheckinUserRequest};
 use crate::player_reads::guide::run_guide;
@@ -192,9 +185,10 @@ use crate::player_reads::transparency::{run_transparency_health, run_transparenc
 use crate::player_reads::{
     fail_read, now_ms, ok_payload, CHECKIN_PERFORM_PATH, CHECKIN_STATUS_PATH, DISPLAY_LABELS_PATH,
     ECONOMY_SETTINGS_PATH, EXCHANGE_SETTINGS_PATH, GUIDE_PATH, HEADER_HIGHLIGHT_PATH, HEADER_PATH,
-    MONETIZATION_SETTINGS_ADMIN_PATH, MONETIZATION_SETTINGS_PATH, NAV_PATH, PROFILE_STATE_PATH, QUESTS_STATE_PATH, ROADMAP_PATH,
-    TRANSPARENCY_HEALTH_PATH, TRANSPARENCY_PATH,
+    MONETIZATION_SETTINGS_ADMIN_PATH, MONETIZATION_SETTINGS_PATH, NAV_PATH, PROFILE_STATE_PATH,
+    QUESTS_STATE_PATH, ROADMAP_PATH, TRANSPARENCY_HEALTH_PATH, TRANSPARENCY_PATH,
 };
+use crate::price_sync_loop::{run_price_sync_once, SYNC_LIVE_PRICES_PATH};
 use crate::profile_writes::{
     fail_write, list_profile_security_events, ok_write, run_change_password, run_patch_identity,
     run_referral_bind, run_referral_overview, run_referral_state, run_wallet_challenge,
@@ -207,12 +201,20 @@ use crate::profile_writes::{
     PROFILE_WALLET_REMOVE_PATH, PROFILE_WALLET_VERIFY_PATH, SECURITY_EVENTS_CONTROLLER_LIMIT,
 };
 use crate::progress::{compute_progress_for_user, ProgressResult};
+use crate::quests_admin::{
+    run_quests_admin_list, run_quests_admin_save, QuestSaveRequest, QUESTS_ADMIN_LIST_PATH,
+    QUESTS_ADMIN_SAVE_PATH,
+};
 use crate::ranking::RankingService;
 use crate::redis_lock::RedisLockClient;
 use crate::settings_writes::{
     run_persist_economy_settings, run_persist_exchange_settings, run_persist_monetization_settings,
     SettingsPersistRequest, ECONOMY_SETTINGS_PERSIST_PATH, EXCHANGE_SETTINGS_PERSIST_PATH,
     MONETIZATION_SETTINGS_PERSIST_PATH,
+};
+use crate::site_maintenance::{
+    parse_set_request, run_site_maintenance_set, run_site_status, SITE_MAINTENANCE_SET_PATH,
+    SITE_STATUS_PATH,
 };
 use crate::support::{
     run_support_admin_reply, run_support_reply, run_support_submit, SupportAdminReplyRequest,
@@ -221,25 +223,27 @@ use crate::support::{
 };
 use crate::support_reads::{
     run_support_admin_get, run_support_admin_history, run_support_admin_list,
-    run_support_admin_status, run_support_admin_ticket_payload, run_support_admin_tickets_payload,
-    run_support_admin_user_history_payload,
-    run_support_admin_stats, run_support_archive, run_support_attachment_referenced,
-    run_support_get, run_support_list_mine, run_support_reopen, run_support_state,
-    run_support_ticket_for_player, SupportAdminGetRequest, SupportAdminGetResponse,
-    SupportAdminHistoryRequest, SupportAdminHistoryResponse, SupportAdminListRequest,
-    SupportAdminListResponse, SupportAdminStatsRequest, SupportAdminStatsResponse,
-    SupportAdminStatusRequest, SupportAdminTicketPayloadRequest, SupportAdminTicketsPayloadRequest,
-    SupportAdminUserHistoryRequest,
+    run_support_admin_stats, run_support_admin_status, run_support_admin_ticket_payload,
+    run_support_admin_tickets_payload, run_support_admin_user_history_payload, run_support_archive,
+    run_support_attachment_referenced, run_support_get, run_support_list_mine, run_support_reopen,
+    run_support_state, run_support_ticket_for_player, SupportAdminGetRequest,
+    SupportAdminGetResponse, SupportAdminHistoryRequest, SupportAdminHistoryResponse,
+    SupportAdminListRequest, SupportAdminListResponse, SupportAdminStatsRequest,
+    SupportAdminStatsResponse, SupportAdminStatusRequest, SupportAdminTicketPayloadRequest,
+    SupportAdminTicketsPayloadRequest, SupportAdminUserHistoryRequest,
     SupportAttachmentReferencedRequest, SupportAttachmentReferencedResponse, SupportGetRequest,
     SupportGetResponse, SupportListMineRequest, SupportListMineResponse, SupportStateRequest,
-    SupportStatusChangeRequest, SupportStatusChangeResponse,
-    SupportTicketForPlayerRequest, SupportTicketForPlayerResponse, SUPPORT_ADMIN_GET_PATH,
-    SUPPORT_ADMIN_HISTORY_PATH, SUPPORT_ADMIN_LIST_PATH, SUPPORT_ADMIN_STATS_PATH,
-    SUPPORT_ADMIN_STATUS_PATH, SUPPORT_ADMIN_TICKETS_PAYLOAD_PATH, SUPPORT_ADMIN_TICKET_PAYLOAD_PATH,
-    SUPPORT_ADMIN_USER_HISTORY_PATH,
-    SUPPORT_ARCHIVE_PATH, SUPPORT_ATTACHMENT_REFERENCED_PATH, SUPPORT_GET_PATH,
-    SUPPORT_LIST_MINE_PATH, SUPPORT_REOPEN_PATH, SUPPORT_STATE_PATH,
+    SupportStatusChangeRequest, SupportStatusChangeResponse, SupportTicketForPlayerRequest,
+    SupportTicketForPlayerResponse, SUPPORT_ADMIN_GET_PATH, SUPPORT_ADMIN_HISTORY_PATH,
+    SUPPORT_ADMIN_LIST_PATH, SUPPORT_ADMIN_STATS_PATH, SUPPORT_ADMIN_STATUS_PATH,
+    SUPPORT_ADMIN_TICKETS_PAYLOAD_PATH, SUPPORT_ADMIN_TICKET_PAYLOAD_PATH,
+    SUPPORT_ADMIN_USER_HISTORY_PATH, SUPPORT_ARCHIVE_PATH, SUPPORT_ATTACHMENT_REFERENCED_PATH,
+    SUPPORT_GET_PATH, SUPPORT_LIST_MINE_PATH, SUPPORT_REOPEN_PATH, SUPPORT_STATE_PATH,
     SUPPORT_TICKET_FOR_PLAYER_PATH,
+};
+use crate::topidle::{
+    run_topidle_status, run_topidle_webhook, TopIdleStatusRequest, TopIdleWebhookForward,
+    TOPIDLE_STATUS_PATH, TOPIDLE_WEBHOOK_PATH,
 };
 use crate::uploads::{
     run_upload_admin_image_data_url, run_upload_chat_audio, run_upload_partner_avatar,
@@ -298,6 +302,8 @@ pub fn router(state: AppState) -> Router {
         .route(GERENTE_ACCEPT_PATH, post(post_gerente_accept))
         .route(GERENTE_DECLINE_PATH, post(post_gerente_decline))
         .route(GERENTE_FIRE_PATH, post(post_gerente_fire))
+        .route(GERENTE_ADMIN_STATUS_PATH, post(post_gerente_admin_status))
+        .route(GERENTE_ADMIN_FIRE_PATH, post(post_gerente_admin_fire))
         .route(GERENTE_RESIGN_PATH, post(post_gerente_resign))
         .route(GERENTE_ENTER_PATH, post(post_gerente_enter))
         .route(GERENTE_LEAVE_PATH, post(post_gerente_leave))
@@ -345,8 +351,14 @@ pub fn router(state: AppState) -> Router {
             ADMIN_GRANT_PREMIUM_CHECKIN_PATH,
             post(post_admin_grant_premium_checkin),
         )
-        .route(ADMIN_IMPERSONATE_START_PATH, post(post_admin_impersonate_start))
-        .route(ADMIN_IMPERSONATE_STOP_PATH, post(post_admin_impersonate_stop))
+        .route(
+            ADMIN_IMPERSONATE_START_PATH,
+            post(post_admin_impersonate_start),
+        )
+        .route(
+            ADMIN_IMPERSONATE_STOP_PATH,
+            post(post_admin_impersonate_stop),
+        )
         .route(ADMIN_USER_ACTIVITY_PATH, post(post_admin_user_activity))
         .route(
             ADMIN_REFERRAL_MODELS_LIST_PATH,
@@ -370,7 +382,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route(ADMIN_DORMANT_MINING_PATH, post(post_admin_dormant_mining))
         .route(ADMIN_SHOP_CHECKOUTS_PATH, post(post_admin_shop_checkouts))
-        .route(ADMIN_PURCHASES_REPORT_PATH, post(post_admin_purchases_report))
+        .route(
+            ADMIN_PURCHASES_REPORT_PATH,
+            post(post_admin_purchases_report),
+        )
         .route(
             SUPPORT_TICKET_FOR_PLAYER_PATH,
             post(post_support_ticket_for_player),
@@ -411,10 +426,22 @@ pub fn router(state: AppState) -> Router {
         .route(SUPPORT_ADMIN_GET_PATH, post(post_support_admin_get))
         .route(SUPPORT_ADMIN_HISTORY_PATH, post(post_support_admin_history))
         .route(SUPPORT_ADMIN_STATS_PATH, post(post_support_admin_stats))
-        .route(SUPPORT_ADMIN_TICKETS_PAYLOAD_PATH, post(post_support_admin_tickets_payload))
-        .route(SUPPORT_ADMIN_TICKET_PAYLOAD_PATH, post(post_support_admin_ticket_payload))
-        .route(SUPPORT_ADMIN_USER_HISTORY_PATH, post(post_support_admin_user_history))
-        .route(SUPPORT_ADMIN_STATUS_PATH, post(post_support_admin_status_toggle))
+        .route(
+            SUPPORT_ADMIN_TICKETS_PAYLOAD_PATH,
+            post(post_support_admin_tickets_payload),
+        )
+        .route(
+            SUPPORT_ADMIN_TICKET_PAYLOAD_PATH,
+            post(post_support_admin_ticket_payload),
+        )
+        .route(
+            SUPPORT_ADMIN_USER_HISTORY_PATH,
+            post(post_support_admin_user_history),
+        )
+        .route(
+            SUPPORT_ADMIN_STATUS_PATH,
+            post(post_support_admin_status_toggle),
+        )
         .route(ANNOUNCEMENTS_CREATE_PATH, post(post_announcement_create))
         .route(ANNOUNCEMENTS_UPDATE_PATH, post(post_announcement_update))
         .route(ANNOUNCEMENTS_DELETE_PATH, post(post_announcement_delete))
@@ -433,25 +460,54 @@ pub fn router(state: AppState) -> Router {
         )
         .route(CHECKIN_STATUS_PATH, post(post_checkin_status))
         .route(CHECKIN_PERFORM_PATH, post(post_checkin_perform))
+        .route(TOPIDLE_WEBHOOK_PATH, post(post_topidle_webhook))
+        .route(TOPIDLE_STATUS_PATH, post(post_topidle_status))
         .route(QUESTS_STATE_PATH, post(post_quests_state))
         .route(QUESTS_ADMIN_LIST_PATH, post(post_quests_admin_list))
         .route(REF_SUMMARY_PATH, post(post_ref_summary))
         .route(ECONOMY_STATS_PATH, post(post_economy_coin_stats))
         .route(DISTRIBUTION_PREVIEW_PATH, post(post_distribution_preview))
-        .route(MINING_RUNTIME_SUMMARY_PATH, post(post_mining_runtime_summary))
+        .route(
+            MINING_RUNTIME_SUMMARY_PATH,
+            post(post_mining_runtime_summary),
+        )
         .route(SYNC_LIVE_PRICES_PATH, post(post_sync_live_prices))
         .route(BACKUP_CREATE_PATH, post(post_backup_create))
         .route(BACKUP_VERIFY_PATH, post(post_backup_verify))
         .route(SECURITY_STATS_PATH, post(post_security_stats))
-        .route(SECURITY_BLACKLIST_ADD_PATH, post(post_security_blacklist_add))
-        .route(SECURITY_BLACKLIST_REMOVE_PATH, post(post_security_blacklist_remove))
+        .route(
+            SECURITY_BLACKLIST_ADD_PATH,
+            post(post_security_blacklist_add),
+        )
+        .route(
+            SECURITY_BLACKLIST_REMOVE_PATH,
+            post(post_security_blacklist_remove),
+        )
         .route(SECURITY_FINGERPRINTS_PATH, post(post_security_fingerprints))
-        .route(SECURITY_BULK_CONFIG_GET_PATH, post(post_security_bulk_config_get))
-        .route(SECURITY_BULK_CONFIG_SET_PATH, post(post_security_bulk_config_set))
-        .route(SECURITY_INACTIVE_PREVIEW_PATH, post(post_security_inactive_preview))
-        .route(SECURITY_INACTIVE_APPLY_PATH, post(post_security_inactive_apply))
-        .route(SECURITY_PWRESET_PREVIEW_PATH, post(post_security_pwreset_preview))
-        .route(SECURITY_PWRESET_APPLY_PATH, post(post_security_pwreset_apply))
+        .route(
+            SECURITY_BULK_CONFIG_GET_PATH,
+            post(post_security_bulk_config_get),
+        )
+        .route(
+            SECURITY_BULK_CONFIG_SET_PATH,
+            post(post_security_bulk_config_set),
+        )
+        .route(
+            SECURITY_INACTIVE_PREVIEW_PATH,
+            post(post_security_inactive_preview),
+        )
+        .route(
+            SECURITY_INACTIVE_APPLY_PATH,
+            post(post_security_inactive_apply),
+        )
+        .route(
+            SECURITY_PWRESET_PREVIEW_PATH,
+            post(post_security_pwreset_preview),
+        )
+        .route(
+            SECURITY_PWRESET_APPLY_PATH,
+            post(post_security_pwreset_apply),
+        )
         .route(REF_COMMISSIONS_PATH, post(post_ref_commissions))
         .route(REF_LINKS_PATH, post(post_ref_links))
         .route(REF_EXPORT_CSV_PATH, post(post_ref_export_csv))
@@ -464,10 +520,16 @@ pub fn router(state: AppState) -> Router {
         .route(MINING_DIST_CREDITS_PATH, post(post_md_credits))
         .route(MINING_DIST_CREDITS_CSV_PATH, post(post_md_credits_csv))
         .route(MINING_DIST_USER_SUMMARY_PATH, post(post_md_user_summary))
-        .route(MINING_DIST_REBUILD_ROLLUPS_PATH, post(post_md_rebuild_rollups))
+        .route(
+            MINING_DIST_REBUILD_ROLLUPS_PATH,
+            post(post_md_rebuild_rollups),
+        )
         .route(DASHBOARD_STATS_PATH, post(post_dashboard_stats))
         .route(DASHBOARD_METRICS_PATH, post(post_dashboard_metrics))
-        .route(DASHBOARD_RANKING_EXCLUSION_PATH, post(post_dashboard_ranking_exclusion))
+        .route(
+            DASHBOARD_RANKING_EXCLUSION_PATH,
+            post(post_dashboard_ranking_exclusion),
+        )
         .route(DASHBOARD_USERS_MAP_PATH, post(post_dashboard_users_map))
         .route(QUESTS_ADMIN_SAVE_PATH, post(post_quests_admin_save))
         .route(HEADER_PATH, post(post_player_header))
@@ -476,7 +538,10 @@ pub fn router(state: AppState) -> Router {
         .route(ECONOMY_SETTINGS_PATH, post(post_economy_settings))
         .route(EXCHANGE_SETTINGS_PATH, post(post_exchange_settings))
         .route(MONETIZATION_SETTINGS_PATH, post(post_monetization_settings))
-        .route(MONETIZATION_SETTINGS_ADMIN_PATH, post(post_monetization_settings_admin))
+        .route(
+            MONETIZATION_SETTINGS_ADMIN_PATH,
+            post(post_monetization_settings_admin),
+        )
         .route(
             ECONOMY_SETTINGS_PERSIST_PATH,
             post(post_economy_settings_persist),
@@ -490,6 +555,8 @@ pub fn router(state: AppState) -> Router {
             post(post_monetization_settings_persist),
         )
         .route(DISPLAY_LABELS_PATH, post(post_display_labels))
+        .route(SITE_STATUS_PATH, post(post_site_status))
+        .route(SITE_MAINTENANCE_SET_PATH, post(post_site_maintenance_set))
         .route(PROFILE_STATE_PATH, post(post_profile_state))
         .route(PROFILE_IDENTITY_PATH, post(post_profile_identity))
         .route(
@@ -895,6 +962,35 @@ async fn post_checkin_perform(
     }
 }
 
+async fn post_topidle_webhook(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<TopIdleWebhookForward>,
+) -> impl axum::response::IntoResponse {
+    match run_topidle_webhook(
+        &state.pool,
+        state.cfg.topidle_webhook_secret.as_deref(),
+        state.cfg.topidle_webhook_secret_alt.as_deref(),
+        &body.raw_body,
+        &body.timestamp,
+        &body.signature,
+    )
+    .await
+    {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_topidle_status(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<TopIdleStatusRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_topidle_status(&state.pool, body.user_id).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
 async fn post_quests_state(
     State(state): State<Arc<AppState>>,
     Json(body): Json<CheckinUserRequest>,
@@ -905,7 +1001,6 @@ async fn post_quests_state(
         Err(e) => fail_read(e),
     }
 }
-
 
 async fn post_economy_coin_stats(
     State(state): State<Arc<AppState>>,
@@ -933,7 +1028,9 @@ async fn post_distribution_preview(
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(0.0);
     if coin_id.is_empty() {
-        return fail_read(crate::player_reads::PlayerReadError::bad("coinId obrigatório."));
+        return fail_read(crate::player_reads::PlayerReadError::bad(
+            "coinId obrigatório.",
+        ));
     }
     match run_distribution_preview(&state.pool, &coin_id, usd_month).await {
         Ok(v) => ok_payload(v),
@@ -1078,9 +1175,7 @@ async fn post_sync_live_prices(
     }
 }
 
-async fn post_ref_summary(
-    State(state): State<Arc<AppState>>,
-) -> impl axum::response::IntoResponse {
+async fn post_ref_summary(State(state): State<Arc<AppState>>) -> impl axum::response::IntoResponse {
     match run_ref_summary(&state.pool).await {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
@@ -1104,8 +1199,16 @@ macro_rules! ref_status_handler {
     };
 }
 ref_status_handler!(post_ref_lookup, LookupRequest, run_lookup);
-ref_status_handler!(post_ref_network_block, NetworkTargetRequest, run_network_block);
-ref_status_handler!(post_ref_network_delete, NetworkTargetRequest, run_network_delete);
+ref_status_handler!(
+    post_ref_network_block,
+    NetworkTargetRequest,
+    run_network_block
+);
+ref_status_handler!(
+    post_ref_network_delete,
+    NetworkTargetRequest,
+    run_network_delete
+);
 
 macro_rules! md_handler {
     ($name:ident, $req:ty, $run:ident) => {
@@ -1129,7 +1232,11 @@ md_handler!(post_md_timeline, TimelineRequest, run_timeline);
 md_handler!(post_md_credits, CreditsRequest, run_credits);
 md_handler!(post_md_credits_csv, CreditsRequest, run_credits_csv);
 md_handler!(post_md_user_summary, UserSummaryRequest, run_user_summary);
-md_handler!(post_md_rebuild_rollups, RebuildRollupsRequest, run_rebuild_rollups);
+md_handler!(
+    post_md_rebuild_rollups,
+    RebuildRollupsRequest,
+    run_rebuild_rollups
+);
 
 async fn post_dashboard_stats(
     State(state): State<Arc<AppState>>,
@@ -1292,6 +1399,26 @@ async fn post_display_labels(
 ) -> impl axum::response::IntoResponse {
     match run_display_labels(&state.pool).await {
         Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_site_status(State(state): State<Arc<AppState>>) -> impl axum::response::IntoResponse {
+    match run_site_status(&state.pool).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_site_maintenance_set(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    match parse_set_request(&body) {
+        Ok(req) => match run_site_maintenance_set(&state.pool, &req).await {
+            Ok(v) => ok_payload(v),
+            Err(e) => fail_read(e),
+        },
         Err(e) => fail_read(e),
     }
 }
@@ -1498,7 +1625,9 @@ async fn post_transparency_health(
     }
 }
 
-fn transparency_admin_id(body: &serde_json::Value) -> Result<i32, crate::player_reads::PlayerReadError> {
+fn transparency_admin_id(
+    body: &serde_json::Value,
+) -> Result<i32, crate::player_reads::PlayerReadError> {
     let raw = body.get("id");
     let n = match raw {
         Some(serde_json::Value::Number(n)) => n.as_i64(),
@@ -1529,7 +1658,8 @@ async fn post_transparency_admin_update(
         Ok(v) => v,
         Err(e) => return fail_read(e),
     };
-    match crate::transparency_admin::run_transparency_update(&state.pool, id, &body, now_ms()).await {
+    match crate::transparency_admin::run_transparency_update(&state.pool, id, &body, now_ms()).await
+    {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
     }
@@ -1700,6 +1830,26 @@ async fn post_gerente_fire(
     Json(body): Json<GerenteActorRequest>,
 ) -> impl axum::response::IntoResponse {
     match run_fire(&state.pool, &state.cfg, &state.http, body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_gerente_admin_status(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<GerenteAdminOwnerRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_admin_status(&state.pool, &state.cfg, body).await {
+        Ok(v) => ok_payload(v),
+        Err(e) => fail_read(e),
+    }
+}
+
+async fn post_gerente_admin_fire(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<GerenteAdminOwnerRequest>,
+) -> impl axum::response::IntoResponse {
+    match run_admin_fire(&state.pool, &state.cfg, &state.http, body).await {
         Ok(v) => ok_payload(v),
         Err(e) => fail_read(e),
     }

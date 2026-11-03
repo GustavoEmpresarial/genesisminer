@@ -1,6 +1,6 @@
 /**
- * Daily / premium check-in banner (sticky above mining room on desktop).
- * API: `features/checkin/api/checkin.ts` · DECISIONS #97 / #98.
+ * Daily check-in banner (sticky above mining room on desktop).
+ * API: `features/checkin/api/checkin.ts`.
  */
 import { CalendarCheck, Loader2, Snowflake, Trophy } from 'lucide-react';
 import { useI18n } from '../../../shared/i18n';
@@ -61,51 +61,22 @@ export function DailyCheckinBanner({ saveLoaded, onRewardGranted }: DailyCheckin
             ) : status ? (
               <>
                 <p className="text-[13px] font-bold leading-snug text-slate-100 sm:text-sm">
-                  {status.premiumWeeklyCheckin
-                    ? status.frozen
-                      ? t('checkin.titlePremiumFrozen', {
-                          days: String(status.premiumIntervalDays),
-                          minUsdc: String(status.premiumMinUsdc)
-                        })
-                      : t('checkin.titlePremiumActive', {
-                          time: formatCheckinCountdown(status.nextResetMs)
-                        })
-                    : status.frozen
-                      ? t('checkin.titleDailyFrozen')
-                      : t('checkin.titleDailyActive', {
-                          time: formatCheckinCountdown(status.nextResetMs)
-                        })}
+                  {status.frozen
+                    ? t('checkin.titleDailyFrozen')
+                    : t('checkin.titleDailyActive', {
+                        time: formatCheckinCountdown(status.nextResetMs)
+                      })}
                 </p>
                 <p className="text-[11px] leading-relaxed text-slate-400 sm:text-xs">
                   {t('checkin.streak')}{' '}
                   <span className="font-mono text-amber-300">{status.streak}</span> {t('checkin.days')} ·{' '}
-                  {status.premiumWeeklyCheckin ? (
-                    <>
-                      {status.frozen
-                        ? t('checkin.premiumWindowExpired')
-                        : t('checkin.premiumNextDue', {
-                            time: formatCheckinCountdown(status.nextResetMs)
-                          })}{' '}
-                      {!status.canCheckinNow && status.nextCheckinAllowedMs != null && !status.frozen ? (
-                        <>
-                          ·{' '}
-                          {t('checkin.premiumAvailableIn', {
-                            time: formatCheckinCountdown(status.nextCheckinAllowedMs)
-                          })}
-                        </>
-                      ) : null}
-                    </>
-                  ) : (
-                    <>
-                      {status.frozen
-                        ? t('checkin.dailyWindowExpired')
-                        : status.canCheckinNow || status.nextCheckinAtMs == null
-                          ? t('checkin.dailyWindowAvailable')
-                          : t('checkin.dailyNextWindow', {
-                              time: formatCheckinCountdown(status.nextCheckinAtMs)
-                            })}
-                    </>
-                  )}{' '}
+                  {status.frozen
+                    ? t('checkin.dailyWindowExpired')
+                    : status.canCheckinNow || status.nextCheckinAtMs == null
+                      ? t('checkin.dailyWindowAvailable')
+                      : t('checkin.dailyNextWindow', {
+                          time: formatCheckinCountdown(status.nextCheckinAtMs)
+                        })}{' '}
                   · {t('checkin.rewardCycle')}{' '}
                   <span className="text-amber-200/90">
                     {status.rewardCycleProgress}/{status.rewardCycleSize}

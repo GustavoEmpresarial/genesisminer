@@ -69,6 +69,35 @@ describe('mapListingForClient', () => {
     const row = { id: 'l1', seller_id: 1, username: 'v', item_id: 'gpu_1', price: 10, qty: -5, expires_at: 0 } as any;
     expect(mapListingForClient(row, 0).qty).toBe(1);
   });
+
+  it('propaga metadados de catálogo quando o join upgrades envia item_*', () => {
+    const row = {
+      id: 'l1',
+      seller_id: 1,
+      username: 'v',
+      item_id: 'gpu_server_v1',
+      price: 2.5,
+      qty: 23,
+      expires_at: 0,
+      item_name: 'ULTIMATE Blade',
+      item_image: '/img/ultimate.webp',
+      item_icon: '🏢',
+      item_category: 'Farm de Servidores',
+      item_type: 'machine',
+      item_base_production: 12.5,
+      item_power_consumption: 100,
+      item_status: 'limited'
+    } as any;
+    const dto = mapListingForClient(row, 0);
+    expect(dto.itemName).toBe('ULTIMATE Blade');
+    expect(dto.itemImage).toBe('/img/ultimate.webp');
+    expect(dto.itemIcon).toBe('🏢');
+    expect(dto.itemCategory).toBe('Farm de Servidores');
+    expect(dto.itemType).toBe('machine');
+    expect(dto.itemBaseProduction).toBe(12.5);
+    expect(dto.itemPowerConsumption).toBe(100);
+    expect(dto.itemStatus).toBe('limited');
+  });
 });
 
 describe('mapCustodyListingForClient', () => {

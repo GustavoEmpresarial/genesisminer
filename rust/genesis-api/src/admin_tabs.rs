@@ -155,12 +155,22 @@ async fn get_admin_monetization_settings(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(e) =
-        require_admin(&state, &headers, &Method::GET, ADMIN_MONETIZATION_SETTINGS_PATH).await
+    if let Err(e) = require_admin(
+        &state,
+        &headers,
+        &Method::GET,
+        ADMIN_MONETIZATION_SETTINGS_PATH,
+    )
+    .await
     {
         return e;
     }
-    let mut res = forward_mining(&state, MONETIZATION_SETTINGS_READ_PATH, Value::Object(Default::default())).await;
+    let mut res = forward_mining(
+        &state,
+        MONETIZATION_SETTINGS_READ_PATH,
+        Value::Object(Default::default()),
+    )
+    .await;
     res.headers_mut().insert(
         axum::http::header::CACHE_CONTROL,
         axum::http::HeaderValue::from_static("no-store"),

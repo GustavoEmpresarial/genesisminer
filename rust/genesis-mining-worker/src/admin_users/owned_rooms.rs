@@ -120,10 +120,9 @@ pub async fn run_owned_rooms_prepare(
     let (keep_racks, removed_count) = if to_remove.is_empty() {
         (Value::Null, 0_i64)
     } else {
-        let racks = crate::admin_users::save_game_override::load_user_placed_racks_for_admin(
-            &conn, uid,
-        )
-        .await?;
+        let racks =
+            crate::admin_users::save_game_override::load_user_placed_racks_for_admin(&conn, uid)
+                .await?;
         let (keep, removed) = partition_racks_for_room_revoke(&racks, &to_remove);
         (
             serde_json::to_value(&keep).unwrap_or(json!([])),
@@ -240,10 +239,7 @@ async fn load_owned_room_ids<C: GenericClient>(
             &[&uid],
         )
         .await?;
-    Ok(rows
-        .iter()
-        .map(|r| r.get::<_, String>("room_id"))
-        .collect())
+    Ok(rows.iter().map(|r| r.get::<_, String>("room_id")).collect())
 }
 
 async fn load_placed_rack_room_ids<C: GenericClient>(
@@ -390,19 +386,11 @@ mod tests {
 
     #[test]
     fn diff_never_revokes_defaults() {
-        let active: HashSet<String> = [
-            ROOM_INITIAL_ID,
-            ASIC_ROOM_ID,
-            EXTRA_ROOM_ID,
-            "room_custom",
-        ]
-        .into_iter()
-        .map(str::to_string)
-        .collect();
-        let current = vec![
-            ROOM_INITIAL_ID.to_string(),
-            "room_custom".to_string(),
-        ];
+        let active: HashSet<String> = [ROOM_INITIAL_ID, ASIC_ROOM_ID, EXTRA_ROOM_ID, "room_custom"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+        let current = vec![ROOM_INITIAL_ID.to_string(), "room_custom".to_string()];
         let desired = vec![ROOM_INITIAL_ID.to_string()];
         let (to_add, to_remove) = compute_owned_room_diff(&current, &desired, &active);
         assert!(to_add.is_empty());
@@ -423,8 +411,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        let (keep, removed) =
-            partition_racks_for_room_revoke(&racks, &["room_custom".to_string()]);
+        let (keep, removed) = partition_racks_for_room_revoke(&racks, &["room_custom".to_string()]);
         assert_eq!(keep.len(), 1);
         assert_eq!(keep[0].id, "b");
         assert_eq!(removed.len(), 1);

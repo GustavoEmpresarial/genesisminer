@@ -112,7 +112,10 @@ async fn user_owns_room(
     Ok(has_rack)
 }
 
-async fn load_scopes_ui(conn: &tokio_postgres::Client, uid: i32) -> Result<Vec<Value>, PlayerReadError> {
+async fn load_scopes_ui(
+    conn: &tokio_postgres::Client,
+    uid: i32,
+) -> Result<Vec<Value>, PlayerReadError> {
     let mut scopes = vec![json!({
         "id": SCOPE_TOTAL,
         "name": SCOPE_TOTAL_UI_NAME,
@@ -395,9 +398,7 @@ pub async fn run_mining_projection(
         }
     };
     // Scope-filtered power → earnings numerator / UI userPowerHps.
-    let agg = aggregate_header_hash(
-        &hash_entries.iter().map(to_header_entry).collect::<Vec<_>>(),
-    );
+    let agg = aggregate_header_hash(&hash_entries.iter().map(to_header_entry).collect::<Vec<_>>());
     let general_power_hps = agg.total_hash;
     // All-rooms power for this user → usd_month divisor fallback / max(live, user).
     let agg_all = aggregate_header_hash(
@@ -558,14 +559,8 @@ pub async fn run_mining_projection(
             })
             .collect();
 
-        let block_history = load_block_history(
-            &*conn,
-            uid,
-            &coin_id,
-            &scope,
-            history_limit,
-        )
-        .await?;
+        let block_history =
+            load_block_history(&*conn, uid, &coin_id, &scope, history_limit).await?;
 
         coins_out.push(json!({
             "id": coin_id,
@@ -596,14 +591,8 @@ pub async fn run_mining_projection(
 
     // Mining first, then symbol.
     coins_out.sort_by(|a, b| {
-        let ap = a
-            .get("userPowerHps")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0);
-        let bp = b
-            .get("userPowerHps")
-            .and_then(Value::as_f64)
-            .unwrap_or(0.0);
+        let ap = a.get("userPowerHps").and_then(Value::as_f64).unwrap_or(0.0);
+        let bp = b.get("userPowerHps").and_then(Value::as_f64).unwrap_or(0.0);
         let a_mining = ap > 0.0;
         let b_mining = bp > 0.0;
         match (a_mining, b_mining) {

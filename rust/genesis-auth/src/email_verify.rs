@@ -13,8 +13,8 @@ use crate::db::current_unix_ms;
 use crate::password_reset::public_email_ok;
 use crate::pg_types::pg_user_id;
 use genesis_core::auth::constants::{
-    ANTI_TIMING_DELAY_MS, COOLDOWN_MAP_MAX_SIZE, EMAIL_RESEND_COOLDOWN_MS,
-    EMAIL_RESEND_COOLDOWN_MINUTES, EMAIL_VERIFICATION_TTL_HOURS, EMAIL_VERIFICATION_TTL_MS,
+    ANTI_TIMING_DELAY_MS, COOLDOWN_MAP_MAX_SIZE, EMAIL_RESEND_COOLDOWN_MINUTES,
+    EMAIL_RESEND_COOLDOWN_MS, EMAIL_VERIFICATION_TTL_HOURS, EMAIL_VERIFICATION_TTL_MS,
 };
 use genesis_core::time::MS_PER_SECOND;
 use genesis_core::{
@@ -185,7 +185,11 @@ async fn persist_and_send_verification(
 ) -> Result<(), anyhow::Error> {
     let now = current_unix_ms();
     let ttl = i64::try_from(EMAIL_VERIFICATION_TTL_MS)?;
-    let token = build_signed_email_verification_token(email, now.saturating_add(ttl), &cfg.auth_flow_token_secret);
+    let token = build_signed_email_verification_token(
+        email,
+        now.saturating_add(ttl),
+        &cfg.auth_flow_token_secret,
+    );
     let token_hash = hash_token_sha256(&token);
     let client = pool.get().await?;
     client
@@ -205,7 +209,11 @@ async fn persist_and_send_verification(
     Ok(())
 }
 
-async fn resend_if_pending(pool: &Pool, cfg: &WorkerConfig, email: &str) -> Result<(), anyhow::Error> {
+async fn resend_if_pending(
+    pool: &Pool,
+    cfg: &WorkerConfig,
+    email: &str,
+) -> Result<(), anyhow::Error> {
     let client = pool.get().await?;
     let row = client
         .query_opt(
@@ -257,7 +265,7 @@ pub async fn run_email_verify_request(
     Ok(())
 }
 
-async fn credit_referral_on_verified(
+pub(crate) async fn credit_referral_on_verified(
     cfg: &WorkerConfig,
     http: &reqwest::Client,
     verified_user_id: i64,
@@ -300,15 +308,21 @@ pub async fn run_email_verify_complete(
     body: EmailVerifyCompleteBody,
 ) -> Result<EmailVerifyCompleteOk, EmailVerifyCompleteError> {
     let raw_token = body.token.as_deref().unwrap_or("");
-    let Some(parsed) = parse_signed_email_verification_token(raw_token, &cfg.auth_flow_token_secret)
+    let Some(parsed) =
+        parse_signed_email_verification_token(raw_token, &cfg.auth_flow_token_secret)
     else {
-        return Err(EmailVerifyCompleteError::BadRequest(ERR_INVALID_LINK.into()));
+        return Err(EmailVerifyCompleteError::BadRequest(
+            ERR_INVALID_LINK.into(),
+        ));
     };
     if current_unix_ms() > parsed.expiry {
         return Err(EmailVerifyCompleteError::Forbidden(ERR_EXPIRED_LINK.into()));
     }
 
-    let client = pool.get().await.map_err(EmailVerifyCompleteError::transport)?;
+    let client = pool
+        .get()
+        .await
+        .map_err(EmailVerifyCompleteError::transport)?;
     let row = client
         .query_opt(
             "SELECT id, email_verified, email_verification_token_hash
@@ -318,7 +332,9 @@ pub async fn run_email_verify_complete(
         .await
         .map_err(EmailVerifyCompleteError::transport)?;
     let Some(row) = row else {
-        return Err(EmailVerifyCompleteError::NotFound(ERR_ACCOUNT_NOT_FOUND.into()));
+        return Err(EmailVerifyCompleteError::NotFound(
+            ERR_ACCOUNT_NOT_FOUND.into(),
+        ));
     };
     let user_id: i32 = row.get("id");
     let email_verified: i32 = row.get("email_verified");

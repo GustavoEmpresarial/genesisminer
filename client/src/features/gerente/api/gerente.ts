@@ -145,7 +145,11 @@ export async function postAccountManagerDecline(contractId: number): Promise<{ o
 /** POST /api/account-manager/fire */
 export async function postAccountManagerFire(): Promise<{ ok: boolean; error?: string }> {
   try {
-    const res = await apiFetch(`${base}/account-manager/fire`, { method: 'POST' });
+    const res = await apiFetch(`${base}/account-manager/fire`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
     return amJson(res);
   } catch {
     return { ok: false, error: 'Network error' };

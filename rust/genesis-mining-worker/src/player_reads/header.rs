@@ -141,7 +141,11 @@ pub async fn run_header(pool: &Pool, user_id: i64) -> Result<Value, PlayerReadEr
             let name = string_cell(r, "name");
             let name = if name.is_empty() { id.clone() } else { name };
             let symbol = string_cell(r, "symbol");
-            let symbol = if symbol.is_empty() { name.clone() } else { symbol };
+            let symbol = if symbol.is_empty() {
+                name.clone()
+            } else {
+                symbol
+            };
             json!({
                 "id": id,
                 "name": name,
@@ -216,8 +220,12 @@ pub async fn run_header(pool: &Pool, user_id: i64) -> Result<Value, PlayerReadEr
         );
     }
 
-    let nft_room_ids = resolve_nft_auto_room_ids(&*conn).await.map_err(PlayerReadError::from)?;
-    let asic_room_ids = resolve_asic_room_ids(&*conn).await.map_err(PlayerReadError::from)?;
+    let nft_room_ids = resolve_nft_auto_room_ids(&*conn)
+        .await
+        .map_err(PlayerReadError::from)?;
+    let asic_room_ids = resolve_asic_room_ids(&*conn)
+        .await
+        .map_err(PlayerReadError::from)?;
 
     let mut slots_map: HashMap<String, Vec<Option<String>>> = HashMap::new();
     let mut multi_map: HashMap<String, Vec<Option<String>>> = HashMap::new();

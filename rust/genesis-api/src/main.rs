@@ -1,13 +1,12 @@
 //! `genesis-api` — public game HTTP + Socket.IO. Express receives admin only.
 
-mod admin_auth;
-mod admin_catalog;
-mod admin_tabs;
-mod admin_lucky_boxes;
 mod admin_announcements;
+mod admin_auth;
 mod admin_backup;
+mod admin_catalog;
 mod admin_dashboard;
 mod admin_economy;
+mod admin_lucky_boxes;
 mod admin_market;
 mod admin_mining_dist;
 mod admin_partners;
@@ -16,13 +15,15 @@ mod admin_ranking;
 mod admin_referral;
 mod admin_security;
 mod admin_shop;
+mod admin_site_maintenance;
 mod admin_support;
-mod admin_wallet_ops;
-mod admin_wheel;
+mod admin_tabs;
 mod admin_transparency;
 mod admin_treasury;
 mod admin_users;
+mod admin_wallet_ops;
 mod admin_wallet_tabs;
+mod admin_wheel;
 mod client_ip;
 mod config;
 mod cookies;
@@ -40,7 +41,9 @@ mod proxy;
 mod rate_limit;
 mod realtime;
 mod session;
+mod site_status;
 mod spa;
+mod topidle;
 mod workers;
 
 use tracing::info;

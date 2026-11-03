@@ -105,26 +105,39 @@ describe('upgradeCatalogIds — identidade canónica (Tarefa 3)', () => {
       expect(upgrades[0].id).toBe('upgrade_x');
     });
 
-    it('E) CREATE gera/aceita novo ID sem tocar nos persistidos', () => {
+    it('E) CREATE gera ID a partir do nome e ignora id do form', () => {
       const catalog = [base('upgrade_x')];
       const { upgrades, isCreate, lockedId } = applyAdminCatalogItemSave({
         gameUpgrades: catalog,
         editingSourceId: null,
-        itemForm: base('upgrade_new', { name: 'Novo' })
+        itemForm: base('ignored-id', { name: 'GPU Max v2!' })
       });
       expect(isCreate).toBe(true);
-      expect(lockedId).toBe('upgrade_new');
-      expect(upgrades.map((u) => u.id).sort()).toEqual(['upgrade_x', 'upgrade_new'].sort());
+      expect(lockedId).toBe(makeSafeShopProductId('GPU Max v2!'));
+      expect(lockedId).toBe('gpu-max-v2');
+      expect(upgrades.some((u) => u.id === 'ignored-id')).toBe(false);
+      expect(upgrades.map((u) => u.id).sort()).toEqual(['gpu-max-v2', 'upgrade_x'].sort());
     });
 
-    it('E) CREATE com ID inválido rejeita no apply', () => {
+    it('E) CREATE com id inválido/vazio gera a partir do nome (colisão → -2)', () => {
+      const catalog = [base('novo')];
+      const { upgrades, lockedId } = applyAdminCatalogItemSave({
+        gameUpgrades: catalog,
+        editingSourceId: null,
+        itemForm: { id: 'bad id!', name: 'Novo' }
+      });
+      expect(lockedId).toBe('novo-2');
+      expect(upgrades.map((u) => u.id).sort()).toEqual(['novo', 'novo-2']);
+    });
+
+    it('E) CREATE sem nome rejeita', () => {
       expect(() =>
         applyAdminCatalogItemSave({
-          gameUpgrades: [base('upgrade_x')],
+          gameUpgrades: [],
           editingSourceId: null,
-          itemForm: base('bad id!', { name: 'Novo' })
+          itemForm: { id: '', name: '   ' }
         })
-      ).toThrow(/ID inválido/);
+      ).toThrow(/Nome obrigatório/);
     });
 
     it('makeSafeShopProductId gera slug para CREATE', () => {

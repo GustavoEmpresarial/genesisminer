@@ -1,6 +1,11 @@
-/** `accept` attribute for player support attachment inputs. */
+/**
+ * `accept` for support attachment inputs.
+ * `image/*` plus HEIC so the phone camera roll is visible. The client
+ * normalizes to `SUPPORT_ALLOWED_EXTENSIONS` before upload; the worker
+ * stores only those extensions.
+ */
 export const SUPPORT_FILE_ACCEPT =
-  'image/png,image/jpeg,image/jpg,image/gif,image/webp,video/mp4,video/webm,video/quicktime,.mov';
+  'image/*,image/heic,image/heif,.heic,.heif,video/mp4,video/webm,video/quicktime,.mov';
 
 /** Matches worker `SUPPORT_ALLOWED_EXT` in `uploads.rs`. */
 export const SUPPORT_ALLOWED_EXTENSIONS = [

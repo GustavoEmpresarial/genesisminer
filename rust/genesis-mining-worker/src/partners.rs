@@ -461,7 +461,14 @@ pub(crate) fn sanitize_avatar_url(raw: &str) -> String {
     String::new()
 }
 
-const PARTNER_LEVEL_IDS: &[&str] = &["partners", "parceiros", "partner", "parceiro"];
+/// YouTube partner / STREAMER membership ids (STREAMER `creator` = parceiro).
+const PARTNER_LEVEL_IDS: &[&str] = &[
+    "creator",
+    "partners",
+    "parceiros",
+    "partner",
+    "parceiro",
+];
 
 fn user_access_has_partner(id_set: &HashSet<String>) -> bool {
     id_set.iter().any(|x| {

@@ -23,8 +23,7 @@ const UPSERT_SQL: &str = "INSERT INTO access_level_referral_models
  ON CONFLICT (access_level_id) DO UPDATE SET
    referral_model_id = EXCLUDED.referral_model_id";
 
-const DELETE_SQL: &str =
-    "DELETE FROM access_level_referral_models WHERE access_level_id = $1";
+const DELETE_SQL: &str = "DELETE FROM access_level_referral_models WHERE access_level_id = $1";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]

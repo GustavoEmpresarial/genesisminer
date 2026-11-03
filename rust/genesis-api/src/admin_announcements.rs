@@ -60,10 +60,16 @@ struct ValErr {
 }
 impl ValErr {
     fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into(), code: "VALIDATION" }
+        Self {
+            message: message.into(),
+            code: "VALIDATION",
+        }
     }
     fn image(message: impl Into<String>) -> Self {
-        Self { message: message.into(), code: "INVALID_IMAGE_URL" }
+        Self {
+            message: message.into(),
+            code: "INVALID_IMAGE_URL",
+        }
     }
     fn response(&self) -> Response {
         let msg = if self.code == "INVALID_IMAGE_URL" {
@@ -142,7 +148,9 @@ fn parse_optional_https_link(raw: Option<&str>) -> Result<Option<String>, ValErr
         return Err(ValErr::new("Link demasiado longo."));
     }
     let lower = t.to_ascii_lowercase();
-    if lower.starts_with("javascript:") || lower.starts_with("data:") || lower.starts_with("vbscript:")
+    if lower.starts_with("javascript:")
+        || lower.starts_with("data:")
+        || lower.starts_with("vbscript:")
     {
         return Err(ValErr::new("Link não permitido."));
     }
@@ -244,13 +252,14 @@ fn parse_priority(v: Option<&Value>) -> i64 {
     match v {
         None | Some(Value::Null) => 0,
         Some(Value::String(s)) if s.trim().is_empty() => 0,
-        other => value_to_i64(other).unwrap_or(0).clamp(PRIORITY_MIN, PRIORITY_MAX),
+        other => value_to_i64(other)
+            .unwrap_or(0)
+            .clamp(PRIORITY_MIN, PRIORITY_MAX),
     }
 }
 
 fn is_empty_val(v: Option<&Value>) -> bool {
-    matches!(v, None | Some(Value::Null))
-        || matches!(v, Some(Value::String(s)) if s.is_empty())
+    matches!(v, None | Some(Value::Null)) || matches!(v, Some(Value::String(s)) if s.is_empty())
 }
 
 fn parse_optional_schedule_ms(v: Option<&Value>) -> Result<Option<i64>, ValErr> {
@@ -420,7 +429,12 @@ async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respons
     if w.body.get("ok").and_then(Value::as_bool) != Some(true) {
         return worker_err_to_response(&w);
     }
-    let rows = w.body.get("rows").and_then(Value::as_array).cloned().unwrap_or_default();
+    let rows = w
+        .body
+        .get("rows")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
     let announcements: Vec<Value> = rows
         .iter()
         .map(|item| reshape_row(item, read_count_of(item)))
@@ -449,7 +463,8 @@ async fn create(
         Ok(v) => v,
         Err(e) => return e.response(),
     };
-    let image_url = match parse_optional_self_image_path(str_field(&body, "imageUrl", "image_url")) {
+    let image_url = match parse_optional_self_image_path(str_field(&body, "imageUrl", "image_url"))
+    {
         Ok(v) => v,
         Err(e) => return e.response(),
     };
@@ -488,7 +503,10 @@ async fn create(
         return worker_err_to_response(&w);
     }
     let Some(row) = w.body.get("row") else {
-        return json_status(502, json!({ "error": "mining worker announcement create empty row" }));
+        return json_status(
+            502,
+            json!({ "error": "mining worker announcement create empty row" }),
+        );
     };
     json_status(
         201,
@@ -534,14 +552,20 @@ async fn update(
         new_title = Some(bail!(parse_plain_title(str_field(&body, "title", "title"))));
     }
     if body.get("message").is_some() {
-        new_message = Some(bail!(parse_plain_message(str_field(&body, "message", "message"))));
+        new_message = Some(bail!(parse_plain_message(str_field(
+            &body, "message", "message"
+        ))));
     }
     if body.get("link").is_some() {
-        new_link = Some(bail!(parse_optional_https_link(str_field(&body, "link", "link"))));
+        new_link = Some(bail!(parse_optional_https_link(str_field(
+            &body, "link", "link"
+        ))));
     }
     if has_field(&body, "imageUrl", "image_url") {
         new_image = Some(bail!(parse_optional_self_image_path(str_field(
-            &body, "imageUrl", "image_url"
+            &body,
+            "imageUrl",
+            "image_url"
         ))));
     }
     if body.get("priority").is_some() {
@@ -552,11 +576,15 @@ async fn update(
     }
     if has_field(&body, "startsAt", "starts_at") {
         new_starts = Some(bail!(parse_optional_schedule_ms(field(
-            &body, "startsAt", "starts_at"
+            &body,
+            "startsAt",
+            "starts_at"
         ))));
     }
     if has_field(&body, "endsAt", "ends_at") {
-        new_ends = Some(bail!(parse_optional_schedule_ms(field(&body, "endsAt", "ends_at"))));
+        new_ends = Some(bail!(parse_optional_schedule_ms(field(
+            &body, "endsAt", "ends_at"
+        ))));
     }
 
     // Load existing.
@@ -566,12 +594,18 @@ async fn update(
     };
     if got.body.get("ok").and_then(Value::as_bool) != Some(true) {
         if got.body.get("code").and_then(Value::as_str) == Some("NOT_FOUND") || got.status == 404 {
-            return json_status(404, json!({ "error": "Announcement not found.", "code": "NOT_FOUND" }));
+            return json_status(
+                404,
+                json!({ "error": "Announcement not found.", "code": "NOT_FOUND" }),
+            );
         }
         return worker_err_to_response(&got);
     }
     let Some(existing) = got.body.get("row") else {
-        return json_status(404, json!({ "error": "Announcement not found.", "code": "NOT_FOUND" }));
+        return json_status(
+            404,
+            json!({ "error": "Announcement not found.", "code": "NOT_FOUND" }),
+        );
     };
 
     let ex_i64 = |camel: &str, snake: &str| value_to_i64(field(existing, camel, snake));
@@ -614,12 +648,18 @@ async fn update(
     };
     if w.body.get("ok").and_then(Value::as_bool) != Some(true) {
         if w.body.get("code").and_then(Value::as_str) == Some("NOT_FOUND") || w.status == 404 {
-            return json_status(404, json!({ "error": "Announcement not found.", "code": "NOT_FOUND" }));
+            return json_status(
+                404,
+                json!({ "error": "Announcement not found.", "code": "NOT_FOUND" }),
+            );
         }
         return worker_err_to_response(&w);
     }
     let Some(row) = w.body.get("row") else {
-        return json_status(502, json!({ "error": "mining worker announcement update empty row" }));
+        return json_status(
+            502,
+            json!({ "error": "mining worker announcement update empty row" }),
+        );
     };
     json_status(
         200,
@@ -649,7 +689,10 @@ async fn delete_one(
         return json_status(200, json!({ "ok": true }));
     }
     if w.body.get("code").and_then(Value::as_str) == Some("NOT_FOUND") || w.status == 404 {
-        return json_status(404, json!({ "error": "Announcement not found.", "code": "NOT_FOUND" }));
+        return json_status(
+            404,
+            json!({ "error": "Announcement not found.", "code": "NOT_FOUND" }),
+        );
     }
     worker_err_to_response(&w)
 }
@@ -687,7 +730,10 @@ mod tests {
     fn dangerous_text_rejected() {
         assert!(strip_plain_text(Some("<script>x"), 100).is_err());
         assert!(strip_plain_text(Some("javascript:alert(1)"), 100).is_err());
-        assert_eq!(strip_plain_text(Some("  hi\u{200b}there  "), 100).unwrap(), "hithere");
+        assert_eq!(
+            strip_plain_text(Some("  hi\u{200b}there  "), 100).unwrap(),
+            "hithere"
+        );
     }
 
     #[test]

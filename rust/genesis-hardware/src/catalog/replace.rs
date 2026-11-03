@@ -11,6 +11,7 @@ use genesis_core::catalog::{
     resolve_asic_duration_upsert_fields, UpgradeWriteRow, ASIC_DURATION_KIND_NONE,
     UPGRADE_DEFAULT_ICON, UPGRADE_STATUS_RETIRED,
 };
+use genesis_core::hardware::types::COMMON_CHASSIS_DEFAULT_RACK_ROOM_AFFINITY;
 use serde_json::Value;
 use tokio_postgres::types::ToSql;
 
@@ -347,13 +348,9 @@ async fn upsert_upgrade_row(
 
     let rarity = normalize_upgrade_rarity(u.fields.get("rarity").and_then(|v| v.as_str()));
 
-    let rack_room_affinity = u
-        .fields
-        .get("rackRoomAffinity")
-        .and_then(|v| v.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
+    // PG `upgrades.rack_room_affinity` is NOT NULL DEFAULT 'standard' — never bind NULL.
+    let rack_room_affinity =
+        resolve_rack_room_affinity_for_upsert(u.fields.get("rackRoomAffinity"));
 
     let category = json_text_or_empty(u.fields.get("category"));
     let row_type = json_text_or_empty(u.fields.get("type"));
@@ -473,6 +470,15 @@ async fn upsert_upgrade_row(
     )
     .await?;
     Ok(())
+}
+
+/// Catalog create often omits `rackRoomAffinity` (GPU/machine). Use Prisma/DB default.
+fn resolve_rack_room_affinity_for_upsert(v: Option<&Value>) -> String {
+    v.and_then(|val| val.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(COMMON_CHASSIS_DEFAULT_RACK_ROOM_AFFINITY)
+        .to_string()
 }
 
 fn json_text_or_empty(v: Option<&Value>) -> String {
@@ -649,5 +655,29 @@ mod tests {
         assert!(json_default_true(Some(&Value::Null)));
         assert!(!json_default_true(Some(&json!(false))));
         assert!(json_default_true(Some(&json!(true))));
+    }
+
+    #[test]
+    fn rack_room_affinity_defaults_when_missing() {
+        assert_eq!(
+            resolve_rack_room_affinity_for_upsert(None),
+            COMMON_CHASSIS_DEFAULT_RACK_ROOM_AFFINITY
+        );
+        assert_eq!(
+            resolve_rack_room_affinity_for_upsert(Some(&Value::Null)),
+            COMMON_CHASSIS_DEFAULT_RACK_ROOM_AFFINITY
+        );
+        assert_eq!(
+            resolve_rack_room_affinity_for_upsert(Some(&json!(""))),
+            COMMON_CHASSIS_DEFAULT_RACK_ROOM_AFFINITY
+        );
+        assert_eq!(
+            resolve_rack_room_affinity_for_upsert(Some(&json!("  "))),
+            COMMON_CHASSIS_DEFAULT_RACK_ROOM_AFFINITY
+        );
+        assert_eq!(
+            resolve_rack_room_affinity_for_upsert(Some(&json!("asic+standard"))),
+            "asic+standard"
+        );
     }
 }

@@ -58,11 +58,6 @@ export function useCheckin(opts: {
 
   const buttonLabel = (() => {
     if (submitting) return null;
-    if (status?.premiumWeeklyCheckin && !status.canCheckinNow && (status.todayCheckedIn || status.frozen)) {
-      return status.nextCheckinAllowedMs != null
-        ? t('checkin.btnWait', { time: formatCheckinCountdown(status.nextCheckinAllowedMs) })
-        : t('checkin.btnWaitPremium');
-    }
     if (status?.todayCheckedIn && !status.frozen) {
       const nextAt = status.nextCheckinAtMs ?? status.nextResetMs;
       return t('checkin.btnActive', { time: formatCheckinCountdown(nextAt) });
@@ -95,11 +90,7 @@ export function useCheckin(opts: {
         if (parts.length > 0) {
           setToast(parts.filter(Boolean).join(' '));
         } else if (out.data.performed) {
-          if (out.data.premiumWeeklyCheckin) {
-            setToast(t('checkin.toastPremiumDone', { days: String(out.data.premiumIntervalDays) }));
-          } else {
-            setToast(t('checkin.toastDailyDone'));
-          }
+          setToast(t('checkin.toastDailyDone'));
         } else {
           setToast(t('checkin.toastAlreadyDone'));
         }

@@ -558,8 +558,7 @@ mod tests {
     use serde_json::json;
 
     /// BSC DOGE (Binance-Peg) with mixed wrong EIP-55 (`...744c43` vs correct `...744C43`).
-    const DOGE_CONTRACT_WRONG_CHECKSUM: &str =
-        "0xbA2aE424d960c26247Dd6c32edC70B295c744c43";
+    const DOGE_CONTRACT_WRONG_CHECKSUM: &str = "0xbA2aE424d960c26247Dd6c32edC70B295c744c43";
 
     #[test]
     fn usable_accepts_mixed_wrong_checksum_contract() {

@@ -100,7 +100,8 @@ async fn distribution_preview(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
-    if let Err(e) = require_admin(&state, &headers, &Method::POST, DISTRIBUTION_PREVIEW_PATH).await {
+    if let Err(e) = require_admin(&state, &headers, &Method::POST, DISTRIBUTION_PREVIEW_PATH).await
+    {
         return e;
     }
     let coin_id = body

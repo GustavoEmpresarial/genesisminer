@@ -55,6 +55,29 @@ describe('modules/upgrades/services/admin-crud', () => {
       expect(txMock.admin_upgrades.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: expect.objectContaining({ version: 6 }) }));
     });
 
+    it('persiste imageUrl no create/update (vazio → null)', async () => {
+      const { upsertAdminUpgrade } = await load();
+      await upsertAdminUpgrade({
+        id: 'pack_1',
+        name: 'Pacote',
+        priceUsdc: 10,
+        imageUrl: ' /img/uploads/passe.png '
+      });
+      expect(txMock.admin_upgrades.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ image_url: '/img/uploads/passe.png' }),
+          update: expect.objectContaining({ image_url: '/img/uploads/passe.png' })
+        })
+      );
+      await upsertAdminUpgrade({ id: 'pack_1', name: 'Pacote', priceUsdc: 10, imageUrl: '  ' });
+      expect(txMock.admin_upgrades.upsert).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({ image_url: null }),
+          update: expect.objectContaining({ image_url: null })
+        })
+      );
+    });
+
     it('passes aceita string[] (ids) e objetos {passId,qty}, com qty default 1', async () => {
       const { upsertAdminUpgrade } = await load();
       await upsertAdminUpgrade({ id: 'pack_1', name: 'Pacote', priceUsdc: 10, passes: ['sp1', { passId: 'sp2', qty: 3 }] });

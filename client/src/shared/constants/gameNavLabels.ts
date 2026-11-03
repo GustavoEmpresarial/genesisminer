@@ -23,6 +23,7 @@ export const GAME_NAV_LABEL_KEYS = [
   'partners',
   'partner_games',
   'offerwall',
+  'topidle',
   'mini_blog',
   'quests'
 ] as const;
@@ -51,6 +52,7 @@ export const DEFAULT_GAME_NAV_LABELS: Record<GameNavLabelKey, string> = {
   partners: 'Streamer Partnership',
   partner_games: 'Partner · Games',
   offerwall: 'Offerwall',
+  topidle: 'TopIdle',
   mini_blog: 'Mini Blog',
   quests: 'Quests'
 };
@@ -79,5 +81,6 @@ export const DEFAULT_ALLOWED_PAGES = [
   'partner_games',
   'mini_blog',
   'quests',
-  'offerwall'
+  'offerwall',
+  'topidle'
 ] as const;

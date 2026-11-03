@@ -20,7 +20,8 @@ pub const ECONOMY_STATS_PATH: &str = "/v1/admin/economy/coin-stats";
 pub const MINING_RUNTIME_SUMMARY_PATH: &str = "/v1/admin/economy/runtime-summary";
 pub const DISTRIBUTION_PREVIEW_PATH: &str = "/v1/admin/economy/distribution-preview";
 
-const COIN_SELECT: &str = "id, name, symbol, description, network_hashrate, block_reward, block_time,
+const COIN_SELECT: &str =
+    "id, name, symbol, description, network_hashrate, block_reward, block_time,
      price_usd, algorithm, difficulty, multiplier, color, min_proportion, usdc_rate, is_active,
      target_daily_usd, show_in_exchange, nft_room_only";
 
@@ -54,7 +55,10 @@ fn of(r: &tokio_postgres::Row, c: &str) -> Value {
     }
 }
 fn s(r: &tokio_postgres::Row, c: &str) -> String {
-    r.try_get::<_, Option<String>>(c).ok().flatten().unwrap_or_default()
+    r.try_get::<_, Option<String>>(c)
+        .ok()
+        .flatten()
+        .unwrap_or_default()
 }
 
 fn coin_json(r: &tokio_postgres::Row, real_active_miners: i64, real_total_hashrate: f64) -> Value {
@@ -152,7 +156,11 @@ pub async fn run_economy_coin_stats(pool: &Pool) -> Result<Value, PlayerReadErro
     let mut miners_by_coin: HashMap<String, HashSet<i64>> = HashMap::new();
 
     for rack in &racks {
-        let Some(cid) = rack.try_get::<_, Option<String>>("selected_coin_id").ok().flatten() else {
+        let Some(cid) = rack
+            .try_get::<_, Option<String>>("selected_coin_id")
+            .ok()
+            .flatten()
+        else {
             continue;
         };
         if !coin_ids.contains(&cid) {
@@ -196,7 +204,10 @@ pub async fn run_economy_coin_stats(pool: &Pool) -> Result<Value, PlayerReadErro
 pub async fn run_mining_runtime_summary(pool: &Pool) -> Result<Value, PlayerReadError> {
     let c = pool.get().await?;
     let row = c
-        .query_opt("SELECT value FROM app_cache WHERE key = 'network_stats'", &[])
+        .query_opt(
+            "SELECT value FROM app_cache WHERE key = 'network_stats'",
+            &[],
+        )
         .await?;
     let value: Value = row
         .and_then(|r| r.try_get::<_, Option<Value>>("value").ok().flatten())
@@ -245,7 +256,10 @@ pub async fn run_distribution_preview(
 
     // Snapshot do último tick.
     let stats: Value = c
-        .query_opt("SELECT value FROM app_cache WHERE key = 'network_stats'", &[])
+        .query_opt(
+            "SELECT value FROM app_cache WHERE key = 'network_stats'",
+            &[],
+        )
         .await?
         .and_then(|r| r.try_get::<_, Option<Value>>("value").ok().flatten())
         .unwrap_or_else(|| json!({}));
@@ -295,13 +309,23 @@ pub async fn run_distribution_preview(
     per_user.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     let top_share_pct = per_user
         .first()
-        .map(|(_, h)| if active_hashrate > 0.0 { h / active_hashrate * 100.0 } else { 0.0 })
+        .map(|(_, h)| {
+            if active_hashrate > 0.0 {
+                h / active_hashrate * 100.0
+            } else {
+                0.0
+            }
+        })
         .unwrap_or(0.0);
     let top_miners: Vec<Value> = per_user
         .iter()
         .take(10)
         .map(|(uid, h)| {
-            let share = if active_hashrate > 0.0 { h / active_hashrate } else { 0.0 };
+            let share = if active_hashrate > 0.0 {
+                h / active_hashrate
+            } else {
+                0.0
+            };
             json!({
                 "userId": uid,
                 "hashrate": h,

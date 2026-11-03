@@ -19,7 +19,8 @@ export const ptBR: MessageTree = {
     maintenanceTitle: 'Voltamos já',
     maintenanceBody:
       'O Genesis Miner está em manutenção programada. Inventário e catálogo estão pausados.',
-    maintenanceAdminHint: 'Administradores podem entrar para gerir a manutenção.'
+    maintenanceAdminHint: 'Administradores podem entrar para gerir a manutenção.',
+    maintenanceBadge: 'Manutenção programada'
   },
   landing: {
     badge: 'Ecossistema online V0.5 · Genesis DAO',
@@ -93,6 +94,7 @@ export const ptBR: MessageTree = {
     partners: 'Parceria streamer',
     partner_games: 'Parceiro · Jogos',
     offerwall: 'Offerwall',
+    topidle: 'TopIdle',
     mini_blog: 'Mini blog',
     quests: 'Missões',
     profile: 'Perfil',
@@ -194,7 +196,7 @@ export const ptBR: MessageTree = {
     errSelectPlan: 'Selecione um plano.',
     errPaymentRejected: 'Pagamento rejeitado. O cadastro não foi concluído.',
     errRegisterFail: 'Falha ao processar o cadastro.',
-    okRegister: 'Cadastro concluído. Verifique seu e-mail para ativar a conta.',
+    okRegister: 'Cadastro concluído. Já podes entrar.',
     errEmailPassword: 'Informe seu e-mail e senha.',
     errEnterEmail: 'Informe seu e-mail.',
     errEnterPassword: 'Informe sua senha.',
@@ -406,7 +408,9 @@ export const ptBR: MessageTree = {
     fileTooLarge: '«{{name}}» ultrapassa o limite de {{mb}} MB por ficheiro.',
     tooManyFiles: 'Máximo de {{max}} anexos.',
     fileTypeNotAllowed:
-      '«{{name}}» tipo não permitido. Usa PNG, JPG, GIF, WEBP ou vídeo MP4/WEBM/MOV (não HEIC).',
+      '«{{name}}» tipo não permitido. Usa PNG, JPG, GIF, WEBP ou vídeo MP4/WEBM/MOV.',
+    imageUnreadable:
+      '«{{name}}» não deu para ler. Envia PNG, JPG, GIF, WEBP ou um vídeo MP4/WEBM/MOV.',
     fileTooSmall: '«{{name}}» ficheiro inválido ou vazio.'
   },
   checkin: {
@@ -469,6 +473,30 @@ export const ptBR: MessageTree = {
   arcade: {
     title: 'Arcade',
     subtitle: 'Arcade em preparação — mais jogos em breve.'
+  },
+  topidle: {
+    eyebrow: 'Voto e prémio',
+    title: 'Votar no TopIdle',
+    subtitle:
+      'Vota no Genesis Miner no TopIdle. Cada voto credita {{hps}} HS na conta do jogo que usa o mesmo email da tua conta TopIdle.',
+    voteCta: 'Votar no TopIdle',
+    ready: 'Já podes votar.',
+    nextVote: 'Próximo voto em {{time}}',
+    rewardHint: '{{hps}} HS é somado ao teu hashrate automaticamente depois do TopIdle confirmar o voto.',
+    rewardLabel: 'Prémio por voto',
+    rewardUnit: 'HS',
+    rewardPerVote: '+{{hps}} HS em cada voto confirmado',
+    readyBadge: 'Disponível',
+    waitingBadge: 'Aguarda',
+    opensNewTab: 'Abre numa nova aba',
+    howTitle: 'Como funciona',
+    stepVote: 'Abre o TopIdle e vota na ficha do Genesis Miner.',
+    stepEmail: 'O email da conta TopIdle tem de ser o mesmo da conta Genesis.',
+    stepCredit: 'Os {{hps}} HS entram sozinhos no teu hashrate.',
+    historyTitle: 'Histórico de HS',
+    historyEmpty: 'Ainda não creditámos nenhum voto nesta conta.',
+    historyTotal: '{{hps}} HS no total · {{count}} votos',
+    historyItem: '+{{hps}} HS'
   },
   offerwall: {
     eyebrow: 'Ganhos externos / Offerwall',
@@ -638,6 +666,8 @@ export const ptBR: MessageTree = {
     studioSaving: 'A guardar…',
     studioSubmitVideo: 'Submeter vídeo (1/dia UTC)',
     studioDailyLimit: 'Limite diário atingido. Volta amanhã (UTC).',
+    studioAlreadySubmittedToday:
+      'Já enviaste o vídeo de hoje (UTC). Está em análise — podes enviar outro amanhã.',
     studioVideoTitlePh: 'Título do vídeo',
     studioYoutubeUrlPh: 'https://www.youtube.com/watch?v=…',
     studioVideoDescPh: 'Descrição (opcional)',

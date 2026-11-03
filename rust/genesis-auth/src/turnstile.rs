@@ -100,10 +100,7 @@ pub async fn verify_turnstile_token(
         return TurnstileVerifyOutcome::BadRequest(ERR_CAPTCHA_REQUIRED);
     }
 
-    let mut form = vec![
-        ("secret", cfg.secret_key.as_str()),
-        ("response", response),
-    ];
+    let mut form = vec![("secret", cfg.secret_key.as_str()), ("response", response)];
     if let Some(ip) = remoteip {
         let ip = ip.trim();
         if !ip.is_empty() && ip != "unknown" {
@@ -171,8 +168,9 @@ mod tests {
     #[tokio::test]
     async fn enabled_empty_token_is_400() {
         let http = reqwest::Client::new();
-        let out = verify_turnstile_token(&enabled_cfg("http://127.0.0.1:1/nope"), &http, "  ", None)
-            .await;
+        let out =
+            verify_turnstile_token(&enabled_cfg("http://127.0.0.1:1/nope"), &http, "  ", None)
+                .await;
         assert_eq!(
             out,
             TurnstileVerifyOutcome::BadRequest(ERR_CAPTCHA_REQUIRED)

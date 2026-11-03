@@ -101,6 +101,20 @@ pub struct GerenteEnterRequest {
     pub owner_user_id: Option<serde_json::Value>,
 }
 
+/// Admin Support: status / demissão (`userId` = jogador; fire usa-o como dono).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GerenteAdminOwnerRequest {
+    #[serde(default)]
+    pub user_id: i64,
+    /// Alternativa a `userId` no status (lookup por email).
+    #[serde(default)]
+    pub email: Option<String>,
+    /// Presente no fire (auditoria opcional); ignorado no status.
+    #[serde(default)]
+    pub admin_user_id: Option<i64>,
+}
+
 fn am_err(status: u16, code: &str, msg: impl Into<String>) -> PlayerReadError {
     PlayerReadError::controlled(status, msg, code)
 }
@@ -874,7 +888,128 @@ pub async fn run_fire(
     require_feature(cfg)?;
     reject_manager_mode_msg(body.manager_mode, "You cannot fire while in manager mode.")?;
     assert_actor_active(pool, body.user_id).await?;
-    let owner_id = pg_uid(body.user_id)?;
+    end_active_contract_for_owner(
+        pool,
+        http,
+        cfg,
+        body.user_id,
+        /*bypass_fire_lock*/ false,
+    )
+    .await
+}
+
+/// Admin Support: estado de gerência do jogador (`userId`).
+/// - `active`: gerente desta conta (jogador é dono)
+/// - `managing`: contas que este jogador gere (jogador é gerente)
+/// Quando a feature está desligada devolve `enabled: false` sem erro HTTP.
+pub async fn run_admin_status(
+    pool: &Pool,
+    cfg: &WorkerConfig,
+    body: GerenteAdminOwnerRequest,
+) -> Result<Value, PlayerReadError> {
+    if !cfg.account_manager_enabled {
+        return Ok(json!({
+            "ok": true,
+            "enabled": false,
+            "userId": body.user_id,
+            "active": null,
+            "managing": [],
+        }));
+    }
+    let client = pool.get().await?;
+    let user = if body.user_id > 0 {
+        let uid = pg_uid(body.user_id)?;
+        client
+            .query_opt(
+                "SELECT id, username, email FROM users WHERE id = $1 LIMIT 1",
+                &[&uid],
+            )
+            .await?
+    } else {
+        let em = body.email.as_deref().unwrap_or("").trim();
+        if em.is_empty() {
+            return Err(am_err(
+                HTTP_BAD_REQUEST,
+                "BAD_REQUEST",
+                "Informe userId ou email.",
+            ));
+        }
+        client
+            .query_opt(
+                "SELECT id, username, email FROM users WHERE lower(email) = lower($1) LIMIT 1",
+                &[&em],
+            )
+            .await?
+    };
+    let Some(user) = user else {
+        return Err(am_err(
+            HTTP_NOT_FOUND,
+            "USER_NOT_FOUND",
+            "Utilizador não encontrado.",
+        ));
+    };
+    let uid = i32_cell(&user, "id");
+    let as_owner = client
+        .query_opt(
+            r#"SELECT c.*, m.username AS manager_username, m.email AS manager_email
+                 FROM account_manager_contracts c
+                 JOIN users m ON m.id = c.manager_user_id
+                WHERE c.owner_user_id = $1 AND c.status = $2
+                LIMIT 1"#,
+            &[&uid, &ACCOUNT_MANAGER_STATUS_ACTIVE],
+        )
+        .await?;
+    let as_manager = client
+        .query(
+            r#"SELECT c.*, o.username AS owner_username, o.email AS owner_email
+                 FROM account_manager_contracts c
+                 JOIN users o ON o.id = c.owner_user_id
+                WHERE c.manager_user_id = $1 AND c.status = $2
+                ORDER BY c.hired_at DESC NULLS LAST"#,
+            &[&uid, &ACCOUNT_MANAGER_STATUS_ACTIVE],
+        )
+        .await?;
+    let now = now_ms();
+    let active = as_owner.map(|r| map_contract(&r, now));
+    let managing: Vec<Value> = as_manager.iter().map(|r| map_contract(r, now)).collect();
+    Ok(json!({
+        "ok": true,
+        "enabled": true,
+        "userId": i32_cell(&user, "id"),
+        "username": string_cell(&user, "username"),
+        "email": string_cell(&user, "email"),
+        "active": active,
+        "managing": managing,
+    }))
+}
+
+/// Admin Support: demite o gerente do dono **sem** fire-lock (override de suporte).
+pub async fn run_admin_fire(
+    pool: &Pool,
+    cfg: &WorkerConfig,
+    http: &HttpClient,
+    body: GerenteAdminOwnerRequest,
+) -> Result<Value, PlayerReadError> {
+    require_feature(cfg)?;
+    let _admin = body.admin_user_id;
+    end_active_contract_for_owner(
+        pool,
+        http,
+        cfg,
+        body.user_id,
+        /*bypass_fire_lock*/ true,
+    )
+    .await
+}
+
+async fn end_active_contract_for_owner(
+    pool: &Pool,
+    http: &HttpClient,
+    cfg: &WorkerConfig,
+    owner_user_id: i64,
+    bypass_fire_lock: bool,
+) -> Result<Value, PlayerReadError> {
+    let owner_id = pg_uid(owner_user_id)?;
     let mut client = pool.get().await?;
     let tx = client.transaction().await?;
     set_lock_timeout(&tx).await?;
@@ -892,12 +1027,16 @@ pub async fn run_fire(
         return Err(am_err(
             HTTP_NOT_FOUND,
             "NOT_FOUND",
-            "Não tens gerente ativo.",
+            if bypass_fire_lock {
+                "Este jogador não tem gerente ativo."
+            } else {
+                "Não tens gerente ativo."
+            },
         ));
     };
     let lock_until = opt_i64(&row, "fire_locked_until").unwrap_or(0);
     let t = now_ms();
-    if lock_until > t {
+    if !bypass_fire_lock && lock_until > t {
         tx.rollback().await.ok();
         return Err(am_err(
             HTTP_FORBIDDEN,

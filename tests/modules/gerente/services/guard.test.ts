@@ -41,6 +41,14 @@ describe('isManagerAllowedRoute', () => {
     expect(guardModule.isManagerAllowedRoute('POST', '/api/lucky-boxes/promocodes/redeem')).toBe(true);
   });
 
+  it('mini-chat gerência (messages/audio) passa na allowlist em modo gerência', () => {
+    expect(guardModule.isManagerAllowedRoute('POST', '/api/chat/messages')).toBe(true);
+    expect(guardModule.isManagerAllowedRoute('PATCH', '/api/chat/messages/42')).toBe(true);
+    expect(guardModule.isManagerAllowedRoute('DELETE', '/api/chat/messages/42')).toBe(true);
+    expect(guardModule.isManagerAllowedRoute('POST', '/api/chat/audio')).toBe(true);
+    expect(guardModule.isManagerAllowedRoute('POST', '/api/chat/other')).toBe(false);
+  });
+
   it('GET /api/player/game-header passa (blanket GET não-admin)', () => {
     expect(guardModule.isManagerAllowedRoute('GET', '/api/player/game-header')).toBe(true);
   });

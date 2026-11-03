@@ -291,6 +291,7 @@ export type CatalogItemLike = {
 /**
  * Aplica CREATE/UPDATE no array local sem rename.
  * Se `editingSourceId` está definido, o id do payload é forçado a esse valor.
+ * CREATE: ignora `itemForm.id` e gera id único a partir do nome.
  * Não emite `previousId`.
  */
 export function applyAdminCatalogItemSave<T extends CatalogItemLike>(args: {
@@ -299,17 +300,17 @@ export function applyAdminCatalogItemSave<T extends CatalogItemLike>(args: {
   itemForm: Partial<T> & { id?: string; name?: string };
 }): { upgrades: T[]; fixes: UpgradeIdFix[]; lockedId: string; isCreate: boolean } {
   const isEdit = !!args.editingSourceId;
+  const name = String(args.itemForm.name || '').trim();
+  if (!isEdit && !name) {
+    throw new Error('Nome obrigatório.');
+  }
+
   const lockedId = isEdit
     ? String(args.editingSourceId)
-    : String(args.itemForm.id || '').trim();
-
-  if (!lockedId) {
-    throw new Error('ID obrigatório.');
-  }
-
-  if (!isEdit && !SHOP_PRODUCT_ID_RE.test(lockedId)) {
-    throw new Error('ID inválido. Use apenas letras, números, ".", "_" ou "-".');
-  }
+    : makeUniqueShopProductId(
+        name,
+        new Set(args.gameUpgrades.map((u) => String(u.id || '').trim()).filter(Boolean))
+      );
 
   const formCompat = args.itemForm.compatibleRacks;
   const newItem = {

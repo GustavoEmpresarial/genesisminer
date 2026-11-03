@@ -224,7 +224,11 @@ async fn try_bump_offerwall_quests(pool: &Pool, uid: i32, now_ms: i64) -> anyhow
         let qid: String = d.get("id");
         let period: String = d.get("period");
         let target: i32 = d.get("target_count");
-        let pk = if period == "weekly" { &weekly_key } else { &daily_key };
+        let pk = if period == "weekly" {
+            &weekly_key
+        } else {
+            &daily_key
+        };
         tx.execute(
             "INSERT INTO user_quest_progress
                 (user_id, quest_id, period_key, progress, completed_at, claimed_at, updated_at)

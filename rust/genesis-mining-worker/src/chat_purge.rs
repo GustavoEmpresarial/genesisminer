@@ -6,23 +6,35 @@
 //! `chat:ttl_purge` on `genesis:ws:emit` for genesis-api Socket.IO fanout.
 
 use deadpool_postgres::Pool;
-use genesis_core::time::MS_PER_HOUR;
+use genesis_core::time::MS_PER_DAY;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tracing::warn;
 
-/// Node `CHAT_CHANNEL_GLOBAL`.
-const CHAT_CHANNEL_GLOBAL: &str = "global";
+use crate::chat_writes::CHAT_CHANNEL_GLOBAL;
+
 /// Node `CHAT_AUDIO_PUBLIC_PREFIX`.
 const CHAT_AUDIO_PUBLIC_PREFIX: &str = "/img/chat-audio/";
-/// Node `CHAT_MESSAGE_TTL_MS` (1 hour).
-const CHAT_MESSAGE_TTL_MS: i64 = MS_PER_HOUR as i64;
+/// Retenção mínima do chat global (pedido ops: ≥90 dias). DMs `am:*` não usam TTL.
+const CHAT_MESSAGE_TTL_DAYS: u64 = 90;
+/// Node `CHAT_MESSAGE_TTL_MS` — alinhado a `CHAT_MESSAGE_TTL_DAYS * MS_PER_DAY`.
+const CHAT_MESSAGE_TTL_MS: i64 = (CHAT_MESSAGE_TTL_DAYS * MS_PER_DAY) as i64;
 /// Node `PURGE_DEFAULT_LIMIT`.
 const PURGE_DEFAULT_LIMIT: i64 = 2000;
 /// Node `PURGE_MAX_LIMIT`.
 const PURGE_MAX_LIMIT: i64 = 5000;
+/// Só `channel = global`. DMs `am:owner:manager` não entram no TTL.
+const CHAT_PURGE_EXPIRED_SQL: &str = "DELETE FROM chat_messages
+              WHERE id IN (
+                SELECT id FROM chat_messages
+                 WHERE created_at < $1
+                   AND channel = $3
+                 ORDER BY created_at ASC, id ASC
+                 LIMIT $2
+              )
+              RETURNING id, channel, audio_url";
 
 pub const CHAT_PURGE_EXPIRED_PATH: &str = "/v1/chat/purge-expired";
 
@@ -193,15 +205,8 @@ pub async fn run_purge_expired_chat_messages(
     let client = pool.get().await.map_err(|e| e.to_string())?;
     let rows = client
         .query(
-            "DELETE FROM chat_messages
-              WHERE id IN (
-                SELECT id FROM chat_messages
-                 WHERE created_at < $1
-                 ORDER BY created_at ASC, id ASC
-                 LIMIT $2
-              )
-              RETURNING id, channel, audio_url",
-            &[&before_ms, &limit],
+            CHAT_PURGE_EXPIRED_SQL,
+            &[&before_ms, &limit, &CHAT_CHANNEL_GLOBAL],
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -265,9 +270,17 @@ mod tests {
     }
 
     #[test]
-    fn cutoff_is_one_hour() {
-        assert_eq!(chat_message_cutoff_ms(3_600_000), 0);
-        assert_eq!(CHAT_MESSAGE_TTL_MS, 3_600_000);
+    fn cutoff_is_ninety_days() {
+        assert_eq!(chat_message_cutoff_ms(CHAT_MESSAGE_TTL_MS), 0);
+        assert_eq!(CHAT_MESSAGE_TTL_DAYS, 90);
+        assert_eq!(CHAT_MESSAGE_TTL_MS, 7_776_000_000);
+    }
+
+    #[test]
+    fn purge_sql_only_deletes_global_channel() {
+        assert!(CHAT_PURGE_EXPIRED_SQL.contains("AND channel = $3"));
+        assert!(CHAT_PURGE_EXPIRED_SQL.contains("created_at < $1"));
+        assert_eq!(CHAT_CHANNEL_GLOBAL, "global");
     }
 
     #[test]

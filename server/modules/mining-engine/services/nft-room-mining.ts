@@ -200,12 +200,20 @@ export function isNftAutoArmario1OnlyRoomRow(row: { id?: unknown; name?: unknown
   return (NFT_AUTO_POLICY_ROOM_NAME_KEYS as readonly string[]).includes(kn);
 }
 
+/** Classe admin «Máquina normal (GPU)» — `AdminEditor` grava a categoria com este texto. */
+const MACHINE_CLASS_GPU_CATEGORY = 'gpu';
+
+/**
+ * ASIC: categoria com «asic», ou id `asic_*` quando a classe não é GPU.
+ * Categoria `GPU` ganha ao prefixo do id.
+ */
 export function isAsicMachineUpgradeRow(up: UpgradeMiningRow | null | undefined): boolean {
   if (!up || String(up.type ?? '') !== 'machine') return false;
-  const id = String(up.id ?? '').trim().toLowerCase();
-  if (id.startsWith('asic_')) return true;
   const cat = String(up.category ?? '').trim().toLowerCase();
-  return cat.includes('asic');
+  if (cat === MACHINE_CLASS_GPU_CATEGORY) return false;
+  if (cat.includes('asic')) return true;
+  const id = String(up.id ?? '').trim().toLowerCase();
+  return id.startsWith('asic_');
 }
 
 export const NFT_ROOM_EXCLUDED_MACHINE_IDS = ['gpu_iceberg_v1', 'rally_v3', 'gpu_rally_v1'] as const;

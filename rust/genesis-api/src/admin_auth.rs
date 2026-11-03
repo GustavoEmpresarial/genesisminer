@@ -440,6 +440,9 @@ pub fn resolve_admin_route_requirement(method: &Method, raw_path: &str) -> Admin
     if p.starts_with("/api/admin/guide") || p.starts_with("/api/admin/roadmap") {
         return Tab(TAB_SETTINGS_PAGES);
     }
+    if p == "/api/admin/site-maintenance" && is_post {
+        return Tab(TAB_SETTINGS);
+    }
 
     Super
 }
@@ -811,6 +814,14 @@ mod tests {
         );
         assert_eq!(
             resolve_admin_route_requirement(&Method::POST, "/api/admin/shop/checkouts"),
+            Super
+        );
+        assert_eq!(
+            resolve_admin_route_requirement(&Method::POST, "/api/admin/site-maintenance"),
+            Tab(TAB_SETTINGS)
+        );
+        assert_eq!(
+            resolve_admin_route_requirement(&Method::GET, "/api/admin/site-maintenance"),
             Super
         );
     }

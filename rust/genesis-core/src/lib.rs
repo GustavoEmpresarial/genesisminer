@@ -16,6 +16,7 @@ pub mod mining;
 pub mod partner_games;
 pub mod ranking;
 pub mod time;
+pub mod topidle;
 pub mod transparency;
 pub mod utc_week;
 pub mod wallet;
@@ -63,6 +64,19 @@ pub use mining::{
 
 pub use game_nav::{
     build_game_nav_items, resolve_allowed_pages, GameNavBuildInput, GameNavBuildOutput,
+};
+
+pub use topidle::{
+    parse_vote_notice, sign_body as topidle_sign_body,
+    verify_signature as topidle_verify_signature,
+    verify_signature_with_secrets as topidle_verify_signature_with_secrets, TopIdleNoticeError,
+    TopIdleNoticeKind,
+    TopIdleSigError, TopIdleVoteNotice, TOPIDLE_EVENT_VOTE_CREATED, TOPIDLE_EVENT_VOTE_TEST,
+    TOPIDLE_GAME_ID, TOPIDLE_PUBLIC_STATUS_PATH, TOPIDLE_PUBLIC_WEBHOOK_PATH,
+    TOPIDLE_HISTORY_LIMIT, TOPIDLE_NAV_ENABLED, TOPIDLE_SIGNATURE_PREFIX,
+    TOPIDLE_TIMESTAMP_SKEW_SECONDS, TOPIDLE_VOTE_REWARD_HPS,
+    TOPIDLE_VOTE_URL, TOPIDLE_WEBHOOK_TIMEOUT_MS, TOPIDLE_WORKER_STATUS_PATH,
+    TOPIDLE_WORKER_WEBHOOK_PATH,
 };
 
 pub use partner_games::{
@@ -149,10 +163,10 @@ pub use catalog::{
 
 pub use transparency::{
     clamp_health, clamp_health_with, compute_transparency_health, compute_transparency_health_with,
-    entry_in_scope, health_band, normalize_health_category, normalize_period_ym,
-    period_ym_from_ms, score_inflow, score_published_ledger, score_rent, HealthBand,
-    HealthPeriodScope, HealthSettings, PlayerCashFlows, TransparencyHealthCategory,
-    TransparencyHealthEntry, TransparencyHealthSnapshot, HEALTH_SEASON_START_MS_DEFAULT,
-    HEALTH_WEIGHT_INFLOW, HEALTH_WEIGHT_LEDGER, HEALTH_WEIGHT_RENT, TRANSPARENCY_HEALTH_CEILING,
+    entry_in_scope, health_band, normalize_health_category, normalize_period_ym, period_ym_from_ms,
+    score_inflow, score_published_ledger, score_rent, HealthBand, HealthPeriodScope,
+    HealthSettings, PlayerCashFlows, TransparencyHealthCategory, TransparencyHealthEntry,
+    TransparencyHealthSnapshot, HEALTH_SEASON_START_MS_DEFAULT, HEALTH_WEIGHT_INFLOW,
+    HEALTH_WEIGHT_LEDGER, HEALTH_WEIGHT_RENT, TRANSPARENCY_HEALTH_CEILING,
     TRANSPARENCY_HEALTH_FLOOR,
 };

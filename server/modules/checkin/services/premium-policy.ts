@@ -1,9 +1,9 @@
 /**
- * Política de check-in premium: quem gastou ≥ limite USDC vitalício (loja, merge,
- * passe, upgrades, P2P, wheel) — ou tem `checkin_premium_unlocked` — faz check-in
- * a cada N dias (em vez de diário), configurável via admin.
+ * Política de check-in premium (legado).
  *
- * Uma vez desbloqueado, permanece para sempre (1× na vida).
+ * Produto: check-in é **só diário**. `resolveUserCheckinPremiumContext` devolve
+ * sempre `premiumWeeklyCheckin: false`. Settings / unlock / spend ficam na BD
+ * mas não alteram o cadenciamento.
  */
 import { prisma } from '../../../core/database/prisma.js';
 import { getSettingsRecord, upsertSettingsEntries } from '../../../shared/settings/settings-repository.js';
@@ -53,7 +53,8 @@ export function canPerformPremiumCheckinNow(lastCheckinAtMs: number | null | und
 export async function loadCheckinPremiumPolicy(): Promise<CheckinPremiumPolicy> {
   const s = await getSettingsRecord([...CHECKIN_PREMIUM_SETTINGS_KEYS]);
   const enabledRaw = s.checkin_premium_enabled;
-  const enabled = enabledRaw === undefined || enabledRaw === '' ? true : enabledRaw === '1';
+  // Default off: modo intervalo premium descontinuado (só diário).
+  const enabled = enabledRaw === undefined || enabledRaw === '' ? false : enabledRaw === '1';
   const minParsed = parseFloat(String(s.checkin_premium_min_usdc ?? DEFAULT_CHECKIN_PREMIUM_MIN_USDC));
   const minUsdc = Number.isFinite(minParsed) && minParsed >= 0 ? minParsed : DEFAULT_CHECKIN_PREMIUM_MIN_USDC;
   const daysParsed = parseInt(String(s.checkin_premium_interval_days ?? DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS), 10);
@@ -140,6 +141,7 @@ export type UserCheckinPremiumContext = {
 
 export async function resolveUserCheckinPremiumContext(userId: number): Promise<UserCheckinPremiumContext> {
   const policy = await loadCheckinPremiumPolicy();
+  // Cadência premium descontinuada — nunca ativar ramo semanal.
   const eligible = policy.enabled ? await userHasPremiumUsdcSpend(userId, policy.minUsdc) : false;
-  return { policy, eligible, premiumWeeklyCheckin: policy.enabled && eligible };
+  return { policy, eligible, premiumWeeklyCheckin: false };
 }

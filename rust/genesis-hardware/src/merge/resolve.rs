@@ -77,7 +77,11 @@ fn opt_js_int(n: Option<i32>) -> String {
 }
 
 /// Node `makeResultCatalogId`.
-fn make_result_catalog_id(source_id: &str, result_rarity: &str, stats: &MergeResultStats) -> String {
+fn make_result_catalog_id(
+    source_id: &str,
+    result_rarity: &str,
+    stats: &MergeResultStats,
+) -> String {
     let payload = [
         source_id.to_string(),
         result_rarity.to_string(),
@@ -162,11 +166,7 @@ async fn resolve_or_create_result_upgrade<C: GenericClient>(
                     slots_capacity, ai_slots_capacity
                FROM upgrades
               WHERE type = $1 AND COALESCE(rarity, 'common') = $2 AND name = $3",
-            &[
-                &type_str(ct),
-                &stats.result_rarity.as_str(),
-                &stats.name,
-            ],
+            &[&type_str(ct), &stats.result_rarity.as_str(), &stats.name],
         )
         .await
         .map_err(MergeError::transport)?;
@@ -186,11 +186,7 @@ async fn resolve_or_create_result_upgrade<C: GenericClient>(
         }
     }
 
-    let id = make_result_catalog_id(
-        &source.catalog.id,
-        stats.result_rarity.as_str(),
-        stats,
-    );
+    let id = make_result_catalog_id(&source.catalog.id, stats.result_rarity.as_str(), stats);
     let dup = client
         .query_opt("SELECT id FROM upgrades WHERE id = $1", &[&id])
         .await
@@ -212,7 +208,8 @@ async fn resolve_or_create_result_upgrade<C: GenericClient>(
         source.catalog.category.clone()
     };
     let description = if matches!(ct, CatalogType::Infrastructure) {
-        let pct = (stats.multiplier.unwrap_or(0.0) * HS_PERCENT_ROUND).round() / HS_PERCENT_DISPLAY_ROUND;
+        let pct =
+            (stats.multiplier.unwrap_or(0.0) * HS_PERCENT_ROUND).round() / HS_PERCENT_DISPLAY_ROUND;
         format!(
             "Resultado de merge ({}): +{}% H/s.",
             stats.result_rarity.as_str(),
@@ -484,8 +481,9 @@ async fn run_merge_on_tx<C: GenericClient>(
         .map_err(MergeError::transport)?
         .ok_or_else(|| MergeError::not_found("NOT_FOUND", "Catalog item not found."))?;
 
-    let (catalog, is_nft) = source_catalog_from_row(&src_row)
-        .ok_or_else(|| MergeError::bad("BAD_TYPE", "Only GPUs, AI Chips, and Rigs can be merged."))?;
+    let (catalog, is_nft) = source_catalog_from_row(&src_row).ok_or_else(|| {
+        MergeError::bad("BAD_TYPE", "Only GPUs, AI Chips, and Rigs can be merged.")
+    })?;
     let ct = catalog.catalog_type;
 
     if !type_enabled(&flags, ct) {
@@ -507,7 +505,10 @@ async fn run_merge_on_tx<C: GenericClient>(
     }
     let rarity = catalog.rarity;
     if !rarity.is_mergeable_source() {
-        return Err(MergeError::bad("SUPREME", "Supreme items cannot be merged."));
+        return Err(MergeError::bad(
+            "SUPREME",
+            "Supreme items cannot be merged.",
+        ));
     }
 
     let stats = compute_merge_result_stats(&catalog, &flags.runtime)
@@ -562,9 +563,7 @@ async fn run_merge_on_tx<C: GenericClient>(
     if qty_before < need_qty {
         let max_ok = qty_before / MIN_MERGE_QTY;
         let msg = if max_ok > 0 {
-            format!(
-                "Insufficient stock for {count} merge(s). Maximum now: {max_ok}."
-            )
+            format!("Insufficient stock for {count} merge(s). Maximum now: {max_ok}.")
         } else {
             "You need at least 2 identical units in stock.".to_string()
         };

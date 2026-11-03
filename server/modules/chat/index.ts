@@ -27,6 +27,7 @@ export {
   CHAT_RATE_LIMIT_MS,
   buildAmChannel,
   canMutateChatMessage,
+  chatChannelUsesMessageTtl,
   chatMessageCutoffMs,
   chatRoomName,
   chatUserRoom,

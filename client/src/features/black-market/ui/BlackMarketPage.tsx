@@ -94,24 +94,91 @@ function mapInventoryRowToUpgrade(row: InventoryStackableRow): Upgrade {
   };
 }
 
+type ListingCatalogSeed = {
+  itemId?: string;
+  baseCost?: number;
+  itemName?: string;
+  itemImage?: string;
+  itemIcon?: string;
+  itemCategory?: string;
+  itemType?: string;
+  itemBaseProduction?: number;
+  itemPowerConsumption?: number;
+  itemStatus?: string;
+};
+
+const LISTING_CATALOG_FALLBACK_ICON = '📦';
+
+function listingHasCatalogMeta(row: ListingCatalogSeed): boolean {
+  return Boolean(
+    (row.itemName && row.itemName.trim()) ||
+      (row.itemImage && row.itemImage.trim()) ||
+      (row.itemIcon && row.itemIcon.trim())
+  );
+}
+
+function isBareListingCatalogStub(u: Upgrade): boolean {
+  return u.name === u.id && !(u.image && u.image.trim());
+}
+
 /** Fallback quando o anúncio existe no livro mas o item não está no catálogo local (shop∪inventário). */
-function resolveListingCatalogItem(upgrades: Upgrade[], itemId: string): Upgrade {
-  const found = upgrades.find((u) => u.id === itemId);
-  if (found) return found;
+function listingCatalogStub(itemId: string, baseCost = 0, meta?: ListingCatalogSeed): Upgrade {
+  const rawType = meta?.itemType?.trim() ?? '';
+  const t = UPGRADE_TYPES.has(rawType) ? (rawType as Upgrade['type']) : 'machine';
+  const rawStatus = meta?.itemStatus?.trim() ?? '';
+  const status: Upgrade['status'] =
+    rawStatus === 'normal' || rawStatus === 'legacy' || rawStatus === 'exclusive' || rawStatus === 'limited'
+      ? rawStatus
+      : 'normal';
+  const name = meta?.itemName?.trim() || itemId;
+  const icon = meta?.itemIcon?.trim() || LISTING_CATALOG_FALLBACK_ICON;
+  const image = meta?.itemImage?.trim() || undefined;
+  const category = meta?.itemCategory?.trim() || 'unknown';
+  const baseProduction =
+    typeof meta?.itemBaseProduction === 'number' && Number.isFinite(meta.itemBaseProduction)
+      ? meta.itemBaseProduction
+      : 0;
+  const powerConsumption =
+    typeof meta?.itemPowerConsumption === 'number' && Number.isFinite(meta.itemPowerConsumption)
+      ? meta.itemPowerConsumption
+      : undefined;
   return {
     id: itemId,
-    name: itemId,
-    category: 'unknown',
-    type: 'machine',
-    baseCost: 0,
-    baseProduction: 0,
+    name,
+    category,
+    type: t,
+    baseCost,
+    baseProduction,
+    powerConsumption,
     description: '',
-    icon: '📦',
-    status: 'normal',
+    icon,
+    status,
+    image,
     compatibleRacks: [],
     sellInBlackMarket: true,
     isActive: true
   };
+}
+
+function resolveListingCatalogItem(upgrades: Upgrade[], itemId: string): Upgrade {
+  const found = upgrades.find((u) => u.id === itemId);
+  if (found) return found;
+  return listingCatalogStub(itemId);
+}
+
+/** Garante stubs no catálogo local para anúncios/cofre cujo item saiu do stock/loja. */
+function mergeListingIdsIntoCatalog(byId: Map<string, Upgrade>, rows: ListingCatalogSeed[]): void {
+  for (const row of rows) {
+    const itemId = String(row.itemId || '').trim();
+    if (!itemId) continue;
+    const bc = row.baseCost;
+    const baseCost = typeof bc === 'number' && Number.isFinite(bc) && bc > 0 ? bc : 0;
+    const existing = byId.get(itemId);
+    const rich = listingHasCatalogMeta(row);
+    if (existing && !isBareListingCatalogStub(existing)) continue;
+    if (existing && isBareListingCatalogStub(existing) && !rich) continue;
+    byId.set(itemId, listingCatalogStub(itemId, baseCost || existing?.baseCost || 0, row));
+  }
 }
 
 function listingImageSrc(item: Pick<Upgrade, 'image' | 'icon'>): string | undefined {
@@ -314,6 +381,11 @@ export function BlackMarketPage({ user, onUsdcChange }: BlackMarketPageProps) {
     if (pg.ok) {
       setMarketListings(pg.items);
       setListingsTotal(pg.total);
+      setUpgrades((prev) => {
+        const byId = new Map(prev.map((u) => [u.id, u]));
+        mergeListingIdsIntoCatalog(byId, pg.items);
+        return [...byId.values()];
+      });
     }
   }, []);
 
@@ -350,22 +422,13 @@ export function BlackMarketPage({ user, onUsdcChange }: BlackMarketPageProps) {
                 byId.set(row.itemId, { ...existing, baseCost: bc });
               }
             } else {
-              byId.set(row.itemId, {
-                id: row.itemId,
-                name: row.itemId,
-                category: 'unknown',
-                type: 'machine',
-                baseCost: bc,
-                baseProduction: 0,
-                description: '',
-                icon: '📦',
-                status: 'normal',
-                compatibleRacks: [],
-                sellInBlackMarket: true,
-                isActive: true
-              });
+              byId.set(row.itemId, listingCatalogStub(row.itemId, bc));
             }
           }
+          // Anúncios/cofre ativos podem ter itemId fora do shop∪stock (ex. listou o lote inteiro).
+          mergeListingIdsIntoCatalog(byId, st.myActiveListings);
+          mergeListingIdsIntoCatalog(byId, st.custody);
+          mergeListingIdsIntoCatalog(byId, st.listings.items);
           return [...byId.values()];
         });
 
@@ -383,6 +446,11 @@ export function BlackMarketPage({ user, onUsdcChange }: BlackMarketPageProps) {
           if (pg.ok) {
             setMarketListings(pg.items);
             setListingsTotal(pg.total);
+            setUpgrades((prev) => {
+              const byId = new Map(prev.map((u) => [u.id, u]));
+              mergeListingIdsIntoCatalog(byId, pg.items);
+              return [...byId.values()];
+            });
           } else {
             setMarketListings(st.listings.items);
             setListingsTotal(st.listings.total);
@@ -421,6 +489,11 @@ export function BlackMarketPage({ user, onUsdcChange }: BlackMarketPageProps) {
         if (pg.ok) {
           setMarketListings(pg.items);
           setListingsTotal(pg.total);
+          setUpgrades((prev) => {
+            const byId = new Map(prev.map((u) => [u.id, u]));
+            mergeListingIdsIntoCatalog(byId, pg.items);
+            return [...byId.values()];
+          });
         }
       })();
     }, 400);
@@ -1009,8 +1082,7 @@ export function BlackMarketPage({ user, onUsdcChange }: BlackMarketPageProps) {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
               {custodyListings.map(l => {
-                const item = upgrades.find(u => u.id === l.itemId);
-                if (!item) return null;
+                const item = resolveListingCatalogItem(upgrades, l.itemId);
                 const isThisClaiming = claimingId === l.id;
                 return (
                   <div key={l.id} className="bg-slate-950/80 border border-slate-800/80 hover:border-amber-700/50 rounded-xl p-4 flex items-center gap-4 transition-colors shadow-sm">
@@ -1259,8 +1331,7 @@ export function BlackMarketPage({ user, onUsdcChange }: BlackMarketPageProps) {
             ) : (
               <div className="custom-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                 {sellRows.map(listing => {
-                  const item = upgrades.find(u => u.id === listing.itemId);
-                  if (!item) return null;
+                  const item = resolveListingCatalogItem(upgrades, listing.itemId);
 
                   return (
                     <div key={listing.id} className="flex items-center justify-between gap-2 rounded border border-slate-800 bg-slate-950 p-2.5">
@@ -1309,7 +1380,7 @@ export function BlackMarketPage({ user, onUsdcChange }: BlackMarketPageProps) {
             <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 w-full max-w-md shadow-2xl">
               <h3 className="text-red-500 font-bold text-sm mb-3">{t('blackMarket.closeDeal')}</h3>
               {(() => {
-                const item = upgrades.find(u => u.id === confirmListing.itemId);
+                const item = resolveListingCatalogItem(upgrades, confirmListing.itemId);
                 const maxQ = Math.max(1, parseInt(String(confirmListing.qty ?? 1), 10) || 1);
                 const parsed = parseInt(String(buyQtyDraft ?? '').trim(), 10);
                 const buyQ = Number.isFinite(parsed) && parsed >= 1 ? Math.min(maxQ, parsed) : 1;

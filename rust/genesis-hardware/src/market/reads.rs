@@ -28,7 +28,15 @@ const P2P_LISTING_SELECT_SQL: &str = "l.id,
   l.is_player,
   l.buyer_paid_usdc,
   COALESCE(NULLIF(TRIM(usr.username), ''), usr.email::text, '') AS seller_display_name,
-  ru.username AS reserver_username";
+  ru.username AS reserver_username,
+  NULLIF(TRIM(u.name), '') AS item_name,
+  NULLIF(TRIM(u.image), '') AS item_image,
+  NULLIF(TRIM(u.icon), '') AS item_icon,
+  NULLIF(TRIM(u.category), '') AS item_category,
+  NULLIF(TRIM(u.type), '') AS item_type,
+  u.base_production AS item_base_production,
+  u.power_consumption AS item_power_consumption,
+  NULLIF(TRIM(u.status), '') AS item_status";
 
 const COUNT_LISTINGS_PREFIX: &str = "SELECT COUNT(*)::bigint AS c
     FROM player_listings l
@@ -56,10 +64,19 @@ const MY_LISTINGS_SQL: &str = "SELECT l.id,
   l.is_player,
   l.buyer_paid_usdc,
   COALESCE(NULLIF(TRIM(usr.username), ''), usr.email::text, '') AS seller_display_name,
-  ru.username AS reserver_username
+  ru.username AS reserver_username,
+  NULLIF(TRIM(u.name), '') AS item_name,
+  NULLIF(TRIM(u.image), '') AS item_image,
+  NULLIF(TRIM(u.icon), '') AS item_icon,
+  NULLIF(TRIM(u.category), '') AS item_category,
+  NULLIF(TRIM(u.type), '') AS item_type,
+  u.base_production AS item_base_production,
+  u.power_consumption AS item_power_consumption,
+  NULLIF(TRIM(u.status), '') AS item_status
     FROM player_listings l
     JOIN users usr ON l.user_id = usr.id
     LEFT JOIN users ru ON ru.id = l.reserved_by
+    LEFT JOIN upgrades u ON u.id = l.item_id
     WHERE l.user_id = $1 AND l.status = 'active' AND l.expires_at > $2
     ORDER BY l.expires_at ASC";
 
@@ -75,10 +92,19 @@ const CUSTODY_SQL: &str = "SELECT l.id,
   l.is_player,
   l.buyer_paid_usdc,
   COALESCE(NULLIF(TRIM(usr.username), ''), usr.email::text, '') AS seller_display_name,
-  ru.username AS reserver_username
+  ru.username AS reserver_username,
+  NULLIF(TRIM(u.name), '') AS item_name,
+  NULLIF(TRIM(u.image), '') AS item_image,
+  NULLIF(TRIM(u.icon), '') AS item_icon,
+  NULLIF(TRIM(u.category), '') AS item_category,
+  NULLIF(TRIM(u.type), '') AS item_type,
+  u.base_production AS item_base_production,
+  u.power_consumption AS item_power_consumption,
+  NULLIF(TRIM(u.status), '') AS item_status
     FROM player_listings l
     JOIN users usr ON l.user_id = usr.id
     LEFT JOIN users ru ON ru.id = l.reserved_by
+    LEFT JOIN upgrades u ON u.id = l.item_id
     WHERE l.status = 'awaiting_pickup' AND l.reserved_by = $1";
 
 const SELLABLE_SQL: &str =
@@ -134,6 +160,22 @@ pub struct ListingClientDto {
     pub reserved_until: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub buyer_paid_usdc: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_icon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_category: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_base_production: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_power_consumption: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -214,6 +256,20 @@ pub struct ListingsQuery {
     pub offset: Option<i64>,
 }
 
+fn opt_trimmed_col(row: &tokio_postgres::Row, col: &str) -> Option<String> {
+    let from_opt: Option<String> = row.try_get(col).ok().flatten();
+    let raw = from_opt.or_else(|| row.try_get::<_, String>(col).ok());
+    raw.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+fn opt_finite_f64_col(row: &tokio_postgres::Row, col: &str) -> Option<f64> {
+    row.try_get::<_, Option<f64>>(col)
+        .ok()
+        .flatten()
+        .or_else(|| row.try_get::<_, f64>(col).ok())
+        .filter(|v| v.is_finite())
+}
+
 fn map_listing_row(row: &tokio_postgres::Row, now_ms: i64, include_paid: bool) -> ListingClientDto {
     let seller_id: i32 = row.get("seller_id");
     let seller_name: String = row
@@ -257,6 +313,14 @@ fn map_listing_row(row: &tokio_postgres::Row, now_ms: i64, include_paid: bool) -
         reserved_by,
         reserved_until: reserved_until_out,
         buyer_paid_usdc: buyer_paid,
+        item_name: opt_trimmed_col(row, "item_name"),
+        item_image: opt_trimmed_col(row, "item_image"),
+        item_icon: opt_trimmed_col(row, "item_icon"),
+        item_category: opt_trimmed_col(row, "item_category"),
+        item_type: opt_trimmed_col(row, "item_type"),
+        item_base_production: opt_finite_f64_col(row, "item_base_production"),
+        item_power_consumption: opt_finite_f64_col(row, "item_power_consumption"),
+        item_status: opt_trimmed_col(row, "item_status"),
     }
 }
 
@@ -766,6 +830,10 @@ mod tests {
         assert!(P2P_LISTING_SELECT_SQL.contains("seller_display_name"));
         assert!(P2P_LISTING_SELECT_SQL.contains("reserver_username"));
         assert!(P2P_LISTING_SELECT_SQL.contains("seller_id"));
+        assert!(P2P_LISTING_SELECT_SQL.contains("item_name"));
+        assert!(P2P_LISTING_SELECT_SQL.contains("item_image"));
+        assert!(MY_LISTINGS_SQL.contains("LEFT JOIN upgrades u"));
+        assert!(CUSTODY_SQL.contains("LEFT JOIN upgrades u"));
         assert!(!P2P_LISTING_SELECT_SQL.contains("gen_random_uuid"));
         assert!(SELLABLE_SQL.contains("sell_in_black_market"));
         assert!(HIST_PURCH_SQL.contains("counterpart_display"));

@@ -48,6 +48,7 @@ describe('pathRouting — URL → página', () => {
     expect(gameViewFromPath('/BLACK_MARKET/')).toBe('black_market');
     expect(gameViewFromPath('/servers')).toBe('servers');
     expect(gameViewFromPath('/docs')).toBeNull();
+    expect(gameViewFromPath('/topidle')).toBe('topidle');
   });
 
   it('resolve páginas públicas', () => {
@@ -180,6 +181,10 @@ describe('pathRouting — auth / admin guards (SessionBoot)', () => {
 
   it('player deep link /inventory → game sem rewrite', () => {
     expect(resolveSessionBoot('/inventory', { isAdmin: false })).toEqual({ action: 'game' });
+  });
+
+  it('player em /topidle (liberado) → game sem rewrite', () => {
+    expect(resolveSessionBoot('/topidle', { isAdmin: false })).toEqual({ action: 'game' });
   });
 
   it('partner game player deep link → game', () => {

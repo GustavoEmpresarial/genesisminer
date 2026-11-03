@@ -385,6 +385,9 @@ mod tests {
         assert_eq!(string_field_or_empty(&body, "name"), "Gold");
         assert_eq!(f64_field_or(&body, "sender_reward_usdc", 0.0), 1.5);
         assert!(opt_string_field(&body, "sender_loot_box_id").is_none());
-        assert_eq!(opt_f64_field(&body, "deposit_commission_percent"), Some(2.0));
+        assert_eq!(
+            opt_f64_field(&body, "deposit_commission_percent"),
+            Some(2.0)
+        );
     }
 }

@@ -40,6 +40,8 @@ describe('isForbiddenMergeRootId / isMergeForbiddenCatalog', () => {
   it('bloqueia os roots proibidos directos', () => {
     expect(isForbiddenMergeRootId('armario_1')).toBe(true);
     expect(isForbiddenMergeRootId('battery_nebula')).toBe(true);
+    expect(isForbiddenMergeRootId('gpu_quantum_v2')).toBe(true);
+    expect(isForbiddenMergeRootId('merge_gpu_quantum_v2_uncommon_x')).toBe(true);
     expect(isForbiddenMergeRootId('gpu_normal')).toBe(false);
   });
 

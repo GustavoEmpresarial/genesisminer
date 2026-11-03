@@ -10,8 +10,8 @@ use crate::redis_lock::RedisLockClient;
 
 /// Node `CHAT_RATE_LIMIT_MS`.
 const CHAT_RATE_LIMIT_MS: u64 = 1200;
-/// Node `CHAT_MESSAGE_TTL_MS` — presence SET refresh so crash leftovers expire.
-const CHAT_MESSAGE_TTL_MS: u64 = 3_600_000;
+/// Presence SET Redis TTL — curto de propósito (crash leftovers); ≠ retenção de mensagens.
+const CHAT_PRESENCE_KEY_TTL_MS: u64 = genesis_core::time::MS_PER_HOUR;
 /// Node `HTTP_BAD_REQUEST`.
 const HTTP_BAD_REQUEST: u16 = 400;
 /// Node `HTTP_SERVICE_UNAVAILABLE` style — Redis unset is fail-closed.
@@ -20,7 +20,7 @@ const HTTP_UNAVAILABLE: u16 = 503;
 const HTTP_INTERNAL: u16 = 500;
 
 const _: () = assert!(CHAT_RATE_LIMIT_MS == 1200);
-const _: () = assert!(CHAT_MESSAGE_TTL_MS == 3_600_000);
+const _: () = assert!(CHAT_PRESENCE_KEY_TTL_MS == 3_600_000);
 
 pub const CHAT_RATE_LIMIT_PATH: &str = "/v1/chat/rate-limit";
 pub const CHAT_PRESENCE_PATH: &str = "/v1/chat/presence";
@@ -189,7 +189,7 @@ pub async fn run_chat_presence(
                 .await
                 .map_err(|e| ChatPresenceError::internal(e.to_string()))?;
             locks
-                .expire_ms(&key, CHAT_MESSAGE_TTL_MS)
+                .expire_ms(&key, CHAT_PRESENCE_KEY_TTL_MS)
                 .await
                 .map_err(|e| ChatPresenceError::internal(e.to_string()))?;
         }

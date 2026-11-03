@@ -2,6 +2,7 @@
  * Chrome admin pós-login: top nav (sem strip de jogo) + AdminPanel.
  * Layout: viewport fixo — sidebar não scrolla com o corpo (só a coluna direita).
  */
+import { useEffect } from 'react';
 import { BookOpen, LogOut, Play } from 'lucide-react';
 import type { User } from '../../../shared/types/auth';
 import {
@@ -21,11 +22,29 @@ type AdminShellProps = {
 export function AdminShell({ user, onLogout, onOpenGame, onDocs }: AdminShellProps) {
   const t = useT();
 
+  // Jogo/landing podem deixar window.scrollY > 0; com shell h-[100dvh] isso
+  // revela o canvas preto do browser em baixo (faixa preta no /admin/support).
+  useEffect(() => {
+    const html = document.documentElement;
+    const { body } = document;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    window.scrollTo(0, 0);
+    html.scrollTop = 0;
+    body.scrollTop = 0;
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
+
   return (
-    <div className="flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-slate-50 font-sans text-slate-800 transition-colors duration-300 dark:bg-[#0f0c08] dark:text-slate-200">
+    <div className="flex h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-slate-50 font-sans text-slate-800 transition-colors duration-300 dark:bg-slate-900 dark:text-slate-200">
       <a
         href="#main-content"
-        className="fixed left-4 top-0 z-[9999] -translate-y-full rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-stone-950 shadow-lg outline-none ring-2 ring-amber-200 transition focus:translate-y-4 focus:ring-offset-2 focus:ring-offset-[#0f0c08]"
+        className="fixed left-4 top-0 z-[9999] -translate-y-full rounded-lg bg-amber-500 px-4 py-2 text-sm font-bold text-stone-950 shadow-lg outline-none ring-2 ring-amber-200 transition focus:translate-y-4 focus:ring-offset-2 focus:ring-offset-slate-900"
       >
         {t('shell.skipToMain')}
       </a>

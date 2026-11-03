@@ -278,7 +278,8 @@ fn map_shop_product(r: &tokio_postgres::Row, compatible_racks: Vec<String>) -> V
         "status": string_cell(r, "status"),
         "isNft": i32_cell(r, "is_nft") != 0,
         "maxGlobalStock": opt_i32_cell(r, "max_global_stock"),
-        "totalSold": f64_cell(r, "total_sold"),
+        // PG Int — must use i32_cell (f64_cell always returns 0 for integer cols).
+        "totalSold": i32_cell(r, "total_sold"),
         "image": image,
         "compatibleRacks": compatible_racks,
         "rewardWh": opt_i32_cell(r, "reward_wh").unwrap_or(0),

@@ -53,7 +53,11 @@ pub async fn run_backup_sql_loop(pool: Pool, locks: RedisLockClient, cfg: Worker
     loop {
         let delay =
             ms_until_next_local_clock_run(cfg.backup_auto_local_hour, cfg.backup_auto_local_minute);
-        info!(event = "scheduled", delay_ms = delay, "auto backup next run");
+        info!(
+            event = "scheduled",
+            delay_ms = delay,
+            "auto backup next run"
+        );
         tokio::time::sleep(Duration::from_millis(delay)).await;
         run_one_tick(&pool, &locks, &cfg).await;
     }
@@ -120,7 +124,10 @@ async fn run_one_tick(pool: &Pool, locks: &RedisLockClient, cfg: &WorkerConfig) 
                     }
                 }
             }
-            Ok(None) => info!(event = "skipped_advisory", "backup skipped (pg advisory held)"),
+            Ok(None) => info!(
+                event = "skipped_advisory",
+                "backup skipped (pg advisory held)"
+            ),
             Err(e) => warn!(err = %e, "auto backup failed"),
         }
     };
@@ -153,8 +160,8 @@ async fn run_backup_with_advisory(
     }
 
     let result = async {
-        let a =
-            create_verified_backup(&cfg.backup_dir, &cfg.database_url, AUTO_SQL_BACKUP_PREFIX).await?;
+        let a = create_verified_backup(&cfg.backup_dir, &cfg.database_url, AUTO_SQL_BACKUP_PREFIX)
+            .await?;
         if let Err(e) = prune_profile_audit_logs(&client).await {
             warn!(err = %e, "prune profile_audit_log failed");
         }
@@ -208,7 +215,10 @@ pub fn prune_auto_backups_by_age(backup_dir: &Path, retention_days: u32, count_c
     archives.sort_by(|a, b| b.1.cmp(&a.1));
 
     for (i, (path, mtime)) in archives.iter().enumerate() {
-        let too_old = now.duration_since(*mtime).map(|d| d > max_age).unwrap_or(false);
+        let too_old = now
+            .duration_since(*mtime)
+            .map(|d| d > max_age)
+            .unwrap_or(false);
         let over_cap = i >= cap;
         if i == 0 || (!too_old && !over_cap) {
             continue; // always keep the newest; keep the rest within age + cap
@@ -261,11 +271,18 @@ fn remove_with_sidecar(archive: &Path) {
 async fn prune_profile_audit_logs(client: &deadpool_postgres::Object) -> Result<u64, String> {
     let cutoff = now_ms() - PROFILE_AUDIT_RETENTION_DAYS * (MS_PER_DAY as i64);
     let n = client
-        .execute("DELETE FROM profile_audit_log WHERE created_at < $1", &[&cutoff])
+        .execute(
+            "DELETE FROM profile_audit_log WHERE created_at < $1",
+            &[&cutoff],
+        )
         .await
         .map_err(|e| format!("prune profile_audit_log: {e}"))?;
     if n > 0 {
-        info!(event = "audit_pruned", pruned = n, "profile_audit_log pruned");
+        info!(
+            event = "audit_pruned",
+            pruned = n,
+            "profile_audit_log pruned"
+        );
     }
     Ok(n)
 }

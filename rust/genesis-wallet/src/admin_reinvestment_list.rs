@@ -44,10 +44,7 @@ pub async fn run_admin_reinvestment_list(
 ) -> Result<Value, WalletError> {
     let client = pool.get().await.map_err(WalletError::transport)?;
 
-    let from_ms = parse_bound_ms(
-        req.from_ms.as_deref(),
-        REINVESTMENT_HISTORY_SINCE_MS,
-    );
+    let from_ms = parse_bound_ms(req.from_ms.as_deref(), REINVESTMENT_HISTORY_SINCE_MS);
     // Open upper bound when unset — all ledger timestamps fit below this.
     const TO_MS_OPEN: i64 = i64::MAX;
     let to_ms = parse_bound_ms(req.to_ms.as_deref(), TO_MS_OPEN);

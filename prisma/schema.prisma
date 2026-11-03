@@ -37,6 +37,7 @@ model users {
   is_super_admin     Int     @default(0)
   polygon_wallet     String?
   is_blocked         Int?    @default(0)
+  block_message      String?
   access_level_id    String?
   referral_code      String?
   referred_by        String?
@@ -1757,4 +1758,16 @@ model user_quest_progress {
   @@id([user_id, quest_id, period_key])
   @@index([user_id, period_key], map: "user_quest_progress_user_period_idx")
   @@map("user_quest_progress")
+}
+
+/** Votos TopIdle já pagos (`eventId`) — idempotência do webhook + `nextVoteAt`. */
+model topidle_vote_events {
+  event_id     String    @id
+  user_id      Int
+  voted_at     DateTime? @db.Timestamptz(6)
+  next_vote_at DateTime? @db.Timestamptz(6)
+  created_at   BigInt
+
+  @@index([user_id, created_at(sort: Desc)])
+  @@map("topidle_vote_events")
 }

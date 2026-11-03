@@ -396,7 +396,7 @@ export const AdminLootBoxes: React.FC<AdminLootBoxesProps> = ({ lootBoxes, onUpd
                         onClick={() => setActiveTab(trigger)}
                         className={`px-3 py-2 text-sm font-bold uppercase rounded flex-shrink-0 whitespace-nowrap ${activeTab === trigger ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
                     >
-                        {trigger === 'shop' ? 'Loja' : trigger === 'registration' ? 'Cadastro' : trigger === 'upgrade' ? 'Upgrade' : trigger === 'promo_code' ? 'Promo Code' : trigger === 'roleta_code' ? 'Roleta' : trigger === 'shop_once' ? 'Loja 1x' : trigger === 'special' ? 'Especial' : trigger === 'referral_sender' ? 'Indicou' : trigger === 'referral_receiver' ? 'Indicado' : trigger.startsWith('season:') ? `Temp: ${trigger.split(':')[1]}` : trigger}
+                        {trigger === 'shop' ? 'Loja' : trigger === 'registration' ? 'Cadastro' : trigger === 'upgrade' ? 'Upgrade' : trigger === 'promo_code' ? 'Promo Code' : trigger === 'roleta_code' ? 'Roleta' : trigger === 'shop_once' ? 'Loja 1x' : trigger === 'special' ? 'Especial' : trigger === 'referral_sender' ? 'Indicou' : trigger === 'referral_receiver' ? 'Indicado' : trigger === 'topidle_vote' ? 'TopIdle' : trigger.startsWith('season:') ? `Temp: ${trigger.split(':')[1]}` : trigger}
                     </button>
                 ))}
             </div>
@@ -404,9 +404,14 @@ export const AdminLootBoxes: React.FC<AdminLootBoxesProps> = ({ lootBoxes, onUpd
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* LIST */}
                 <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 h-[70vh] flex flex-col">
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="font-bold text-white">Caixas Configuradas</h3>
-                        <button onClick={handleNewBox} className="bg-green-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1"><PlusCircle size={12} /> NOVA</button>
+                    <div className="flex justify-between items-center mb-4 gap-2">
+                        <h3 className="font-bold text-white shrink-0">Caixas Configuradas</h3>
+                        <div className="flex items-center gap-2 shrink-0">
+                            {editBoxMode ? (
+                                <button type="button" onClick={handleSaveBox} className="bg-green-600 hover:bg-green-500 text-white text-xs px-2 py-1 rounded font-bold">SALVAR CAIXA</button>
+                            ) : null}
+                            <button onClick={handleNewBox} className="bg-green-600 text-white text-xs px-2 py-1 rounded flex items-center gap-1"><PlusCircle size={12} /> NOVA</button>
+                        </div>
                     </div>
 
                     <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
@@ -454,15 +459,38 @@ export const AdminLootBoxes: React.FC<AdminLootBoxesProps> = ({ lootBoxes, onUpd
                 </div>
 
                 {/* EDITOR */}
-                <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-6 h-[70vh] overflow-y-auto custom-scrollbar">
+                <div className="lg:col-span-2 bg-slate-800 border border-slate-700 rounded-xl p-6 h-[70vh] flex flex-col min-h-0">
                     {editBoxMode ? (
-                        <div className="space-y-6">
-                            <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-4">
-                                <h3 className="text-xl font-bold text-white">
-                                    {boxForm.id ? `Editando: ${boxForm.name}` : 'Nova Caixa Surpresa'}
-                                </h3>
-                                <button onClick={() => setEditBoxMode(false)} className="text-slate-500 hover:text-white"><X size={20} /></button>
+                        <>
+                            <div className="flex-shrink-0 space-y-3 border-b border-slate-700 pb-3 mb-4">
+                                <div className="flex justify-between items-center gap-3">
+                                    <h3 className="text-xl font-bold text-white min-w-0 truncate">
+                                        {boxForm.id ? `Editando: ${boxForm.name}` : 'Nova Caixa Surpresa'}
+                                    </h3>
+                                    <button type="button" onClick={() => setEditBoxMode(false)} className="text-slate-500 hover:text-white shrink-0"><X size={20} /></button>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex gap-4">
+                                        <button type="button" onClick={() => setEditBoxMode(false)} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded font-bold">CANCELAR</button>
+                                        <button type="button" onClick={handleSaveBox} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold flex-1">SALVAR CAIXA</button>
+                                        {boxForm.id ? (
+                                            <button type="button" onClick={() => handleDeleteBox(boxForm.id!)} className="bg-red-900/50 hover:bg-red-800 text-red-400 border border-red-800 px-4 py-2 rounded shrink-0" title="Apagar na base de dados">
+                                                <Trash2 size={16} />
+                                            </button>
+                                        ) : null}
+                                    </div>
+                                    {boxForm.id ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDeleteBoxIfBroken(boxForm.id!)}
+                                            className="self-end text-[10px] uppercase tracking-wide text-amber-600 hover:text-amber-400 border border-amber-900/40 rounded px-2 py-1"
+                                        >
+                                            Apagar só se inválida (sem itens / prob. 0)
+                                        </button>
+                                    ) : null}
+                                </div>
                             </div>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar space-y-6 min-h-0">
 
                             {/* BASIC INFO */}
                             <div className="grid grid-cols-2 gap-4">
@@ -537,6 +565,7 @@ export const AdminLootBoxes: React.FC<AdminLootBoxesProps> = ({ lootBoxes, onUpd
                                         <option value="shop">Loja (Comprar)</option>
                                         <option value="shop_once">Loja (Resgate Único)</option>
                                         <option value="registration">Cadastro (Grátis)</option>
+                                        <option value="topidle_vote">TopIdle (voto)</option>
                                         <option value="upgrade">Upgrade (Bônus)</option>
                                         <option value="special">Evento Especial (aparece na loja Caixas da Sorte)</option>
                                         <option value="referral_sender">Referência (Quem Indicou)</option>
@@ -881,28 +910,11 @@ export const AdminLootBoxes: React.FC<AdminLootBoxesProps> = ({ lootBoxes, onUpd
                                 </div>
                             )}
 
-                            <div className="flex flex-col gap-2 pt-4">
-                                <div className="flex gap-4">
-                                    <button onClick={() => setEditBoxMode(false)} className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded font-bold">CANCELAR</button>
-                                    <button onClick={handleSaveBox} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold flex-1">SALVAR CAIXA</button>
-                                    {boxForm.id && (
-                                        <button type="button" onClick={() => handleDeleteBox(boxForm.id!)} className="bg-red-900/50 hover:bg-red-800 text-red-400 border border-red-800 px-4 py-2 rounded shrink-0" title="Apagar na base de dados">
-                                            <Trash2 size={16} />
-                                        </button>
-                                    )}
-                                </div>
-                                {boxForm.id && (
-                                    <button
-                                        type="button"
-                                        onClick={() => handleDeleteBoxIfBroken(boxForm.id!)}
-                                        className="self-end text-[10px] uppercase tracking-wide text-amber-600 hover:text-amber-400 border border-amber-900/40 rounded px-2 py-1"
-                                    >
-                                        Apagar só se inválida (sem itens / prob. 0)
-                                    </button>
-                                )}
                             </div>
-                        </div>
-                    ) : editBundleMode && selectedBundle ? (
+                        </>
+                    ) : (
+                        <div className="flex-1 overflow-y-auto custom-scrollbar min-h-0">
+                    {editBundleMode && selectedBundle ? (
                         <div className="space-y-6 animate-in fade-in slide-in-from-top-4">
                             <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-4">
                                 <h3 className="text-xl font-bold text-amber-500 flex items-center gap-2">
@@ -1036,6 +1048,8 @@ export const AdminLootBoxes: React.FC<AdminLootBoxesProps> = ({ lootBoxes, onUpd
                         <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-4">
                             <Gift size={64} className="opacity-20" />
                             <p>Selecione uma caixa para editar ou um pacote para gerar códigos.</p>
+                        </div>
+                    )}
                         </div>
                     )}
                 </div>

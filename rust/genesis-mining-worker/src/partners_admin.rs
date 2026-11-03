@@ -48,7 +48,7 @@ const DAY_MS: i64 = 86_400_000;
 const PARTNER_VIDEO_WINDOW_MS: i64 = REQUIRED_INTERVAL_DAYS * DAY_MS;
 const YEAR_365D_MS: i64 = 365 * DAY_MS;
 
-/// Streamer room (levels tester/creator) — `STREAMER_ROOM_ID_CONST` in Node.
+/// Streamer room (level `creator` / STREAMER) — `STREAMER_ROOM_ID_CONST` in Node.
 const STREAMER_ROOM_ID: &str = "room_1766898636697";
 /// Slots granted on the auto NFT room when approving a partner application.
 const PARTNER_NFT_ROOM_UNLOCKED_SLOTS: i32 = 4;
@@ -257,7 +257,7 @@ pub async fn run_admin_application_approve(
 
     tx.execute(
         "INSERT INTO user_access_levels (user_id, access_level_id, granted_at)
-         VALUES ($1, 'partners', $2)
+         VALUES ($1, 'creator', $2)
          ON CONFLICT (user_id, access_level_id) DO NOTHING",
         &[&target_uid, &now],
     )
@@ -300,7 +300,10 @@ pub async fn run_admin_application_approve(
     .await?;
 
     tx.commit().await?;
-    Ok((HTTP_OK, json!({ "ok": true, "userId": i64::from(target_uid) })))
+    Ok((
+        HTTP_OK,
+        json!({ "ok": true, "userId": i64::from(target_uid) }),
+    ))
 }
 
 pub async fn run_admin_application_reject(
@@ -314,7 +317,12 @@ pub async fn run_admin_application_reject(
     let admin_id = pg_user_id(req.admin_user_id)?;
     let reason: Option<String> = req
         .reason
-        .map(|r| r.trim().chars().take(REJECT_REASON_MAX_LENGTH).collect::<String>())
+        .map(|r| {
+            r.trim()
+                .chars()
+                .take(REJECT_REASON_MAX_LENGTH)
+                .collect::<String>()
+        })
         .filter(|r| !r.is_empty());
     let now = now_ms();
     let conn = pool.get().await?;
@@ -386,9 +394,7 @@ pub async fn run_admin_submissions_list(
         .await?
     } else {
         conn.query(
-            &format!(
-                "{SUBMISSION_SELECT} WHERE s.status = $1 ORDER BY s.created_at DESC LIMIT $2"
-            ),
+            &format!("{SUBMISSION_SELECT} WHERE s.status = $1 ORDER BY s.created_at DESC LIMIT $2"),
             &[&status, &ADMIN_SUBMISSIONS_LIST_LIMIT],
         )
         .await?
@@ -408,7 +414,12 @@ pub async fn run_admin_submission_reject(
     let admin_id = pg_user_id(req.admin_user_id)?;
     let reason: Option<String> = req
         .reason
-        .map(|r| r.trim().chars().take(REJECT_REASON_MAX_LENGTH).collect::<String>())
+        .map(|r| {
+            r.trim()
+                .chars()
+                .take(REJECT_REASON_MAX_LENGTH)
+                .collect::<String>()
+        })
         .filter(|r| !r.is_empty());
     let now = now_ms();
     let conn = pool.get().await?;
@@ -421,7 +432,10 @@ pub async fn run_admin_submission_reject(
         )
         .await?;
     if n == 0 {
-        return Err(err(HTTP_NOT_FOUND, "Envio não encontrado ou já processado."));
+        return Err(err(
+            HTTP_NOT_FOUND,
+            "Envio não encontrado ou já processado.",
+        ));
     }
     Ok((HTTP_OK, json!({ "ok": true })))
 }
@@ -696,7 +710,10 @@ pub async fn run_admin_streamer_room_users(pool: &Pool) -> Result<(u16, Value), 
     let overdue_threshold = now_ms() - STREAMER_OVERDUE_DAYS * DAY_MS;
     let conn = pool.get().await?;
     let rows = conn
-        .query(STREAMER_ROOM_USERS_SQL, &[&overdue_threshold, &STREAMER_ROOM_ID])
+        .query(
+            STREAMER_ROOM_USERS_SQL,
+            &[&overdue_threshold, &STREAMER_ROOM_ID],
+        )
         .await?;
     let users: Vec<Value> = rows
         .iter()
@@ -862,11 +879,17 @@ pub async fn run_admin_partners_list(pool: &Pool) -> Result<(u16, Value), Partne
     let cutoff_365d = now_ms() - YEAR_365D_MS;
 
     let base_rows = conn.query(PARTNERS_BASE_SQL, &[&cutoff_365d]).await?;
-    let base_ids: Vec<i32> = base_rows.iter().map(|r| r.get::<_, i32>("user_id")).collect();
+    let base_ids: Vec<i32> = base_rows
+        .iter()
+        .map(|r| r.get::<_, i32>("user_id"))
+        .collect();
 
     let room_ids = vec![STREAMER_ROOM_ID.to_string()];
     let nft_rows = conn.query(PARTNERS_NFT_ROOM_IDS_SQL, &[&room_ids]).await?;
-    let nft_ids: Vec<i32> = nft_rows.iter().map(|r| r.get::<_, i32>("user_id")).collect();
+    let nft_ids: Vec<i32> = nft_rows
+        .iter()
+        .map(|r| r.get::<_, i32>("user_id"))
+        .collect();
 
     let missing_ids: Vec<i32> = nft_ids
         .iter()
@@ -908,7 +931,9 @@ mod tests {
         assert!(is_valid_submission_id("abc-123_XYZ"));
         assert!(!is_valid_submission_id(""));
         assert!(!is_valid_submission_id("bad id"));
-        assert!(!is_valid_submission_id(&"x".repeat(SUBMISSION_ID_MAX_LENGTH + 1)));
+        assert!(!is_valid_submission_id(
+            &"x".repeat(SUBMISSION_ID_MAX_LENGTH + 1)
+        ));
     }
 
     #[test]

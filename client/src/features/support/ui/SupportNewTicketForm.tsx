@@ -86,7 +86,7 @@ export function SupportNewTicketForm({
             type="file"
             accept={SUPPORT_FILE_ACCEPT}
             multiple
-            className="hidden"
+            className="sr-only"
             onChange={onPickFiles}
             disabled={files.length >= SUPPORT_ATTACHMENT_MAX_COUNT}
           />

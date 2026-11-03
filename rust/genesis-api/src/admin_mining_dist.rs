@@ -156,7 +156,9 @@ fn missing_range() -> Response {
 }
 
 async fn gate(state: &AppState, headers: &HeaderMap, method: &Method) -> Result<(), Response> {
-    require_admin(state, headers, method, P_OVERVIEW).await.map(|_| ())
+    require_admin(state, headers, method, P_OVERVIEW)
+        .await
+        .map(|_| ())
 }
 
 async fn overview(
@@ -252,8 +254,13 @@ async fn credits_csv(
     let Some((from, to)) = q.range() else {
         return missing_range();
     };
-    let w = match post_mining(&state.cfg, &state.http, W_CREDITS_CSV, &credits_payload(&q, from, to))
-        .await
+    let w = match post_mining(
+        &state.cfg,
+        &state.http,
+        W_CREDITS_CSV,
+        &credits_payload(&q, from, to),
+    )
+    .await
     {
         Ok(w) => w,
         Err(e) => return json_status(worker_infra_status(&e), worker_unavailable_body(&e)),
@@ -268,7 +275,11 @@ async fn credits_csv(
         .unwrap_or("")
         .to_string();
     if w.body.get("truncated").and_then(Value::as_bool) == Some(true) {
-        let n = w.body.get("rowsWritten").and_then(Value::as_i64).unwrap_or(0);
+        let n = w
+            .body
+            .get("rowsWritten")
+            .and_then(Value::as_i64)
+            .unwrap_or(0);
         csv.push_str(&format!("# AVISO: exportação limitada a {n} linhas.\n"));
     }
     HttpResponse::builder()
@@ -345,7 +356,10 @@ mod tests {
         assert_eq!(parse_date_ms(Some("1970-01-02")), Some(MS_PER_DAY));
         // 2024-02-29 is a valid leap day → 19782 days after epoch.
         assert_eq!(parse_date_ms(Some("2024-02-29")), Some(19_782 * MS_PER_DAY));
-        assert_eq!(parse_date_ms(Some("1717200000000")), Some(1_717_200_000_000));
+        assert_eq!(
+            parse_date_ms(Some("1717200000000")),
+            Some(1_717_200_000_000)
+        );
         assert_eq!(parse_date_ms(Some("  ")), None);
         assert_eq!(parse_date_ms(Some("nope")), None);
         // a `to` given as YYYY-MM-DD snaps to 23:59:59.999

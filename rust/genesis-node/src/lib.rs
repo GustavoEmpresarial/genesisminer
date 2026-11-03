@@ -1,15 +1,16 @@
 //! Napi-rs bindings: merge (phase 1) + auth (login / signup domain).
 
 use genesis_core::{
-    assert_public_signup_email_allowed, build_game_nav_items,
+    aggregate_header_hash, assert_public_signup_email_allowed, build_game_nav_items,
     build_signed_email_verification_token, build_signed_password_reset_token,
-    compute_merge_result_stats, compute_transparency_health,
+    catalog_assert_canonical_ids_immutable, catalog_is_protected_upgrade_row,
+    catalog_parse_upgrade_write_rows, compute_merge_result_stats, compute_transparency_health,
     generate_referral_code, get_email_verification_flags, has_checked_in_current_period,
-    hash_token_sha256, is_within_active_checkin_window, lockout_status,
-    lucky_boxes_roll_grant_all, lucky_boxes_roll_independent,
-    market_band_reference_usd as core_market_band_reference_usd, market_clamp_limit,
-    market_clamp_offset, market_clamp_tax_percent as core_market_clamp_tax_percent,
-    market_compute_reserved_until, market_is_reservation_active, merge_source_catalogs_equivalent,
+    hash_token_sha256, is_within_active_checkin_window, lockout_status, lucky_boxes_roll_grant_all,
+    lucky_boxes_roll_independent, market_band_reference_usd as core_market_band_reference_usd,
+    market_clamp_limit, market_clamp_offset,
+    market_clamp_tax_percent as core_market_clamp_tax_percent, market_compute_reserved_until,
+    market_is_reservation_active, merge_source_catalogs_equivalent,
     mining_assert_tick_history_matches_economy, mining_build_block_history_rows,
     mining_build_yield_history_rows, mining_calculate_integrated_yield,
     mining_consolidate_block_history_rows,
@@ -20,18 +21,16 @@ use genesis_core::{
     mining_network_hashrate_from_yield_per_hash,
     mining_utc_midnight_ms as core_mining_utc_midnight_ms, normalize_merge_rarity,
     parse_desk_liquidation_percentage_points, parse_signed_email_verification_token,
-    parse_signed_password_reset_token, sanitize_device_fingerprint,
-    timing_safe_token_hash_equal, user_requires_email_verification, utc_checkin_period_start_ms,
-    utc_day_from_ms, validate_login_email, validate_login_fields_present, validate_login_password,
+    parse_signed_password_reset_token, sanitize_device_fingerprint, timing_safe_token_hash_equal,
+    user_requires_email_verification, utc_checkin_period_start_ms, utc_day_from_ms,
+    validate_login_email, validate_login_fields_present, validate_login_password,
     validate_optional_polygon_wallet, validate_optional_referral_code_input,
     validate_password_strength_policy, validate_signup_password, validate_signup_username,
-    wallet_fraction_allowed, CatalogType, CatalogWriteError,
-    CatalogUpgradeWriteRow, GameNavBuildInput, LootBoxItem, MergeRarity, MergeRuntimeSettings,
-    MergeSourceCatalog, MiningBuildHistoryRowsOpts, MiningBlockHistoryInsertRow,
+    wallet_fraction_allowed, CatalogType, CatalogUpgradeWriteRow, CatalogWriteError,
+    GameNavBuildInput, HeaderHashEntry, LootBoxItem, MergeRarity, MergeRuntimeSettings,
+    MergeSourceCatalog, MiningBlockHistoryInsertRow, MiningBuildHistoryRowsOpts,
     MiningCoinYieldInput, MiningYieldHistPoint, PlayerCashFlows, TransparencyHealthEntry,
     WalletValidation, CATALOG_HTTP_BAD_REQUEST, CHECKIN_GRACE_MS, MINING_TEN_MIN_MS,
-    aggregate_header_hash, catalog_assert_canonical_ids_immutable,
-    catalog_is_protected_upgrade_row, catalog_parse_upgrade_write_rows, HeaderHashEntry,
 };
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
@@ -90,8 +89,12 @@ struct MergeSourceInput {
 }
 
 fn parse_source(input: MergeSourceInput) -> Result<MergeSourceCatalog> {
-    let catalog_type = CatalogType::parse(&input.catalog_type)
-        .ok_or_else(|| Error::from_reason(format!("invalid merge catalog type: {}", input.catalog_type)))?;
+    let catalog_type = CatalogType::parse(&input.catalog_type).ok_or_else(|| {
+        Error::from_reason(format!(
+            "invalid merge catalog type: {}",
+            input.catalog_type
+        ))
+    })?;
     Ok(MergeSourceCatalog {
         id: input.id,
         name: input.name,
@@ -146,7 +149,10 @@ pub fn merge_source_catalogs_equivalent_json(left: String, right: String) -> Res
 }
 
 #[napi]
-pub fn merge_compute_result_stats_json(source_json: String, settings_json: String) -> Result<Option<String>> {
+pub fn merge_compute_result_stats_json(
+    source_json: String,
+    settings_json: String,
+) -> Result<Option<String>> {
     let source: MergeSourceInput = serde_json::from_str(&source_json)
         .map_err(|e| Error::from_reason(format!("source JSON invalid: {e}")))?;
     let settings: MergeSettingsInput = serde_json::from_str(&settings_json)
@@ -182,7 +188,9 @@ pub fn merge_compute_result_stats_json(source_json: String, settings_json: Strin
                 cost_pct: s.cost_pct,
                 gain_percent: s.gain_percent,
             };
-            Ok(Some(serde_json::to_string(&out).map_err(|e| Error::from_reason(e.to_string()))?))
+            Ok(Some(
+                serde_json::to_string(&out).map_err(|e| Error::from_reason(e.to_string()))?,
+            ))
         }
         None => Ok(None),
     }
@@ -201,7 +209,10 @@ pub fn auth_ping() -> String {
 }
 
 #[napi]
-pub fn auth_validate_login_fields_json(email: Option<String>, password: Option<String>) -> Result<String> {
+pub fn auth_validate_login_fields_json(
+    email: Option<String>,
+    password: Option<String>,
+) -> Result<String> {
     let r = validate_login_fields_present(email.as_deref(), password.as_deref());
     Ok(serde_json::to_string(&r).map_err(|e| Error::from_reason(e.to_string()))?)
 }
@@ -237,7 +248,10 @@ pub fn auth_validate_username_json(username: Option<String>) -> Result<String> {
 }
 
 #[napi]
-pub fn auth_validate_signup_password_json(password: Option<String>, required: bool) -> Result<String> {
+pub fn auth_validate_signup_password_json(
+    password: Option<String>,
+    required: bool,
+) -> Result<String> {
     let r = validate_signup_password(password.as_deref(), required);
     Ok(serde_json::to_string(&r).map_err(|e| Error::from_reason(e.to_string()))?)
 }
@@ -252,9 +266,13 @@ pub fn auth_validate_referral_json(code: Option<String>) -> Result<String> {
 pub fn auth_validate_wallet_json(wallet: Option<String>) -> Result<String> {
     match validate_optional_polygon_wallet(wallet.as_deref()) {
         WalletValidation::Null => Ok("null".into()),
-        WalletValidation::Address(a) => Ok(serde_json::to_string(&a).map_err(|e| Error::from_reason(e.to_string()))?),
-        WalletValidation::Err { error } => Ok(serde_json::to_string(&serde_json::json!({ "error": error }))
-            .map_err(|e| Error::from_reason(e.to_string()))?),
+        WalletValidation::Address(a) => {
+            Ok(serde_json::to_string(&a).map_err(|e| Error::from_reason(e.to_string()))?)
+        }
+        WalletValidation::Err { error } => Ok(serde_json::to_string(
+            &serde_json::json!({ "error": error }),
+        )
+        .map_err(|e| Error::from_reason(e.to_string()))?),
     }
 }
 
@@ -275,7 +293,9 @@ pub fn auth_build_signed_token_json(
         "password_reset" => build_signed_password_reset_token(&email, expiry, &secret),
         "email_verification" => build_signed_email_verification_token(&email, expiry, &secret),
         other => {
-            return Err(Error::from_reason(format!("unknown auth token purpose: {other}")));
+            return Err(Error::from_reason(format!(
+                "unknown auth token purpose: {other}"
+            )));
         }
     };
     Ok(token)
@@ -289,15 +309,20 @@ pub fn auth_parse_signed_token_json(
     now_ms: f64,
 ) -> Result<String> {
     match purpose.as_str() {
-        "password_reset" => match parse_signed_password_reset_token(&token, &secret, now_ms as i64) {
+        "password_reset" => match parse_signed_password_reset_token(&token, &secret, now_ms as i64)
+        {
             Ok(p) => Ok(serde_json::to_string(&p).map_err(|e| Error::from_reason(e.to_string()))?),
             Err(f) => Ok(serde_json::to_string(&f).map_err(|e| Error::from_reason(e.to_string()))?),
         },
         "email_verification" => match parse_signed_email_verification_token(&token, &secret) {
-            Some(p) => Ok(serde_json::to_string(&p).map_err(|e| Error::from_reason(e.to_string()))?),
+            Some(p) => {
+                Ok(serde_json::to_string(&p).map_err(|e| Error::from_reason(e.to_string()))?)
+            }
             None => Ok("null".into()),
         },
-        other => Err(Error::from_reason(format!("unknown auth token purpose: {other}"))),
+        other => Err(Error::from_reason(format!(
+            "unknown auth token purpose: {other}"
+        ))),
     }
 }
 
@@ -319,7 +344,10 @@ pub fn auth_lockout_status_json(locked_until_ms: Option<f64>, now_ms: f64) -> Re
 }
 
 #[napi]
-pub fn auth_email_flags_json(email_verified: f64, email_verification_required: f64) -> Result<String> {
+pub fn auth_email_flags_json(
+    email_verified: f64,
+    email_verification_required: f64,
+) -> Result<String> {
     let ev = email_verified as i64;
     let er = email_verification_required as i64;
     let flags = get_email_verification_flags(ev, er);
@@ -549,8 +577,7 @@ pub fn mining_assert_tick_economy_json(total_gained_json: String, rows_json: Str
         .map_err(|e| Error::from_reason(format!("totalGained JSON invalid: {e}")))?;
     let rows: Vec<MiningBlockHistoryInsertRow> = serde_json::from_str(&rows_json)
         .map_err(|e| Error::from_reason(format!("history rows JSON invalid: {e}")))?;
-    mining_assert_tick_history_matches_economy(&total, &rows)
-        .map_err(|e| Error::from_reason(e))
+    mining_assert_tick_history_matches_economy(&total, &rows).map_err(|e| Error::from_reason(e))
 }
 
 #[napi]
@@ -615,13 +642,7 @@ pub fn market_reserved_until(now_ms: f64) -> f64 {
 
 #[napi]
 pub fn market_reservation_active(reserved_until_ms: Option<f64>, now_ms: f64) -> bool {
-    let until = reserved_until_ms.and_then(|v| {
-        if v.is_finite() {
-            Some(v as i64)
-        } else {
-            None
-        }
-    });
+    let until = reserved_until_ms.and_then(|v| if v.is_finite() { Some(v as i64) } else { None });
     market_is_reservation_active(until, now_ms as i64)
 }
 
@@ -638,7 +659,10 @@ pub fn lucky_boxes_ping() -> String {
 }
 
 #[napi]
-pub fn lucky_boxes_roll_independent_json(items_json: String, samples_json: String) -> Result<String> {
+pub fn lucky_boxes_roll_independent_json(
+    items_json: String,
+    samples_json: String,
+) -> Result<String> {
     let items: Vec<LootBoxItem> = serde_json::from_str(&items_json)
         .map_err(|e| Error::from_reason(format!("items JSON invalid: {e}")))?;
     let samples: Vec<f64> = serde_json::from_str(&samples_json)
@@ -729,10 +753,7 @@ fn catalog_row_to_value(row: &CatalogUpgradeWriteRow) -> serde_json::Value {
     m.insert("id".into(), serde_json::Value::String(row.id.clone()));
     m.insert("name".into(), serde_json::Value::String(row.name.clone()));
     if let Some(prev) = &row.previous_id {
-        m.insert(
-            "previousId".into(),
-            serde_json::Value::String(prev.clone()),
-        );
+        m.insert("previousId".into(), serde_json::Value::String(prev.clone()));
     }
     for (k, v) in &row.fields {
         m.insert(k.clone(), v.clone());

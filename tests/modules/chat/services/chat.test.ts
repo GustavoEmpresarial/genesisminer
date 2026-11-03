@@ -97,6 +97,17 @@ describe('chat services/chat', () => {
     });
   });
 
+  describe('chatChannelUsesMessageTtl', () => {
+    it('só o global expira; DM am: persiste', async () => {
+      const { chatChannelUsesMessageTtl, CHAT_CHANNEL_GLOBAL } = await import(
+        '../../../../server/modules/chat/services/chat.js'
+      );
+      expect(chatChannelUsesMessageTtl(CHAT_CHANNEL_GLOBAL)).toBe(true);
+      expect(chatChannelUsesMessageTtl('')).toBe(true);
+      expect(chatChannelUsesMessageTtl('am:1:2')).toBe(false);
+    });
+  });
+
   describe('checkChatRateLimit', () => {
     it('delega ao worker Redis', async () => {
       workerMock.callMiningWorkerChatRateLimit.mockResolvedValueOnce({ ok: true });
@@ -152,6 +163,36 @@ describe('chat services/chat', () => {
       expect(workerMock.callMiningWorkerChatCanAccess).toHaveBeenCalledWith({ userId: 1, channel: 'am:1:2' });
       workerMock.callMiningWorkerChatCanAccess.mockResolvedValueOnce({ allowed: false });
       expect(await userCanAccessChatChannel(99, 'am:1:2')).toBe(false);
+    });
+  });
+
+  describe('listAmPeersForUser', () => {
+    it('gerente vê o dono; dono vê o gerente', async () => {
+      workerMock.callMiningWorkerChatPeers.mockResolvedValue({
+        ok: true,
+        rows: [
+          {
+            ownerUserId: 10,
+            managerUserId: 20,
+            ownerUsername: 'DonoX',
+            managerUsername: 'GerY'
+          }
+        ]
+      });
+      const { listAmPeersForUser } = await import('../../../../server/modules/chat/services/chat.js');
+      const asManager = await listAmPeersForUser(20);
+      expect(asManager).toEqual([
+        {
+          channel: 'am:10:20',
+          ownerUserId: 10,
+          managerUserId: 20,
+          peerUserId: 10,
+          peerUsername: 'DonoX',
+          role: 'manager'
+        }
+      ]);
+      const asOwner = await listAmPeersForUser(10);
+      expect(asOwner[0]).toMatchObject({ peerUserId: 20, peerUsername: 'GerY', role: 'owner' });
     });
   });
 

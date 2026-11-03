@@ -3271,6 +3271,10 @@ export async function getAdminUpgradePurchases(email: string): Promise<string[]>
 
 export async function createAdminUpgrade(upgrade: AdminUpgrade): Promise<{ ok: boolean; id?: string }> {
   try {
+    const imageUrl =
+      upgrade.imageUrl != null && String(upgrade.imageUrl).trim() !== ''
+        ? String(upgrade.imageUrl).trim()
+        : null;
     const payload: unknown = {
       id: upgrade.id,
       name: upgrade.name,
@@ -3279,6 +3283,7 @@ export async function createAdminUpgrade(upgrade: AdminUpgrade): Promise<{ ok: b
       grantUsdc: upgrade.grantUsdc || 0,
       grantAccessLevelId: upgrade.grantAccessLevelId || null,
       isActive: upgrade.isActive === false ? false : true,
+      imageUrl,
       items: (upgrade.items || []).map(it => ({ itemId: it.itemId, qty: it.qty })),
       boxes: (upgrade.boxes || []).map(b => ({ boxId: b.boxId, qty: b.qty })),
       passes: Array.isArray(upgrade.passes) ? upgrade.passes : [],
@@ -3846,11 +3851,16 @@ export {
   reopenSupportTicket,
   getAdminSupportUserHistory,
   getAdminSupportTicketDetail,
+  getAdminSupportAccountManager,
+  getAdminSupportAccountManagerByEmail,
+  postAdminSupportFireManager,
 } from './supportTicketsApi';
 export type {
   SupportUserHistoryTicketSummary,
   SupportUserHistoryResponse,
   SupportUserHistoryResult,
+  AdminSupportAccountManagerActive,
+  AdminSupportAccountManagerStatus,
 } from './supportTicketsApi';
 
 export async function getReferrals(email: string): Promise<string[]> {

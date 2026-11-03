@@ -4,7 +4,7 @@
 //! Math: r#"genesis_core::mining"# + calculator slot credits / checkin bonus.
 //! I/O: Postgres TX + Redis per-user lock.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Context;
@@ -38,6 +38,42 @@ use crate::config::{
     PG_UNDEFINED_TABLE, PROGRESS_TX_TIMEOUT_MS, YIELD_HISTORY_LOOKBACK_MS,
 };
 use crate::redis_lock::{mining_progress_user_lock_key, RedisLockClient};
+
+/// Same sentinel as `genesis-hardware` `ASIC_LEASE_NO_CLOCK_EXPIRES_AT`.
+const ASIC_LEASE_NO_CLOCK_EXPIRES_AT: i64 = 0;
+const ASIC_LEASE_STATUS_STOCK: &str = "stock";
+const ASIC_LEASE_STATUS_EQUIPPED: &str = "equipped";
+const ASIC_LEASE_STATUS_LISTED: &str = "listed";
+const ASIC_LEASE_STATUS_EXPIRED: &str = "expired";
+/// Same default as `eligibility::MINING_ELIGIBILITY_HISTORY_CUTOVER_MS_DEFAULT`.
+const MINING_ELIGIBILITY_HISTORY_CUTOVER_MS_DEFAULT: i64 = 1_787_313_600_000;
+
+const SELECT_DUE_ASIC_LEASES_SQL: &str =
+    "SELECT id::text AS id, item_id, status, rack_id, slot_index,
+            acquired_at, expires_at
+     FROM player_asic_leases
+     WHERE user_id = $1 AND expires_at > $2 AND expires_at <= $3
+       AND status IN ($4, $5, $6)
+     ORDER BY id";
+
+const CLEAR_DUE_ASIC_SLOTS_SQL: &str = "UPDATE rack_slots AS rs
+     SET machine_item_id = NULL, machine_lease_id = NULL
+     FROM player_asic_leases AS l
+     WHERE rs.machine_lease_id = l.id
+       AND l.user_id = $1 AND l.expires_at > $2 AND l.expires_at <= $3
+       AND l.status IN ($4, $5, $6)";
+
+const EXPIRE_DUE_ASIC_LEASES_SQL: &str = "UPDATE player_asic_leases
+     SET status = $7, rack_id = NULL, slot_index = NULL
+     WHERE user_id = $1 AND expires_at > $2 AND expires_at <= $3
+       AND status IN ($4, $5, $6)";
+
+const EXPIRE_DUE_ASIC_INSTANCES_SQL: &str = "UPDATE item_instances AS i
+     SET status = $7, rack_id = NULL, slot_index = NULL
+     FROM player_asic_leases AS l
+     WHERE i.id = l.id
+       AND l.user_id = $1 AND l.expires_at > $2 AND l.expires_at <= $3
+       AND l.status IN ($4, $5, $6)";
 use crate::room_ids::{resolve_asic_room_ids, resolve_nft_auto_room_ids};
 
 static LEDGER_SCHEMA_WARNED: AtomicBool = AtomicBool::new(false);
@@ -94,6 +130,281 @@ struct RackUpdate {
     id: String,
     is_on: i32,
     prev_is_on: i32,
+}
+
+const ELIGIBILITY_RACK_ID_MAX_LEN: usize = 120;
+const ELIGIBILITY_CATALOG_ITEM_ID_MAX_LEN: usize = 200;
+const EVENT_MINER_UNEQUIPPED: &str = "MINER_UNEQUIPPED";
+const EVENT_ASIC_EXPIRED: &str = "ASIC_EXPIRED";
+const IDENTITY_LEASE: &str = "lease";
+
+fn mining_eligibility_cutover_ms() -> i64 {
+    match std::env::var("MINING_ELIGIBILITY_HISTORY_CUTOVER_MS") {
+        Ok(raw) if !raw.trim().is_empty() => {
+            let n: f64 = raw.trim().parse().unwrap_or(f64::NAN);
+            if n.is_finite() && n > 0.0 {
+                n.floor() as i64
+            } else {
+                MINING_ELIGIBILITY_HISTORY_CUTOVER_MS_DEFAULT
+            }
+        }
+        _ => MINING_ELIGIBILITY_HISTORY_CUTOVER_MS_DEFAULT,
+    }
+}
+
+fn trim_eligibility(raw: &str, max_len: usize) -> Option<String> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let cut = if s.len() > max_len { &s[..max_len] } else { s };
+    Some(cut.to_string())
+}
+
+async fn due_asic_lease_ids(
+    client: &tokio_postgres::Client,
+    user_id: i32,
+    now_ms: i64,
+) -> anyhow::Result<HashSet<String>> {
+    let rows = client
+        .query(
+            "SELECT id::text AS id FROM player_asic_leases
+              WHERE user_id = $1 AND expires_at > $2 AND expires_at <= $3
+                AND status IN ($4, $5, $6)",
+            &[
+                &user_id,
+                &ASIC_LEASE_NO_CLOCK_EXPIRES_AT,
+                &now_ms,
+                &ASIC_LEASE_STATUS_STOCK,
+                &ASIC_LEASE_STATUS_EQUIPPED,
+                &ASIC_LEASE_STATUS_LISTED,
+            ],
+        )
+        .await
+        .context("due asic leases")?;
+    let mut ids = HashSet::new();
+    for row in &rows {
+        let id: String = row.get("id");
+        if !id.is_empty() {
+            ids.insert(id);
+        }
+    }
+    Ok(ids)
+}
+
+async fn insert_asic_eligibility_event(
+    client: &tokio_postgres::Client,
+    user_id: i32,
+    event_type: &str,
+    at_ms: i64,
+    lease_id: &str,
+    rack_id: Option<&str>,
+    slot_index: Option<i32>,
+    catalog_item_id: Option<&str>,
+    payload: serde_json::Value,
+) -> anyhow::Result<()> {
+    let Ok(lease_uuid) = uuid::Uuid::parse_str(lease_id) else {
+        return Ok(());
+    };
+    let mut map = match payload {
+        serde_json::Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    map.insert(
+        "cutoverMs".into(),
+        serde_json::json!(mining_eligibility_cutover_ms()),
+    );
+    let payload_json = serde_json::Value::Object(map);
+    let rack_id = rack_id.and_then(|s| trim_eligibility(s, ELIGIBILITY_RACK_ID_MAX_LEN));
+    let catalog_item_id =
+        catalog_item_id.and_then(|s| trim_eligibility(s, ELIGIBILITY_CATALOG_ITEM_ID_MAX_LEN));
+    let created_at = now_ms();
+    match client
+        .execute(
+            "INSERT INTO mining_eligibility_events (
+               user_id, event_type, at_ms, identity_kind, lease_id, rack_id, slot_index,
+               catalog_item_id, coin_id, payload, created_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+            &[
+                &user_id,
+                &event_type,
+                &at_ms,
+                &IDENTITY_LEASE,
+                &lease_uuid,
+                &rack_id,
+                &slot_index,
+                &catalog_item_id,
+                &None::<String>,
+                &payload_json,
+                &created_at,
+            ],
+        )
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(e)
+            if e.code() == Some(&tokio_postgres::error::SqlState::UNIQUE_VIOLATION)
+                && event_type == EVENT_ASIC_EXPIRED =>
+        {
+            Ok(())
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
+async fn sync_timed_asic_stock_qty(
+    client: &tokio_postgres::Client,
+    user_id: i32,
+    item_id: &str,
+    now_ms: i64,
+) -> anyhow::Result<()> {
+    let rows = client
+        .query(
+            "SELECT COUNT(*)::int AS n FROM player_asic_leases
+              WHERE user_id = $1 AND item_id = $2 AND status = $3 AND expires_at > $4",
+            &[&user_id, &item_id, &ASIC_LEASE_STATUS_STOCK, &now_ms],
+        )
+        .await
+        .context("count stock leases")?;
+    let qty: i32 = rows.first().map(|r| r.get("n")).unwrap_or(0);
+    if qty > 0 {
+        client
+            .execute(
+                "INSERT INTO stock (user_id, item_id, qty) VALUES ($1, $2, $3)
+                 ON CONFLICT (user_id, item_id) DO UPDATE SET qty = EXCLUDED.qty",
+                &[&user_id, &item_id, &qty],
+            )
+            .await
+            .context("sync stock qty")?;
+    } else {
+        client
+            .execute(
+                "DELETE FROM stock WHERE user_id = $1 AND item_id = $2",
+                &[&user_id, &item_id],
+            )
+            .await
+            .context("clear stock qty")?;
+    }
+    Ok(())
+}
+
+/// Skip credit for a due lease, then clear its slot and mark it expired once.
+async fn expire_due_asic_leases(
+    client: &tokio_postgres::Client,
+    user_id: i32,
+    now_ms: i64,
+) -> anyhow::Result<()> {
+    let rows = client
+        .query(
+            SELECT_DUE_ASIC_LEASES_SQL,
+            &[
+                &user_id,
+                &ASIC_LEASE_NO_CLOCK_EXPIRES_AT,
+                &now_ms,
+                &ASIC_LEASE_STATUS_STOCK,
+                &ASIC_LEASE_STATUS_EQUIPPED,
+                &ASIC_LEASE_STATUS_LISTED,
+            ],
+        )
+        .await
+        .context("select due asic leases")?;
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let mut item_ids: Vec<String> = Vec::new();
+    for row in &rows {
+        let lease_id: String = row.get("id");
+        let item_id: String = row.try_get("item_id").unwrap_or_default();
+        let item_id = item_id.trim().to_string();
+        let status: String = row.try_get("status").unwrap_or_default();
+        let rack_id: String = row
+            .try_get::<_, Option<String>>("rack_id")
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let rack_id = rack_id.trim().to_string();
+        let slot_index: Option<i32> = row.try_get("slot_index").ok().flatten();
+        let acquired_at: i64 = row.try_get("acquired_at").unwrap_or(0);
+        let expires_at: i64 = row.try_get("expires_at").unwrap_or(0);
+        if !item_id.is_empty() && !item_ids.iter().any(|id| id == &item_id) {
+            item_ids.push(item_id.clone());
+        }
+        let catalog = if item_id.is_empty() {
+            None
+        } else {
+            Some(item_id.as_str())
+        };
+        let rack_ref = if rack_id.is_empty() {
+            None
+        } else {
+            Some(rack_id.as_str())
+        };
+        if status == ASIC_LEASE_STATUS_EQUIPPED && rack_ref.is_some() && slot_index.is_some() {
+            insert_asic_eligibility_event(
+                client,
+                user_id,
+                EVENT_MINER_UNEQUIPPED,
+                now_ms,
+                &lease_id,
+                rack_ref,
+                slot_index,
+                catalog,
+                serde_json::json!({ "reason": "asic_expired" }),
+            )
+            .await?;
+        }
+        insert_asic_eligibility_event(
+            client,
+            user_id,
+            EVENT_ASIC_EXPIRED,
+            now_ms,
+            &lease_id,
+            rack_ref,
+            slot_index,
+            catalog,
+            serde_json::json!({
+                "acquired_at": acquired_at,
+                "expires_at": expires_at,
+                "previous_status": status
+            }),
+        )
+        .await?;
+    }
+    let status_params: [&(dyn tokio_postgres::types::ToSql + Sync); 7] = [
+        &user_id,
+        &ASIC_LEASE_NO_CLOCK_EXPIRES_AT,
+        &now_ms,
+        &ASIC_LEASE_STATUS_STOCK,
+        &ASIC_LEASE_STATUS_EQUIPPED,
+        &ASIC_LEASE_STATUS_LISTED,
+        &ASIC_LEASE_STATUS_EXPIRED,
+    ];
+    client
+        .execute(
+            CLEAR_DUE_ASIC_SLOTS_SQL,
+            &[
+                &user_id,
+                &ASIC_LEASE_NO_CLOCK_EXPIRES_AT,
+                &now_ms,
+                &ASIC_LEASE_STATUS_STOCK,
+                &ASIC_LEASE_STATUS_EQUIPPED,
+                &ASIC_LEASE_STATUS_LISTED,
+            ],
+        )
+        .await
+        .context("clear due asic slots")?;
+    client
+        .execute(EXPIRE_DUE_ASIC_INSTANCES_SQL, &status_params)
+        .await
+        .context("expire due asic instances")?;
+    client
+        .execute(EXPIRE_DUE_ASIC_LEASES_SQL, &status_params)
+        .await
+        .context("expire due asic leases")?;
+    for item_id in item_ids {
+        sync_timed_asic_stock_qty(client, user_id, &item_id, now_ms).await?;
+    }
+    Ok(())
 }
 
 /// Port of r#"computeProgressForUser"# (happy path: balances + last_updated + history).
@@ -277,7 +588,8 @@ async fn compute_progress_inner(
             );
             // `fallback` só é usado quando não há linha de `mining_yield_history`
             // cobrindo a janela de crédito (gap > lookback ou moeda recém-criada).
-            let fallback = if distribution_mode == genesis_core::mining::DistributionMode::UsdMonth {
+            let fallback = if distribution_mode == genesis_core::mining::DistributionMode::UsdMonth
+            {
                 // Divisor com hashrate live (levemente stale) e clamp no piso —
                 // mesma fórmula do boundary; 0 se hashrate desconhecido.
                 let active = live_hashrates
@@ -474,9 +786,11 @@ async fn compute_progress_inner(
 
     if !racks.is_empty() {
         let rack_ids: Vec<String> = racks.iter().map(|r| r.get::<_, String>("id")).collect();
+        let due_lease_ids = due_asic_lease_ids(client, user_id_i32, server_now).await?;
         let slot_rows = client
             .query(
-                "SELECT rack_id, machine_item_id FROM rack_slots WHERE rack_id = ANY($1)",
+                "SELECT rack_id, machine_item_id, machine_lease_id::text AS machine_lease_id
+                   FROM rack_slots WHERE rack_id = ANY($1)",
                 &[&rack_ids],
             )
             .await
@@ -493,18 +807,24 @@ async fn compute_progress_inner(
         for s in &slot_rows {
             let rid: String = s.get("rack_id");
             let mid: Option<String> = s.get("machine_item_id");
-            let mid = mid
+            let lease_id: Option<String> = s.get("machine_lease_id");
+            let lease_id = lease_id
                 .map(|v| v.trim().to_string())
                 .filter(|v| !v.is_empty());
+            let mid = mid
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+                .filter(|_| match &lease_id {
+                    Some(id) => !due_lease_ids.contains(id),
+                    None => true,
+                });
             slots_map.entry(rid).or_default().push(mid);
         }
         let mut multi_map: HashMap<String, Vec<Option<String>>> = HashMap::new();
         for m in &multi_rows {
             let rid: String = m.get("rack_id");
             let mid: Option<String> = m.get("multiplier_item_id");
-            let mid = mid
-                .map(|v| v.trim().to_string())
-                .filter(|v| !v.is_empty());
+            let mid = mid.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
             multi_map.entry(rid).or_default().push(mid);
         }
 
@@ -652,6 +972,10 @@ async fn compute_progress_inner(
         .batch_execute(&timeout_sql)
         .await
         .context("SET LOCAL timeouts")?;
+
+    expire_due_asic_leases(client, user_id_i32, server_now)
+        .await
+        .context("expire due asic leases")?;
 
     let gs_verify = client
         .query_opt(
@@ -1323,4 +1647,21 @@ fn now_ms() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod due_asic_lease_sql_tests {
+    use super::*;
+
+    #[test]
+    fn due_lease_sql_skips_permanent_clock_and_clears_slot() {
+        assert_eq!(ASIC_LEASE_NO_CLOCK_EXPIRES_AT, 0);
+        assert!(SELECT_DUE_ASIC_LEASES_SQL.contains("expires_at > $2"));
+        assert!(SELECT_DUE_ASIC_LEASES_SQL.contains("expires_at <= $3"));
+        assert!(CLEAR_DUE_ASIC_SLOTS_SQL.contains("machine_item_id = NULL"));
+        assert!(CLEAR_DUE_ASIC_SLOTS_SQL.contains("machine_lease_id = NULL"));
+        assert!(EXPIRE_DUE_ASIC_LEASES_SQL.contains("status = $7"));
+        assert!(EXPIRE_DUE_ASIC_INSTANCES_SQL.contains("status = $7"));
+        assert_ne!(ASIC_LEASE_STATUS_EXPIRED, ASIC_LEASE_STATUS_EQUIPPED);
+    }
 }

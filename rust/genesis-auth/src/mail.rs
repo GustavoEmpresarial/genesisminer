@@ -2,7 +2,7 @@
 
 use lettre::message::{header::ContentType, Mailbox, Message};
 use lettre::transport::smtp::authentication::Credentials;
-use lettre::transport::smtp::{SUBMISSION_PORT, SUBMISSIONS_PORT};
+use lettre::transport::smtp::{SUBMISSIONS_PORT, SUBMISSION_PORT};
 use lettre::{AsyncSmtpTransport, AsyncTransport, Tokio1Executor};
 use tracing::warn;
 
@@ -212,15 +212,30 @@ fn percent_encode_token(token: &str) -> String {
     let mut out = String::with_capacity(token.len());
     for b in token.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'!' | b'~' | b'*'
-            | b'\'' | b'(' | b')' => out.push(b as char),
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'!'
+            | b'~'
+            | b'*'
+            | b'\''
+            | b'('
+            | b')' => out.push(b as char),
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
     out
 }
 
-pub fn build_reset_email(cfg: &MailConfig, email: &str, reset_token: &str, validity_minutes: u32) -> Result<Message, String> {
+pub fn build_reset_email(
+    cfg: &MailConfig,
+    email: &str,
+    reset_token: &str,
+    validity_minutes: u32,
+) -> Result<Message, String> {
     let minutes = if validity_minutes > 0 {
         validity_minutes
     } else {
@@ -280,9 +295,7 @@ fn build_message(from: &str, to: &str, subject: &str, html: &str) -> Result<Mess
     let from_mb: Mailbox = from
         .parse()
         .map_err(|e| format!("invalid MAIL_FROM: {e}"))?;
-    let to_mb: Mailbox = to
-        .parse()
-        .map_err(|e| format!("invalid recipient: {e}"))?;
+    let to_mb: Mailbox = to.parse().map_err(|e| format!("invalid recipient: {e}"))?;
     Message::builder()
         .from(from_mb)
         .to(to_mb)

@@ -227,6 +227,11 @@ pub(crate) fn normalize_chat_channel(raw: &str) -> String {
     CHAT_CHANNEL_GLOBAL.to_string()
 }
 
+/// TTL (90d) só no chat público. DMs `am:owner:manager` não expiram.
+pub(crate) fn chat_channel_uses_message_ttl(channel: &str) -> bool {
+    normalize_chat_channel(channel) == CHAT_CHANNEL_GLOBAL
+}
+
 /// Same gate as `POST /v1/chat/can-access` (`run_chat_can_access`).
 pub(crate) async fn user_can_access_chat_channel(
     pool: &Pool,

@@ -24,6 +24,28 @@ pub struct ChatActor {
     pub sid: Option<String>,
 }
 
+impl ChatActor {
+    /// Session first, then the human manager id when they differ.
+    /// Node socket `unique_actor_ids` / `canMutateChatMessage`.
+    pub fn unique_user_ids(&self) -> Vec<i64> {
+        let mut ids = vec![self.session_user_id];
+        if self.real_user_id != self.session_user_id {
+            ids.push(self.real_user_id);
+        }
+        ids
+    }
+
+    /// Node socket `senderUserId`: global while managing speaks as the owner;
+    /// AM DM always the human (`real_user_id`).
+    pub fn sender_user_id(&self, channel: &str) -> i64 {
+        if super::rooms::normalize_chat_channel(channel) == super::rooms::CHAT_CHANNEL_GLOBAL {
+            self.session_user_id
+        } else {
+            self.real_user_id
+        }
+    }
+}
+
 pub fn cookies_from_header(cookie_header: Option<&str>) -> HashMap<String, String> {
     parse_cookies(cookie_header)
 }

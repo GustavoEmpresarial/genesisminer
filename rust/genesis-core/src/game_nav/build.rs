@@ -1,6 +1,7 @@
 use super::catalog::{
     CATALOG, DEFAULT_ALLOWED_PAGES, EXTRA_ALWAYS_PAGES, MANAGER_ONLY_KEYS, SECTION_ORDER,
 };
+use crate::topidle::TOPIDLE_NAV_ENABLED;
 use super::types::{GameNavBuildInput, GameNavBuildOutput, GameNavItemOut};
 
 /// Resolve allowlist de páginas (espelha `resolveAllowedPages` no client).
@@ -29,8 +30,9 @@ fn item_allowed(key: &str, input: &GameNavBuildInput, allowed_pages: &[String]) 
 
     match key {
         "servers" | "inventory" | "hardware_store" | "upgrade" | "black_market" | "lucky_store"
-        | "wallet" | "ranking" | "calculator" | "transparency" | "mini_blog" | "quests" | "support"
-        | "offerwall" | "arcade" => has(key),
+        | "wallet" | "ranking" | "calculator" | "transparency" | "mini_blog" | "quests"
+        | "support" | "offerwall" | "arcade" => has(key),
+        "topidle" => TOPIDLE_NAV_ENABLED && has(key),
         "dashboard" => false,
         "profile" => !is_managing,
         "management" => input.account_manager_enabled,
@@ -97,6 +99,7 @@ mod tests {
         assert!(keys.contains(&"wallet"));
         assert!(keys.contains(&"calculator"));
         assert!(keys.contains(&"roleta"));
+        assert!(keys.contains(&"topidle"));
         assert!(!keys.contains(&"dashboard"));
         assert!(keys.contains(&"partner_games"));
         assert!(!keys.contains(&"management")); // flag off

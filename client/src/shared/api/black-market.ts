@@ -18,6 +18,15 @@ export type BlackMarketListing = {
   reservedBy?: string;
   reservedUntil?: number;
   status?: 'active' | 'sold';
+  /** Catálogo `upgrades` (join no livro) — merge/limited fora da loja. */
+  itemName?: string;
+  itemImage?: string;
+  itemIcon?: string;
+  itemCategory?: string;
+  itemType?: string;
+  itemBaseProduction?: number;
+  itemPowerConsumption?: number;
+  itemStatus?: string;
 };
 
 export type BlackMarketHistoryEntry = {
@@ -46,6 +55,18 @@ export type BlackMarketStateV1Ok = {
   history: { purchases: BlackMarketHistoryEntry[]; sales: BlackMarketHistoryEntry[]; limit: number };
 };
 
+function optionalTrimmedStringField(raw: unknown): string | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const t = raw.trim();
+  return t ? t : undefined;
+}
+
+function optionalFiniteNumberField(raw: unknown): number | undefined {
+  if (raw == null) return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 function parseMarketListingRow(raw: unknown): BlackMarketListing | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
@@ -64,6 +85,14 @@ function parseMarketListingRow(raw: unknown): BlackMarketListing | null {
   const qty = Math.max(1, Math.floor(Number(r.qty)) || 1);
   const lineTotal =
     r.lineTotal != null && Number.isFinite(Number(r.lineTotal)) ? Number(r.lineTotal) : price * qty;
+  const itemName = optionalTrimmedStringField(r.itemName);
+  const itemImage = optionalTrimmedStringField(r.itemImage);
+  const itemIcon = optionalTrimmedStringField(r.itemIcon);
+  const itemCategory = optionalTrimmedStringField(r.itemCategory);
+  const itemType = optionalTrimmedStringField(r.itemType);
+  const itemBaseProduction = optionalFiniteNumberField(r.itemBaseProduction);
+  const itemPowerConsumption = optionalFiniteNumberField(r.itemPowerConsumption);
+  const itemStatus = optionalTrimmedStringField(r.itemStatus);
   return {
     id,
     sellerId,
@@ -77,7 +106,15 @@ function parseMarketListingRow(raw: unknown): BlackMarketListing | null {
     reservedBy: typeof r.reservedBy === 'string' ? r.reservedBy : undefined,
     reservedUntil:
       typeof r.reservedUntil === 'number' ? r.reservedUntil : r.reservedUntil != null ? Number(r.reservedUntil) : undefined,
-    status: r.status === 'active' || r.status === 'sold' ? r.status : undefined
+    status: r.status === 'active' || r.status === 'sold' ? r.status : undefined,
+    ...(itemName ? { itemName } : {}),
+    ...(itemImage ? { itemImage } : {}),
+    ...(itemIcon ? { itemIcon } : {}),
+    ...(itemCategory ? { itemCategory } : {}),
+    ...(itemType ? { itemType } : {}),
+    ...(itemBaseProduction !== undefined ? { itemBaseProduction } : {}),
+    ...(itemPowerConsumption !== undefined ? { itemPowerConsumption } : {}),
+    ...(itemStatus ? { itemStatus } : {})
   };
 }
 

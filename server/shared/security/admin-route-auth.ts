@@ -224,6 +224,9 @@ export function resolveAdminRouteRequirement(method: string, rawPath: string): A
 
   if (p.startsWith('/api/admin/guide')) return { kind: 'tab', tab: 'settings:pages' };
   if (p.startsWith('/api/admin/roadmap')) return { kind: 'tab', tab: 'settings:pages' };
+  if (method.toUpperCase() === 'POST' && p === '/api/admin/site-maintenance') {
+    return { kind: 'tab', tab: 'settings' };
+  }
 
   if (p.startsWith('/api/admin/')) return { kind: 'super' };
 

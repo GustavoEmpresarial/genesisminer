@@ -28,6 +28,7 @@ use crate::img::serve_img;
 use crate::owned::should_proxy_express;
 use crate::proxy::proxy_to_express;
 use crate::session::{auth_infra_response, cookies_from_req, json_status, resolve_user_id};
+use crate::site_status::{effective_maintenance, request_host};
 use crate::spa::{is_spa_candidate, serve_spa};
 use crate::workers::{ping_url, post_auth, post_mining, worker_infra_status};
 
@@ -48,6 +49,9 @@ const REFRESH_REVOKE_PATH: &str = "/v1/auth/refresh/revoke";
 const SUPPORT_TICKET_FOR_PLAYER_PATH: &str = "/v1/support/ticket-for-player";
 const SUPPORT_ATTACHMENT_REFERENCED_PATH: &str = "/v1/support/attachment-referenced";
 const USERS_ASSERT_ACTIVE_PATH: &str = "/v1/users/assert-active";
+const SITE_STATUS_WORKER_PATH: &str = "/v1/site-status";
+const HTTP_OK: u16 = 200;
+const _: () = assert!(HTTP_OK == 200);
 
 const ERR_CAPTCHA_REQUIRED: &str = "Complete the captcha before continuing.";
 
@@ -74,6 +78,7 @@ fn router_arc(state: Arc<AppState>) -> Router {
         .route("/api/verify-email", post(post_verify_email))
         .route("/api/session", get(get_session))
         .route("/api/site-status", get(site_status))
+        .merge(crate::topidle::router())
         .route("/api/auth/refresh", post(post_refresh))
         .route("/api/logout", post(post_logout))
         .route(
@@ -99,6 +104,7 @@ fn router_arc(state: Arc<AppState>) -> Router {
         .merge(crate::admin_referral::router())
         .merge(crate::admin_security::router())
         .merge(crate::admin_shop::router())
+        .merge(crate::admin_site_maintenance::router())
         .merge(crate::admin_wallet_ops::router())
         .merge(crate::admin_wheel::router())
         .merge(crate::admin_transparency::router())
@@ -135,10 +141,27 @@ async fn fallback(State(state): State<Arc<AppState>>, req: axum::http::Request<B
 }
 
 /// Public site kill-switch probe (`client/src/shared/api/site-maintenance.ts`).
-/// No admin writer exists yet, so this always reports "not in maintenance" —
-/// it just needs to answer 200 JSON instead of falling through to 501.
-async fn site_status() -> (StatusCode, Json<Value>) {
-    (StatusCode::OK, Json(json!({ "maintenance": false })))
+/// Reads `settings.site_maintenance` via mining-worker. Worker down → fail-open
+/// `{ maintenance: false }` so the public site is not locked by infra errors.
+/// `maintenance` is host-effective (principal `genesisdao.tech` only);
+/// `armed` is the raw setting so admin on staging still sees the toggle.
+async fn site_status(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+    let host = request_host(&headers);
+    match post_mining(&state.cfg, &state.http, SITE_STATUS_WORKER_PATH, &json!({})).await {
+        Ok(r) if r.status == HTTP_OK => {
+            let armed = r
+                .body
+                .get("maintenance")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let maintenance = effective_maintenance(armed, host.as_deref());
+            json_status(
+                HTTP_OK,
+                json!({ "maintenance": maintenance, "armed": armed }),
+            )
+        }
+        Ok(_) | Err(_) => json_status(HTTP_OK, json!({ "maintenance": false, "armed": false })),
+    }
 }
 
 async fn health_live() -> (StatusCode, Json<Value>) {

@@ -31,8 +31,7 @@ async fn get_shop_checkouts(
     headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
-    if let Err(e) = require_admin(&state, &headers, &Method::GET, ADMIN_SHOP_CHECKOUTS_PATH).await
-    {
+    if let Err(e) = require_admin(&state, &headers, &Method::GET, ADMIN_SHOP_CHECKOUTS_PATH).await {
         return e;
     }
     let body = json!({
@@ -87,4 +86,3 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(ADMIN_SHOP_CHECKOUTS_PATH, get(get_shop_checkouts))
         .route(ADMIN_PURCHASES_REPORT_PATH, get(get_purchases_report))
 }
-

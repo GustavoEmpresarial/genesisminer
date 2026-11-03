@@ -110,15 +110,22 @@ pub fn rack_power_is_on(
     want_on && (coin_comes_from_machine || has_selected_coin)
 }
 
+/// Admin class «Máquina normal (GPU)» stores this category. It wins over an `asic_` id.
+const MACHINE_CLASS_GPU_CATEGORY: &str = "gpu";
+
+/// ASIC: category contains `asic`, or id `asic_*` when the class is not GPU.
 pub fn is_asic_machine_upgrade_row(up: &MachineUpgradeRef) -> bool {
     if up.type_name != "machine" {
         return false;
     }
-    let id = up.id.trim().to_ascii_lowercase();
-    if id.starts_with("asic_") {
+    let category = up.category.trim().to_ascii_lowercase();
+    if category == MACHINE_CLASS_GPU_CATEGORY {
+        return false;
+    }
+    if category.contains("asic") {
         return true;
     }
-    up.category.trim().to_ascii_lowercase().contains("asic")
+    up.id.trim().to_ascii_lowercase().starts_with("asic_")
 }
 
 pub fn is_nft_collectible_machine_row(up: &MachineUpgradeRef) -> bool {
@@ -189,6 +196,12 @@ mod tests {
             id: "gpu_x1".into(),
             type_name: "machine".into(),
             category: "gpu".into(),
+            nft_mining_coin_id: None,
+        }));
+        assert!(!is_asic_machine_upgrade_row(&MachineUpgradeRef {
+            id: "asic_natal_3".into(),
+            type_name: "machine".into(),
+            category: "GPU".into(),
             nft_mining_coin_id: None,
         }));
     }

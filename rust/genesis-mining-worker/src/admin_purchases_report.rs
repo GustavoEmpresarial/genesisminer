@@ -4,9 +4,7 @@ use deadpool_postgres::Pool;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::admin_shop_checkouts::{
-    parse_shop_checkout_filter, SHOP_CHECKOUT_HISTORY_LIMIT,
-};
+use crate::admin_shop_checkouts::{parse_shop_checkout_filter, SHOP_CHECKOUT_HISTORY_LIMIT};
 use crate::player_reads::PlayerReadError;
 
 pub const ADMIN_PURCHASES_REPORT_PATH: &str = "/v1/admin/purchases/report";
@@ -49,13 +47,21 @@ fn parse_optional_ms(raw: &str) -> Result<Option<i64>, PlayerReadError> {
         return Ok(None);
     }
     if !t.bytes().all(|b| b.is_ascii_digit()) || t.starts_with('0') {
-        return Err(PlayerReadError::controlled(400, "Invalid time range.", "VALIDATION"));
+        return Err(PlayerReadError::controlled(
+            400,
+            "Invalid time range.",
+            "VALIDATION",
+        ));
     }
-    let n: i64 = t.parse().map_err(|_| {
-        PlayerReadError::controlled(400, "Invalid time range.", "VALIDATION")
-    })?;
+    let n: i64 = t
+        .parse()
+        .map_err(|_| PlayerReadError::controlled(400, "Invalid time range.", "VALIDATION"))?;
     if n <= 0 {
-        return Err(PlayerReadError::controlled(400, "Invalid time range.", "VALIDATION"));
+        return Err(PlayerReadError::controlled(
+            400,
+            "Invalid time range.",
+            "VALIDATION",
+        ));
     }
     Ok(Some(n))
 }
@@ -334,7 +340,14 @@ pub async fn run_admin_purchases_report(
                   )
                 ORDER BY t.created_at DESC
                 LIMIT $6"#,
-            &[item, &uid, search, &from_ms, &to_ms, &SHOP_CHECKOUT_HISTORY_LIMIT],
+            &[
+                item,
+                &uid,
+                search,
+                &from_ms,
+                &to_ms,
+                &SHOP_CHECKOUT_HISTORY_LIMIT,
+            ],
         )
         .await?;
 
@@ -411,7 +424,14 @@ pub async fn run_admin_purchases_report(
                   )
                 ORDER BY sp.purchased_at DESC
                 LIMIT $6"#,
-            &[item, &uid, search, &from_ms, &to_ms, &SHOP_CHECKOUT_HISTORY_LIMIT],
+            &[
+                item,
+                &uid,
+                search,
+                &from_ms,
+                &to_ms,
+                &SHOP_CHECKOUT_HISTORY_LIMIT,
+            ],
         )
         .await?;
 
@@ -461,7 +481,9 @@ pub async fn run_admin_purchases_report(
     let p2p_item_qty: i64 = p2p_totals.try_get("item_qty").unwrap_or(0);
     let p2p_buyers_n: i64 = p2p_totals.try_get("buyers").unwrap_or(0);
 
-    let p2p_sales_total_usdc: f64 = p2p_sales_totals.try_get("total_received_usdc").unwrap_or(0.0);
+    let p2p_sales_total_usdc: f64 = p2p_sales_totals
+        .try_get("total_received_usdc")
+        .unwrap_or(0.0);
     let p2p_sales_total_tax: f64 = p2p_sales_totals.try_get("total_tax_usdc").unwrap_or(0.0);
     let p2p_sales_trade_count: i64 = p2p_sales_totals.try_get("trade_count").unwrap_or(0);
     let p2p_sales_item_qty: i64 = p2p_sales_totals.try_get("item_qty").unwrap_or(0);
@@ -752,7 +774,10 @@ mod tests {
     fn empty_time_is_open_range() {
         assert_eq!(parse_optional_ms("").unwrap(), None);
         assert_eq!(parse_optional_ms("  ").unwrap(), None);
-        assert_eq!(parse_optional_ms("1700000000000").unwrap(), Some(1_700_000_000_000));
+        assert_eq!(
+            parse_optional_ms("1700000000000").unwrap(),
+            Some(1_700_000_000_000)
+        );
         assert!(parse_optional_ms("0").is_err());
         assert!(parse_optional_ms("01").is_err());
     }

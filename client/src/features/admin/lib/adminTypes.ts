@@ -168,15 +168,20 @@ export type AsicLeaseDetail = {
   slotIndex: number | null;
 };
 
-/** ASIC (máquina) elegível na Sala NFT — só id `asic_*` ou categoria com «asic». */
+/** Classe admin «Máquina normal (GPU)» — `AdminEditor` grava a categoria com este texto. */
+const MACHINE_CLASS_GPU_CATEGORY = 'gpu';
+
+/**
+ * ASIC: categoria com «asic», ou id `asic_*` quando a classe não é GPU.
+ * Categoria `GPU` ganha ao prefixo do id (ex. Natal criada como `asic_*` e depois passada a GPU normal).
+ */
 export function isAsicMachineUpgrade(u: Pick<Upgrade, 'id' | 'category' | 'type'>): boolean {
   if (u.type !== 'machine') return false;
+  const category = String(u.category || '').trim().toLowerCase();
+  if (category === MACHINE_CLASS_GPU_CATEGORY) return false;
+  if (category.includes('asic')) return true;
   const id = String(u.id || '').trim().toLowerCase();
-  if (id.startsWith('asic_')) return true;
-  return String(u.category || '')
-    .trim()
-    .toLowerCase()
-    .includes('asic');
+  return id.startsWith('asic_');
 }
 
 /** Renomeações acidentais no admin — não contar como ASICs NFT. */
@@ -610,6 +615,8 @@ export interface AdminUpgrade {
   grantUsdc?: number;
   grantAccessLevelId?: string;
   isActive?: boolean;
+  /** Foto do passe (path/URL público). */
+  imageUrl?: string | null;
   items?: AdminUpgradeItemGrant[];
   boxes?: AdminUpgradeBoxGrant[];
   passes?: string[];

@@ -12,6 +12,7 @@ import {
   type AccountManagerMeResponse
 } from '../api/gerente';
 import { GerenteEarningsCard } from './GerenteEarningsCard';
+import { PlayerChatWidget } from '../../chat';
 
 function formatMs(ms: number | null | undefined): string {
   if (ms == null || !Number.isFinite(ms)) return '—';
@@ -24,9 +25,19 @@ function formatMs(ms: number | null | undefined): string {
 
 type GerentePageProps = {
   onSessionRefresh?: () => void | Promise<void> | boolean | Promise<boolean>;
+  currentUserId: number;
+  currentUsername?: string | null;
+  realUserId?: number | null;
+  isManagingAccount?: boolean;
 };
 
-export const GerentePage: React.FC<GerentePageProps> = ({ onSessionRefresh }) => {
+export const GerentePage: React.FC<GerentePageProps> = ({
+  onSessionRefresh,
+  currentUserId,
+  currentUsername,
+  realUserId,
+  isManagingAccount
+}) => {
   const [data, setData] = useState<AccountManagerMeResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -121,6 +132,21 @@ export const GerentePage: React.FC<GerentePageProps> = ({ onSessionRefresh }) =>
           {okMsg}
         </div>
       )}
+
+      <section className="space-y-2">
+        <h2 className="text-sm font-bold uppercase tracking-wide text-amber-300">Mini-chat da gerência</h2>
+        <p className="text-xs text-slate-500">
+          Conversa privada. Se tiveres mais do que um gerente ou mais do que uma conta, escolhe com quem falar
+          na lista do chat. A aba Global continua no popup das outras páginas.
+        </p>
+        <PlayerChatWidget
+          variant="panel"
+          currentUserId={currentUserId}
+          currentUsername={currentUsername}
+          realUserId={realUserId}
+          isManagingAccount={isManagingAccount}
+        />
+      </section>
 
       {loading ? (
         <div className="flex items-center gap-2 text-slate-400 text-sm">

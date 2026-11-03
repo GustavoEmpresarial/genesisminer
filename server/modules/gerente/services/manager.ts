@@ -12,7 +12,12 @@
  * Migrado de legacy/backend/modules/account-manager/accountManager.service.ts (verbatim).
  */
 import type { Pool, PoolClient } from 'pg';
-import { ACCOUNT_MANAGER_FIRE_LOCK_DAYS, ACCOUNT_MANAGER_SHARE, ACCOUNT_MANAGER_STATUS } from './constants.js';
+import {
+  ACCOUNT_MANAGER_FIRE_LOCK_DAYS,
+  ACCOUNT_MANAGER_PERCENT_MULTIPLIER,
+  ACCOUNT_MANAGER_SHARE,
+  ACCOUNT_MANAGER_STATUS
+} from './constants.js';
 import { utcWeekStartMs } from '../../../shared/utils/utc-week.js';
 import { AccountManagerError } from './errors.js';
 import { MS_PER_DAY } from '../../../shared/utils/time.js';
@@ -329,6 +334,97 @@ export async function fireManager(pool: Pool, ownerUserId: number): Promise<void
   });
 }
 
+export type AdminAccountManagerActive = {
+  id: number;
+  ownerUserId: number;
+  managerUserId: number;
+  managerUsername: string;
+  managerEmail: string;
+  hiredAt: number | null;
+  fireLockedUntil: number | null;
+  canFire: boolean;
+};
+
+/**
+ * Admin Support: estado do gerente ativo do dono. Sem feature → `enabled: false`.
+ */
+export async function getAdminAccountManagerStatus(
+  pool: Pool,
+  ownerUserId: number,
+  enabled: boolean
+): Promise<{ enabled: boolean; active: AdminAccountManagerActive | null }> {
+  if (!enabled) return { enabled: false, active: null };
+  return withClient(pool, async (client) => {
+    const res = await client.query(
+      `SELECT c.id, c.owner_user_id, c.manager_user_id, c.hired_at, c.fire_locked_until,
+              m.username AS manager_username, m.email AS manager_email
+         FROM account_manager_contracts c
+         JOIN users m ON m.id = c.manager_user_id
+        WHERE c.owner_user_id = $1 AND c.status = $2
+        LIMIT 1`,
+      [ownerUserId, ACCOUNT_MANAGER_STATUS.ACTIVE]
+    );
+    const row = res.rows[0];
+    if (!row) return { enabled: true, active: null };
+    const fireLockedUntil = row.fire_locked_until != null ? Number(row.fire_locked_until) : null;
+    const now = nowMs();
+    const canFire = fireLockedUntil == null || fireLockedUntil <= now;
+    return {
+      enabled: true,
+      active: {
+        id: Number(row.id),
+        ownerUserId: Number(row.owner_user_id),
+        managerUserId: Number(row.manager_user_id),
+        managerUsername: String(row.manager_username || ''),
+        managerEmail: String(row.manager_email || ''),
+        hiredAt: row.hired_at != null ? Number(row.hired_at) : null,
+        fireLockedUntil,
+        canFire
+      }
+    };
+  });
+}
+
+/**
+ * Admin Support: demite o gerente do dono **sem** fire-lock (override de suporte).
+ */
+export async function adminFireManager(pool: Pool, ownerUserId: number): Promise<void> {
+  return withClient(pool, async (client) => {
+    await client.query('BEGIN');
+    await client.query(`SET LOCAL lock_timeout = ${LOCK_TIMEOUT_MS}`);
+    try {
+      const res = await client.query(
+        `SELECT * FROM account_manager_contracts
+          WHERE owner_user_id = $1 AND status = $2
+          LIMIT 1 FOR UPDATE`,
+        [ownerUserId, ACCOUNT_MANAGER_STATUS.ACTIVE]
+      );
+      const row = res.rows[0];
+      if (!row) {
+        throw new AccountManagerError('NOT_FOUND', 'Este jogador não tem gerente ativo.', HTTP_NOT_FOUND);
+      }
+      const t = nowMs();
+      await client.query(
+        `UPDATE account_manager_contracts
+            SET status = $1, ends_at = $2, updated_at = $2
+          WHERE id = $3`,
+        [ACCOUNT_MANAGER_STATUS.ENDED, t, row.id]
+      );
+      const restore = await callAuthSessionUpdateFlags({
+        restoreUserIdFromOriginal: true,
+        matchActingAsOwnerId: ownerUserId
+      });
+      if (!restore.ok) {
+        throw new Error(restore.error ?? 'auth session update-flags failed');
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    }
+  });
+}
+
 /**
  * Gerente encerra o próprio contrato — sem trava de tempo (ao contrário de
  * {@link fireManager}, resignar é sempre permitido). Sem `contractId`, pega
@@ -443,9 +539,8 @@ export async function getAccountManagerMe(pool: Pool, userId: number) {
 
     const activeManagedCount = asManager.rows.filter((r) => r.status === ACCOUNT_MANAGER_STATUS.ACTIVE).length;
 
-    const PERCENT_MULTIPLIER = 100;
     return {
-      sharePercent: ACCOUNT_MANAGER_SHARE * PERCENT_MULTIPLIER,
+      sharePercent: ACCOUNT_MANAGER_SHARE * ACCOUNT_MANAGER_PERCENT_MULTIPLIER,
       fireLockDays: ACCOUNT_MANAGER_FIRE_LOCK_DAYS,
       activeManagedCount,
       weekStart,

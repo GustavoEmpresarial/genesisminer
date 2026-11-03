@@ -72,11 +72,7 @@ async fn config(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respo
     forward_mining(&state, CONFIG_PATH, json!({ "userId": uid })).await
 }
 
-async fn visit(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
+async fn visit(State(state): State<Arc<AppState>>, headers: HeaderMap, body: Bytes) -> Response {
     let uid = match require_player(&state, &headers).await {
         Ok(u) => u,
         Err(r) => return r,
@@ -99,14 +95,15 @@ async fn heartbeat(
     if let Some(limited) = enforce_partner_games(&state, &headers, uid).await {
         return limited;
     }
-    forward_mining(&state, HEARTBEAT_PATH, merge_user_id(body_or_empty(&body), uid)).await
+    forward_mining(
+        &state,
+        HEARTBEAT_PATH,
+        merge_user_id(body_or_empty(&body), uid),
+    )
+    .await
 }
 
-async fn stop(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
+async fn stop(State(state): State<Arc<AppState>>, headers: HeaderMap, body: Bytes) -> Response {
     let uid = match require_player(&state, &headers).await {
         Ok(u) => u,
         Err(r) => return r,

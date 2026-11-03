@@ -6,7 +6,18 @@ import React, { useCallback, useEffect, useState } from 'react';
 import DOMPurify from 'dompurify';
 import type { Config } from 'dompurify';
 import type { LucideIcon } from 'lucide-react';
-import { Crown, CheckCircle2, ShieldCheck, Zap, Rocket, Gift, X, Loader2 } from 'lucide-react';
+import {
+  Crown,
+  CheckCircle2,
+  ShieldCheck,
+  Zap,
+  Rocket,
+  Gift,
+  X,
+  Loader2,
+  ChevronLeft,
+  ChevronRight
+} from 'lucide-react';
 import {
   getUpgradesState,
   postUpgradesPurchase,
@@ -21,10 +32,14 @@ import { formatHashrateAmount } from '../../../shared/utils/locale-format';
 import { UiNoticeModal, type UiNotice } from '../../../shared/ui/UiNoticeModal';
 import { useT } from '../../../shared/i18n';
 
-/** Compact pass photo. `h-16` is the same 4rem media box used on other player cards. */
-const PASS_PHOTO_BOX_CLASS =
-  'flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-800 bg-black/40';
+/** Banner full-width no topo do card do passe (proporção 16:9). */
+const PASS_PHOTO_BANNER_CLASS =
+  'flex w-full aspect-[16/9] items-center justify-center overflow-hidden border-b border-gray-800 bg-black/40';
 const PASS_FALLBACK_ICON_PX = 24;
+/** Ícone maior quando o passe ainda não tem foto. */
+const PASS_BANNER_FALLBACK_ICON_PX = 48;
+/** Carousel chevron control size (matches Dashboard strip controls). */
+const PASS_CAROUSEL_CHEVRON_PX = 18;
 
 export type UpgradesPageProps = {
   usdcBalance: number;
@@ -210,6 +225,7 @@ export function UpgradesPage({
   const [purchaseSuccess, setPurchaseSuccess] = useState<PurchaseSuccess | null>(null);
   const [confirmPackage, setConfirmPackage] = useState<UpgradesStatePackage | null>(null);
   const [itemPreview, setItemPreview] = useState<PackageItemPreview | null>(null);
+  const [passIndex, setPassIndex] = useState(0);
 
   const closeItemPreview = useCallback(() => setItemPreview(null), []);
 
@@ -305,10 +321,50 @@ export function UpgradesPage({
   };
 
   const packages = upgradesState?.packages ?? [];
+  const passCount = packages.length;
+  const safePassIndex = passCount === 0 ? 0 : Math.min(Math.max(passIndex, 0), passCount - 1);
+  const offer = passCount > 0 ? packages[safePassIndex] : null;
+  const activePassImage = offer ? safePackageImageUrl(offer.imageUrl) : null;
+
+  useEffect(() => {
+    if (passCount === 0) {
+      if (passIndex !== 0) setPassIndex(0);
+      return;
+    }
+    if (passIndex > passCount - 1) setPassIndex(passCount - 1);
+  }, [passCount, passIndex]);
+
+  const goPrevPass = useCallback(() => {
+    setPassIndex((i) => Math.max(0, i - 1));
+  }, []);
+
+  const goNextPass = useCallback(() => {
+    setPassIndex((i) => Math.min(passCount - 1, i + 1));
+  }, [passCount]);
+
+  useEffect(() => {
+    if (passCount <= 1) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (itemPreview || confirmPackage || purchaseSuccess || notice) return;
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        goPrevPass();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        goNextPass();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [passCount, itemPreview, confirmPackage, purchaseSuccess, notice, goPrevPass, goNextPass]);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#1a1b26] p-3 font-sans text-white sm:p-6">
-      <div className="mx-auto w-full min-w-0 max-w-6xl">
+      <div className="mx-auto w-full min-w-0 max-w-2xl">
         <header className="mb-6 flex flex-col gap-1 sm:mb-8">
           <h1 className="bg-gradient-to-r from-amber-400 to-orange-700 bg-clip-text text-2xl font-bold text-transparent sm:text-3xl">
             {t('upgrades.title')}
@@ -321,145 +377,192 @@ export function UpgradesPage({
             <Loader2 className="mr-2 animate-spin text-amber-400" size={PASS_FALLBACK_ICON_PX} aria-hidden />
             <span>{t('upgrades.loading')}</span>
           </div>
-        ) : packages.length === 0 ? (
+        ) : packages.length === 0 || !offer ? (
           <div className="mx-auto flex max-w-xl flex-col items-center justify-center rounded-xl border border-gray-800 bg-[#16161e] px-6 py-16 text-center">
             <Crown className="mb-4 text-gray-500" size={PASS_FALLBACK_ICON_PX * 2} />
             <p className="mb-2 text-lg font-bold text-white">{t('upgrades.emptyTitle')}</p>
             <p className="max-w-md text-sm text-gray-400">{t('upgrades.emptyBody')}</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {packages.map((offer) => {
-              const img = safePackageImageUrl(offer.imageUrl);
-              const busy = purchaseBusyId === offer.id;
-              const anyBusy = purchaseBusyId != null;
-              const accent = passAccentClass(offer.name);
+          <section
+            className="flex flex-col gap-4"
+            aria-roledescription="carousel"
+            aria-label={t('upgrades.title')}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={goPrevPass}
+                disabled={safePassIndex <= 0}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-600/45 bg-slate-900/70 text-slate-300 transition-colors hover:bg-slate-800/90 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={t('upgrades.carouselPrev')}
+              >
+                <ChevronLeft size={PASS_CAROUSEL_CHEVRON_PX} strokeWidth={2} aria-hidden />
+              </button>
+              <p className="min-w-0 flex-1 text-center text-xs font-bold uppercase tracking-wide text-gray-400">
+                {t('upgrades.carouselPosition', {
+                  current: safePassIndex + 1,
+                  total: passCount
+                })}
+              </p>
+              <button
+                type="button"
+                onClick={goNextPass}
+                disabled={safePassIndex >= passCount - 1}
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-600/45 bg-slate-900/70 text-slate-300 transition-colors hover:bg-slate-800/90 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={t('upgrades.carouselNext')}
+              >
+                <ChevronRight size={PASS_CAROUSEL_CHEVRON_PX} strokeWidth={2} aria-hidden />
+              </button>
+            </div>
 
-              return (
-                <article
-                  key={offer.id}
-                  className={`flex flex-col rounded-xl border border-gray-800 border-l-2 bg-[#16161e] p-4 ${accent}`}
-                >
-                  <div className="flex flex-col">
-                    <div className="flex items-start gap-3">
-                      <div className={PASS_PHOTO_BOX_CLASS}>
-                        {img ? (
-                          <img src={img} alt={offer.name} className="h-full w-full object-contain p-1" loading="lazy" />
-                        ) : (
-                          <Crown className="text-amber-400" size={PASS_FALLBACK_ICON_PX} aria-hidden />
-                        )}
-                      </div>
-                      <h2 className="min-w-0 text-lg font-bold leading-tight text-white">{offer.name}</h2>
+            <article
+              key={offer.id}
+              className={`flex flex-col overflow-hidden rounded-xl border border-gray-800 border-l-2 bg-[#16161e] ${passAccentClass(offer.name)}`}
+              aria-roledescription="slide"
+              aria-label={offer.name}
+            >
+              <div className={PASS_PHOTO_BANNER_CLASS}>
+                {activePassImage ? (
+                  <img
+                    src={activePassImage}
+                    alt={offer.name}
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <Crown className="text-amber-400" size={PASS_BANNER_FALLBACK_ICON_PX} aria-hidden />
+                )}
+              </div>
+              <div className="flex flex-col p-4">
+                <h2 className="min-w-0 text-lg font-bold leading-tight text-white">{offer.name}</h2>
+
+                <div className="mt-3 text-sm leading-relaxed text-gray-400">
+                  <RichDescription
+                    isRaw
+                    content={offer.description?.trim() ? offer.description : t('upgrades.fallbackDescription')}
+                  />
+                </div>
+
+                <div className="mb-4 mt-4 flex flex-col gap-1">
+                  {offer.originalPrice && Number(offer.originalPrice) > Number(offer.finalPrice) ? (
+                    <div className="font-mono text-sm text-gray-500 line-through">
+                      ${formatUsdcDisplay(offer.originalPrice)} USDC
                     </div>
-
-                    <div className="mt-3 text-sm leading-relaxed text-gray-400">
-                      <RichDescription
-                        isRaw
-                        content={offer.description?.trim() ? offer.description : t('upgrades.fallbackDescription')}
-                      />
-                    </div>
-
-                    <div className="mb-4 mt-4 flex flex-col gap-1">
-                      {offer.originalPrice && Number(offer.originalPrice) > Number(offer.finalPrice) ? (
-                        <div className="font-mono text-sm text-gray-500 line-through">
-                          ${formatUsdcDisplay(offer.originalPrice)} USDC
-                        </div>
-                      ) : null}
-                      <div className="flex flex-wrap items-baseline gap-2">
-                        <span className="text-2xl font-bold text-white">${formatUsdcDisplay(offer.finalPrice)}</span>
-                        <span className="text-xs font-bold uppercase tracking-wide text-gray-400">
-                          {offer.currency}
-                        </span>
-                        {offer.discountPercent != null && offer.discountPercent > 0 ? (
-                          <span className="rounded-full bg-emerald-900/40 px-2 py-0.5 text-xs font-bold text-emerald-300">
-                            -{offer.discountPercent.toFixed(DISCOUNT_FRACTION_DIGITS)}%
-                          </span>
-                        ) : null}
-                      </div>
-                      {offer.stockRemaining != null ? (
-                        <div className="font-mono text-xs text-gray-400">
-                          {t('upgrades.stockRemaining', { count: offer.stockRemaining })}
-                        </div>
-                      ) : null}
-                      {offer.unpurchasableReason ? (
-                        <div className="text-xs text-amber-300/90">{offer.unpurchasableReason}</div>
-                      ) : null}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => requestPurchase(offer)}
-                      disabled={anyBusy || !offer.isPurchasable}
-                      className={`mb-4 w-full rounded-xl py-2.5 text-sm font-bold transition disabled:opacity-50 ${
-                        !offer.isPurchasable
-                          ? 'bg-slate-800 text-slate-400'
-                          : 'bg-amber-500 text-slate-950 hover:bg-amber-400'
-                      }`}
-                    >
-                      {busy
-                        ? t('upgrades.processing')
-                        : !offer.isPurchasable
-                          ? looksLikeInsufficientUsdcMessage(offer.unpurchasableReason || '')
-                            ? t('upgrades.insufficientBalance')
-                            : t('upgrades.unavailable')
-                          : t('upgrades.buy')}
-                    </button>
-
-                    <div className="flex-1 space-y-3">
-                      {offer.itemsPreview.length > 0 && (
-                        <>
-                          <div className="text-xs font-bold uppercase tracking-wide text-gray-400">
-                            {t('upgrades.packageContents')}
-                          </div>
-                          <div className="space-y-2">
-                            {offer.itemsPreview.map((row, i) => {
-                              const thumb = safePackageImageUrl(row.imageUrl);
-                              const showPower = row.baseProduction > 0;
-                              return (
-                                <div
-                                  key={`${row.rewardType}-${row.catalogId}-${i}`}
-                                  className="flex items-center gap-3 rounded-xl border border-gray-800 bg-black/20 p-3 text-sm"
-                                >
-                                  {thumb ? (
-                                    <button
-                                      type="button"
-                                      className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-800 bg-black/40 transition hover:border-amber-500/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
-                                      aria-label={t('upgrades.previewItem', { label: row.label })}
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        openItemPreview(row, thumb);
-                                      }}
-                                    >
-                                      <img src={thumb} alt="" className="h-full w-full object-contain p-0.5" />
-                                    </button>
-                                  ) : (
-                                    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-800 bg-black/40">
-                                      <Gift size={PASS_FALLBACK_ICON_PX} className="text-gray-500" aria-hidden />
-                                    </div>
-                                  )}
-                                  <div className="min-w-0 flex-1">
-                                    <div className="flex min-w-0 items-center gap-2">
-                                      <span className="shrink-0 font-bold text-amber-300">{row.quantity}x</span>
-                                      <span className="truncate text-gray-200">{row.label}</span>
-                                    </div>
-                                    {showPower ? (
-                                      <div className="mt-0.5 font-mono text-xs text-emerald-300">
-                                        +{formatHashrateAmount(row.baseProduction)} H/s
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </>
-                      )}
-                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span className="text-2xl font-bold text-white">${formatUsdcDisplay(offer.finalPrice)}</span>
+                    <span className="text-xs font-bold uppercase tracking-wide text-gray-400">
+                      {offer.currency}
+                    </span>
+                    {offer.discountPercent != null && offer.discountPercent > 0 ? (
+                      <span className="rounded-full bg-emerald-900/40 px-2 py-0.5 text-xs font-bold text-emerald-300">
+                        -{offer.discountPercent.toFixed(DISCOUNT_FRACTION_DIGITS)}%
+                      </span>
+                    ) : null}
                   </div>
-                </article>
-              );
-            })}
-          </div>
+                  {offer.stockRemaining != null ? (
+                    <div className="font-mono text-xs text-gray-400">
+                      {t('upgrades.stockRemaining', { count: offer.stockRemaining })}
+                    </div>
+                  ) : null}
+                  {offer.unpurchasableReason ? (
+                    <div className="text-xs text-amber-300/90">{offer.unpurchasableReason}</div>
+                  ) : null}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => requestPurchase(offer)}
+                  disabled={purchaseBusyId != null || !offer.isPurchasable}
+                  className={`mb-4 w-full rounded-xl py-2.5 text-sm font-bold transition disabled:opacity-50 ${
+                    !offer.isPurchasable
+                      ? 'bg-slate-800 text-slate-400'
+                      : 'bg-amber-500 text-slate-950 hover:bg-amber-400'
+                  }`}
+                >
+                  {purchaseBusyId === offer.id
+                    ? t('upgrades.processing')
+                    : !offer.isPurchasable
+                      ? looksLikeInsufficientUsdcMessage(offer.unpurchasableReason || '')
+                        ? t('upgrades.insufficientBalance')
+                        : t('upgrades.unavailable')
+                      : t('upgrades.buy')}
+                </button>
+
+                <div className="flex-1 space-y-3">
+                  {offer.itemsPreview.length > 0 && (
+                    <>
+                      <div className="text-xs font-bold uppercase tracking-wide text-gray-400">
+                        {t('upgrades.packageContents')}
+                      </div>
+                      <div className="space-y-2">
+                        {offer.itemsPreview.map((row, i) => {
+                          const thumb = safePackageImageUrl(row.imageUrl);
+                          const showPower = row.baseProduction > 0;
+                          return (
+                            <div
+                              key={`${row.rewardType}-${row.catalogId}-${i}`}
+                              className="flex items-center gap-3 rounded-xl border border-gray-800 bg-black/20 p-3 text-sm"
+                            >
+                              {thumb ? (
+                                <button
+                                  type="button"
+                                  className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-800 bg-black/40 transition hover:border-amber-500/50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400"
+                                  aria-label={t('upgrades.previewItem', { label: row.label })}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openItemPreview(row, thumb);
+                                  }}
+                                >
+                                  <img src={thumb} alt="" className="h-full w-full object-contain p-0.5" />
+                                </button>
+                              ) : (
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-800 bg-black/40">
+                                  <Gift size={PASS_FALLBACK_ICON_PX} className="text-gray-500" aria-hidden />
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="shrink-0 font-bold text-amber-300">{row.quantity}x</span>
+                                  <span className="truncate text-gray-200">{row.label}</span>
+                                </div>
+                                {showPower ? (
+                                  <div className="mt-0.5 font-mono text-xs text-emerald-300">
+                                    +{formatHashrateAmount(row.baseProduction)} H/s
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </article>
+
+            {passCount > 1 ? (
+              <div className="flex flex-wrap items-center justify-center gap-2" role="tablist" aria-label={t('upgrades.title')}>
+                {packages.map((pkg, idx) => (
+                  <button
+                    key={pkg.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={idx === safePassIndex}
+                    aria-label={pkg.name}
+                    onClick={() => setPassIndex(idx)}
+                    className={`h-2.5 rounded-full transition-all ${
+                      idx === safePassIndex
+                        ? 'w-6 bg-amber-400'
+                        : 'w-2.5 bg-slate-600 hover:bg-slate-500'
+                    }`}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </section>
         )}
       </div>
 

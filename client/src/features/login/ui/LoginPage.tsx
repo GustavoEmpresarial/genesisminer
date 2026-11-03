@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { User } from '../../../shared/types/auth';
 import { useT } from '../../../shared/i18n';
-import { login, requestEmailVerification } from '../../../shared/api/auth';
+import { login } from '../../../shared/api/auth';
 import { AUTH_LOGIN_RECOVERY_EMAIL_MAX, AUTH_PASSWORD_MAX } from '../../../shared/constants/authLimits';
 import {
   navigateAuthMode,
@@ -15,11 +15,7 @@ import {
   AuthSubmitButton,
   AuthTurnstileBox
 } from '../../../shared/ui/auth/AuthFields';
-import {
-  TURNSTILE_LOGIN_CONTAINER_ID,
-  validateLoginCredentials,
-  validateResendEmail
-} from '../lib/loginValidation';
+import { TURNSTILE_LOGIN_CONTAINER_ID, validateLoginCredentials } from '../lib/loginValidation';
 
 export type LoginPageProps = {
   onLogin: (user: User) => void;
@@ -34,7 +30,6 @@ export function LoginPage({ onLogin, initialSuccess = null }: LoginPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(initialSuccess);
   const [busy, setBusy] = useState(false);
-  const [showResendActivationCta, setShowResendActivationCta] = useState(false);
 
   useEffect(() => {
     if (initialSuccess) setSuccessMessage(initialSuccess);
@@ -46,26 +41,10 @@ export function LoginPage({ onLogin, initialSuccess = null }: LoginPageProps) {
   const translateErr = (key: string, params?: Record<string, string | number>) =>
     params ? t(key, params) : t(key);
 
-  const handleResendVerification = async () => {
-    const v = validateResendEmail(email);
-    if (!v.ok) {
-      setError(translateErr(v.key, v.params));
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    setShowResendActivationCta(false);
-    const result = await requestEmailVerification(v.email);
-    setBusy(false);
-    if (result.ok) setSuccessMessage(result.message || t('auth.okResend'));
-    else setError(result.error || t('auth.errResend'));
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMessage(null);
-    setShowResendActivationCta(false);
 
     const v = validateLoginCredentials(email, password);
     if (!v.ok) {
@@ -93,9 +72,6 @@ export function LoginPage({ onLogin, initialSuccess = null }: LoginPageProps) {
     }
 
     resetTurnstile();
-    const needsVerification =
-      result.code === 'EMAIL_NOT_VERIFIED' || result.emailVerificationRequired === true;
-    setShowResendActivationCta(needsVerification);
     setError(result.error || t('auth.errBadCredentials'));
   };
 
@@ -107,21 +83,6 @@ export function LoginPage({ onLogin, initialSuccess = null }: LoginPageProps) {
       successMessage={successMessage}
       tabs={<AuthModeTabs active="login" onLogin={() => undefined} onRegister={() => navigateAuthMode('register')} />}
     >
-      {showResendActivationCta && (
-        <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
-          <div className="font-semibold text-amber-600 dark:text-amber-300">{t('auth.accountNotActivated')}</div>
-          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">{t('auth.resendHint')}</p>
-          <button
-            type="button"
-            onClick={() => void handleResendVerification()}
-            disabled={busy}
-            className="mt-3 inline-flex items-center gap-2 rounded-lg bg-amber-500 px-3 py-2 text-xs font-bold text-stone-950 hover:bg-amber-400 disabled:opacity-60"
-          >
-            {busy ? t('auth.resending') : t('auth.resendActivation')}
-          </button>
-        </div>
-      )}
-
       <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4 animate-in fade-in">
         <AuthEmailField
           value={email}

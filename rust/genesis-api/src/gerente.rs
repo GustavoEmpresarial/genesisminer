@@ -333,16 +333,18 @@ async fn am_decline(
     .await
 }
 
-async fn am_fire(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Json(body): Json<Value>,
-) -> Response {
+async fn am_fire(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     let ctx = match load_manager_ctx(&state, &headers).await {
         Ok(c) => c,
         Err(e) => return e,
     };
-    forward_simple(&state, GERENTE_FIRE_PATH, with_manager_fields(body, &ctx)).await
+    // Empty POST (no Content-Type) must not 415: fire has no client JSON fields.
+    forward_simple(
+        &state,
+        GERENTE_FIRE_PATH,
+        with_manager_fields(json!({}), &ctx),
+    )
+    .await
 }
 
 async fn am_resign(

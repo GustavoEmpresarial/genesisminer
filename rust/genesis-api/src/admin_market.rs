@@ -22,7 +22,8 @@ const ADMIN_MARKET_LISTINGS_PATH: &str = "/api/admin/market/listings";
 const W_ADMIN_MARKET_LISTINGS: &str = "/v1/market/admin/listings";
 
 async fn listings(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
-    if let Err(e) = require_admin(&state, &headers, &Method::GET, ADMIN_MARKET_LISTINGS_PATH).await {
+    if let Err(e) = require_admin(&state, &headers, &Method::GET, ADMIN_MARKET_LISTINGS_PATH).await
+    {
         return e;
     }
     forward_hardware(&state, W_ADMIN_MARKET_LISTINGS, json!({})).await

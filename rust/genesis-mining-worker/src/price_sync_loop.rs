@@ -81,8 +81,7 @@ const SYMBOL_TO_COINGECKO: &[(&str, &str)] = &[
 
 /// CoinGecko's free endpoint sits behind Cloudflare, which 403s requests with
 /// no `User-Agent` (reqwest sends none by default — that was the silent break).
-const PRICE_SYNC_USER_AGENT: &str =
-    "genesis-miner-price-sync/1.0 (+https://genesisminer.com)";
+const PRICE_SYNC_USER_AGENT: &str = "genesis-miner-price-sync/1.0 (+https://genesisminer.com)";
 
 fn build_client(timeout_ms: u64) -> reqwest::Client {
     reqwest::Client::builder()
@@ -162,7 +161,10 @@ async fn run_one_tick(
     {
         Ok(Some(h)) => h,
         Ok(None) => {
-            info!(event = "price_sync_lock_busy", "price sync lock held elsewhere");
+            info!(
+                event = "price_sync_lock_busy",
+                "price sync lock held elsewhere"
+            );
             return;
         }
         Err(e) => {
@@ -177,12 +179,9 @@ async fn run_one_tick(
             Err(e) => warn!(err = %e, "price sync tick failed"),
         }
     };
-    if tokio::time::timeout(
-        Duration::from_millis(cfg.job_timeout_price_sync_ms),
-        tick,
-    )
-    .await
-    .is_err()
+    if tokio::time::timeout(Duration::from_millis(cfg.job_timeout_price_sync_ms), tick)
+        .await
+        .is_err()
     {
         warn!(
             timeout_ms = cfg.job_timeout_price_sync_ms,
@@ -273,7 +272,11 @@ async fn run_price_sync(
     let now_ms = crate::player_reads::now_ms();
     let mut updated = 0u64;
     for (id, gecko) in &id_to_gecko {
-        let Some(v) = body.get(gecko).and_then(|o| o.get("usd")).and_then(Value::as_f64) else {
+        let Some(v) = body
+            .get(gecko)
+            .and_then(|o| o.get("usd"))
+            .and_then(Value::as_f64)
+        else {
             continue;
         };
         if !v.is_finite() || v < 0.0 {
@@ -329,7 +332,9 @@ mod tests {
 
     #[test]
     fn env_ids_override_parses_and_lowercases() {
-        let m = parse_env_ids(Some(r#"{ "row-1": "Bitcoin", "row-2": " ETH ", "bad": 3 }"#));
+        let m = parse_env_ids(Some(
+            r#"{ "row-1": "Bitcoin", "row-2": " ETH ", "bad": 3 }"#,
+        ));
         assert_eq!(m.get("row-1").map(String::as_str), Some("bitcoin"));
         assert_eq!(m.get("row-2").map(String::as_str), Some("eth"));
         assert!(!m.contains_key("bad"));

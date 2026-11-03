@@ -275,7 +275,13 @@ mod tests {
     fn build_session_event_heartbeat_extra() {
         let mut extra = serde_json::Map::new();
         extra.insert("creditedMinutes".into(), json!(1));
-        let ev = build_session_event(7, SessionReason::Heartbeat, 100, BLOCKMINER_SESSION_KIND, extra);
+        let ev = build_session_event(
+            7,
+            SessionReason::Heartbeat,
+            100,
+            BLOCKMINER_SESSION_KIND,
+            extra,
+        );
         let v = serde_json::to_value(&ev).unwrap();
         assert_eq!(v["reason"], "heartbeat");
         assert_eq!(v["creditedMinutes"], 1);

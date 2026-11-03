@@ -26,6 +26,7 @@ export const GAME_NAV_LABEL_SHORT_KEYS = [
   'partners',
   'partner_games',
   'offerwall',
+  'topidle',
   'mini_blog',
   'quests'
 ] as const;

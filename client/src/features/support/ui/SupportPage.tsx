@@ -4,7 +4,7 @@
  *
  * Layout: HubPanel chrome; tab bodies live in `components/`.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { LifeBuoy, List, MessageCircle } from 'lucide-react';
 import {
   SUPPORT_ATTACHMENT_MAX_BYTES,
@@ -28,6 +28,7 @@ import { SupportNewTicketForm } from './SupportNewTicketForm';
 import { SupportTicketDetailView } from './SupportTicketDetail';
 import { SupportTicketList } from './SupportTicketList';
 import { mergeSupportPicks } from '../lib/mergeSupportPicks';
+import { prepareSupportAttachment } from '../lib/prepareSupportAttachment';
 
 type Tab = 'list' | 'new' | 'detail';
 
@@ -77,6 +78,52 @@ export function SupportPage({ userEmail, username }: SupportPageProps) {
   const fileTooSmall = useCallback(
     (name: string) => t('support.fileTooSmall', { name }),
     [t]
+  );
+  const imageUnreadable = useCallback(
+    (name: string) => t('support.imageUnreadable', { name }),
+    [t]
+  );
+
+  const ingestPickedFiles = useCallback(
+    async (
+      picked: readonly File[],
+      setTargetErr: (message: string | null) => void,
+      setTargetFiles: Dispatch<SetStateAction<File[]>>
+    ) => {
+      if (picked.length === 0) return;
+      const prepared: File[] = [];
+      let prepareReason: string | null = null;
+      const maxMb = Math.floor(SUPPORT_ATTACHMENT_MAX_BYTES / (1024 * 1024));
+      for (const file of picked) {
+        const result = await prepareSupportAttachment(file);
+        if ('error' in result) {
+          if (!prepareReason) {
+            if (result.error === 'too-large') prepareReason = fileTooLarge(result.name, maxMb);
+            else if (result.error === 'unreadable') prepareReason = imageUnreadable(result.name);
+            else prepareReason = fileTypeNotAllowed(result.name);
+          }
+          continue;
+        }
+        prepared.push(result.file);
+      }
+      setTargetFiles((prev) => {
+        const { next, rejectReason } = mergeSupportPicks(
+          prev,
+          prepared,
+          SUPPORT_ATTACHMENT_MAX_COUNT,
+          SUPPORT_ATTACHMENT_MAX_BYTES,
+          SUPPORT_ATTACHMENT_MIN_BYTES,
+          fileTooLarge,
+          tooManyFiles,
+          fileTypeNotAllowed,
+          fileTooSmall
+        );
+        const reason = rejectReason ?? prepareReason;
+        setTargetErr(reason);
+        return next;
+      });
+    },
+    [fileTooLarge, fileTooSmall, fileTypeNotAllowed, imageUnreadable, tooManyFiles]
   );
 
   const loadList = useCallback(async () => {
@@ -136,27 +183,11 @@ export function SupportPage({ userEmail, username }: SupportPageProps) {
 
   const onPickFiles = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const picked = e.target.files;
-      if (!picked?.length) return;
-      setErr(null);
-      setFiles((prev) => {
-        const { next, rejectReason } = mergeSupportPicks(
-          prev,
-          picked,
-          SUPPORT_ATTACHMENT_MAX_COUNT,
-          SUPPORT_ATTACHMENT_MAX_BYTES,
-          SUPPORT_ATTACHMENT_MIN_BYTES,
-          fileTooLarge,
-          tooManyFiles,
-          fileTypeNotAllowed,
-          fileTooSmall
-        );
-        if (rejectReason) setErr(rejectReason);
-        return next;
-      });
+      const picked = e.target.files ? Array.from(e.target.files) : [];
       e.target.value = '';
+      void ingestPickedFiles(picked, setErr, setFiles);
     },
-    [fileTooLarge, fileTooSmall, fileTypeNotAllowed, tooManyFiles]
+    [ingestPickedFiles]
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -188,25 +219,9 @@ export function SupportPage({ userEmail, username }: SupportPageProps) {
   };
 
   const onPickFollow = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = e.target.files;
-    if (!picked?.length) return;
-    setFollowErr(null);
-    setFollowFiles((prev) => {
-      const { next, rejectReason } = mergeSupportPicks(
-        prev,
-        picked,
-        SUPPORT_ATTACHMENT_MAX_COUNT,
-        SUPPORT_ATTACHMENT_MAX_BYTES,
-        SUPPORT_ATTACHMENT_MIN_BYTES,
-        fileTooLarge,
-        tooManyFiles,
-        fileTypeNotAllowed,
-        fileTooSmall
-      );
-      if (rejectReason) setFollowErr(rejectReason);
-      return next;
-    });
+    const picked = e.target.files ? Array.from(e.target.files) : [];
     e.target.value = '';
+    void ingestPickedFiles(picked, setFollowErr, setFollowFiles);
   };
 
   const sendFollow = async () => {

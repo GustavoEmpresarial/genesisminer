@@ -1,5 +1,5 @@
 /**
- * Countdown helpers for the daily / premium check-in banner.
+ * Countdown helpers for the daily check-in banner.
  */
 import type { CheckinStatusPayload } from '../api/checkin';
 
@@ -18,6 +18,5 @@ export function formatCheckinCountdown(nextResetMs: number): string {
 
 export function isCheckinButtonDisabled(status: CheckinStatusPayload | null): boolean {
   if (!status) return true;
-  if (status.premiumWeeklyCheckin) return !status.canCheckinNow;
   return !status.canCheckinNow;
 }

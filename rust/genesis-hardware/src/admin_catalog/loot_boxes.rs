@@ -395,10 +395,7 @@ pub async fn run_delete_loot_box(
 }
 
 /// Node `listLootBoxRedemptions` — promo-code redemptions bound to a box, newest first.
-pub async fn run_loot_box_redemptions(
-    pool: &Pool,
-    box_id: &str,
-) -> Result<Value, PlayerReadError> {
+pub async fn run_loot_box_redemptions(pool: &Pool, box_id: &str) -> Result<Value, PlayerReadError> {
     let box_id = box_id.trim().to_string();
     if box_id.is_empty() {
         return Err(PlayerReadError::bad("ID da caixa inválido."));
@@ -496,7 +493,9 @@ pub async fn run_delete_user_box(
         )
         .await?;
     let Some(row) = existing.first() else {
-        return Err(PlayerReadError::not_found("Box not found in user inventory"));
+        return Err(PlayerReadError::not_found(
+            "Box not found in user inventory",
+        ));
     };
     let deleted_qty: i32 = row.get::<_, Option<i32>>("qty").unwrap_or(0);
     tx.execute(

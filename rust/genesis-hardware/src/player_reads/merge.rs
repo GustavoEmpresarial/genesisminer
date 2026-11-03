@@ -36,6 +36,7 @@ const MERGE_FORBIDDEN_ROOT_IDS: &[&str] = &[
     "armario_1",
     "battery_nebula",
     "cic",
+    "gpu_quantum_v2",
 ];
 const MERGE_CATALOG_PREFIX: &str = "merge_";
 const IS_NFT_FLAG: i32 = 1;
@@ -311,7 +312,9 @@ pub async fn run_merge_history(
     }))
 }
 
-pub(crate) async fn load_merge_flags<C: GenericClient>(client: &C) -> Result<MergeFlags, PlayerReadError> {
+pub(crate) async fn load_merge_flags<C: GenericClient>(
+    client: &C,
+) -> Result<MergeFlags, PlayerReadError> {
     let row = client
         .query_opt(
             "SELECT gain_percent::double precision AS gain_percent, cost_pct_json,
@@ -580,6 +583,11 @@ mod tests {
     fn forbidden_roots() {
         assert!(is_forbidden_root("dolar_f2p"));
         assert!(is_forbidden_root("merge_dolar_f2p_x"));
+        assert!(is_forbidden_root("gpu_quantum_v2"));
+        assert!(is_forbidden_root("merge_gpu_quantum_v2_uncommon_x"));
+        assert!(is_forbidden_root(
+            "merge_merge_gpu_quantum_v2_uncommon_x_rare_y"
+        ));
         assert!(!is_forbidden_root("gpu_1"));
     }
 }

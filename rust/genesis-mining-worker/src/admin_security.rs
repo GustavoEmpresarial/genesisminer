@@ -418,7 +418,8 @@ async fn load_blacklist_payload(
         .filter(|s| !s.is_empty())
         .collect();
 
-    let mut linked: std::collections::HashMap<String, Vec<Value>> = std::collections::HashMap::new();
+    let mut linked: std::collections::HashMap<String, Vec<Value>> =
+        std::collections::HashMap::new();
     if !ip_keys.is_empty() {
         let link_rows = c
             .query(
@@ -515,7 +516,8 @@ pub async fn run_blacklist_add(pool: &Pool, body: &Value) -> Result<Value, Playe
 pub async fn run_blacklist_remove(pool: &Pool, body: &Value) -> Result<Value, PlayerReadError> {
     let ip = parse_blacklist_ip(body.get("ip"))?;
     let c = pool.get().await?;
-    c.execute("DELETE FROM ip_blacklist WHERE ip = $1", &[&ip]).await?;
+    c.execute("DELETE FROM ip_blacklist WHERE ip = $1", &[&ip])
+        .await?;
     Ok(json!({ "ok": true }))
 }
 
@@ -529,13 +531,20 @@ pub async fn run_device_fingerprints(pool: &Pool, body: &Value) -> Result<Value,
         .and_then(Value::as_i64)
         .unwrap_or(FP_DEFAULT_LIMIT)
         .clamp(1, FP_MAX_LIMIT);
-    let offset = body.get("offset").and_then(Value::as_i64).unwrap_or(0).max(0);
+    let offset = body
+        .get("offset")
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
+        .max(0);
     let event_type = match body.get("eventType").and_then(Value::as_str) {
         Some("login") => Some("login"),
         Some("register") => Some("register"),
         _ => None,
     };
-    let user_id = body.get("userId").and_then(Value::as_i64).filter(|n| *n > 0);
+    let user_id = body
+        .get("userId")
+        .and_then(Value::as_i64)
+        .filter(|n| *n > 0);
     let q: String = body
         .get("q")
         .and_then(Value::as_str)
@@ -645,8 +654,13 @@ async fn read_setting(c: &deadpool_postgres::Object, key: &str) -> Option<String
 
 pub async fn run_bulk_config_get(pool: &Pool) -> Result<Value, PlayerReadError> {
     let c = pool.get().await?;
-    let days = parse_inactive_days(read_setting(&c, SETTING_INACTIVE_DAYS).await.map(Value::String).as_ref())
-        .unwrap_or(DEFAULT_INACTIVE_BLOCK_DAYS);
+    let days = parse_inactive_days(
+        read_setting(&c, SETTING_INACTIVE_DAYS)
+            .await
+            .map(Value::String)
+            .as_ref(),
+    )
+    .unwrap_or(DEFAULT_INACTIVE_BLOCK_DAYS);
     let auto = parse_bool_setting(read_setting(&c, SETTING_AUTO_ENABLED).await.as_deref());
     Ok(json!({ "ok": true, "inactiveBlockDays": days, "autoBlockEnabled": auto }))
 }
@@ -662,7 +676,10 @@ pub async fn run_bulk_config_set(pool: &Pool, body: &Value) -> Result<Value, Pla
     let c = pool.get().await?;
     for (k, v) in [
         (SETTING_INACTIVE_DAYS, days.to_string()),
-        (SETTING_AUTO_ENABLED, if auto { "1".into() } else { "0".into() }),
+        (
+            SETTING_AUTO_ENABLED,
+            if auto { "1".into() } else { "0".into() },
+        ),
     ] {
         c.execute(
             "INSERT INTO settings (key, value) VALUES ($1, $2)
@@ -689,17 +706,28 @@ const INACTIVE_FILTER_SQL: &str = "
 
 async fn effective_days(c: &deadpool_postgres::Object, v: Option<&Value>) -> i64 {
     parse_inactive_days(v).unwrap_or({
-        parse_inactive_days(read_setting(c, SETTING_INACTIVE_DAYS).await.map(Value::String).as_ref())
-            .unwrap_or(DEFAULT_INACTIVE_BLOCK_DAYS)
+        parse_inactive_days(
+            read_setting(c, SETTING_INACTIVE_DAYS)
+                .await
+                .map(Value::String)
+                .as_ref(),
+        )
+        .unwrap_or(DEFAULT_INACTIVE_BLOCK_DAYS)
     })
 }
 
-pub async fn run_inactive_block_preview(pool: &Pool, body: &Value) -> Result<Value, PlayerReadError> {
+pub async fn run_inactive_block_preview(
+    pool: &Pool,
+    body: &Value,
+) -> Result<Value, PlayerReadError> {
     let c = pool.get().await?;
     let days = effective_days(&c, body.get("days")).await;
     let cutoff = now_ms() - days * MS_PER_DAY;
     let count: i64 = c
-        .query_one(&format!("SELECT COUNT(*)::bigint AS n {INACTIVE_FILTER_SQL}"), &[&cutoff])
+        .query_one(
+            &format!("SELECT COUNT(*)::bigint AS n {INACTIVE_FILTER_SQL}"),
+            &[&cutoff],
+        )
         .await?
         .get("n");
     Ok(json!({
@@ -755,7 +783,10 @@ const PW_TARGET_FILTER: &str =
 pub async fn run_pw_reset_preview(pool: &Pool) -> Result<Value, PlayerReadError> {
     let c = pool.get().await?;
     let count: i64 = c
-        .query_one(&format!("SELECT COUNT(*)::bigint AS n {PW_TARGET_FILTER}"), &[])
+        .query_one(
+            &format!("SELECT COUNT(*)::bigint AS n {PW_TARGET_FILTER}"),
+            &[],
+        )
         .await?
         .get("n");
     Ok(json!({
@@ -796,7 +827,8 @@ pub async fn run_pw_reset_apply(
 
     // One shared bcrypt hash of a random secret — players use "forgot password".
     let mut secret = [0u8; 32];
-    getrandom::getrandom(&mut secret).map_err(|e| PlayerReadError::internal(format!("rng: {e}")))?;
+    getrandom::getrandom(&mut secret)
+        .map_err(|e| PlayerReadError::internal(format!("rng: {e}")))?;
     let secret_hex = hex::encode(secret);
     let hash = auth_client::auth_hash_password(http, cfg, &secret_hex).await?;
 
@@ -812,7 +844,11 @@ pub async fn run_pw_reset_apply(
 
     auth_client::auth_session_delete_by_users(http, cfg, &ids).await?;
 
-    let n = if updated > 0 { updated as i64 } else { ids.len() as i64 };
+    let n = if updated > 0 {
+        updated as i64
+    } else {
+        ids.len() as i64
+    };
     Ok(json!({
         "ok": true, "resetCount": n,
         "message": "Senhas alteradas. Jogadores devem usar \"Esqueci a senha\" para definir uma nova.",

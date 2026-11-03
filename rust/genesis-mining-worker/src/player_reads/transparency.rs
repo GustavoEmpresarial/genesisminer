@@ -90,9 +90,15 @@ pub(crate) async fn load_health_settings<C: GenericClient>(conn: &C) -> HealthSe
 
     let d = HealthSettings::default();
     HealthSettings {
-        weight_inflow: row.try_get::<_, f64>("weight_inflow").unwrap_or(d.weight_inflow),
-        weight_rent: row.try_get::<_, f64>("weight_rent").unwrap_or(d.weight_rent),
-        weight_ledger: row.try_get::<_, f64>("weight_ledger").unwrap_or(d.weight_ledger),
+        weight_inflow: row
+            .try_get::<_, f64>("weight_inflow")
+            .unwrap_or(d.weight_inflow),
+        weight_rent: row
+            .try_get::<_, f64>("weight_rent")
+            .unwrap_or(d.weight_rent),
+        weight_ledger: row
+            .try_get::<_, f64>("weight_ledger")
+            .unwrap_or(d.weight_ledger),
         floor: row.try_get::<_, i32>("floor_score").unwrap_or(d.floor),
         season_start_ms: row
             .try_get::<_, i64>("season_start_ms")
@@ -102,11 +108,15 @@ pub(crate) async fn load_health_settings<C: GenericClient>(conn: &C) -> HealthSe
             .ok()
             .and_then(|s| HealthPeriodScope::parse(&s))
             .unwrap_or(d.period_scope),
-        count_undated: row.try_get::<_, bool>("count_undated").unwrap_or(d.count_undated),
+        count_undated: row
+            .try_get::<_, bool>("count_undated")
+            .unwrap_or(d.count_undated),
         override_enabled: row
             .try_get::<_, bool>("override_enabled")
             .unwrap_or(d.override_enabled),
-        override_value: row.try_get::<_, Option<i32>>("override_value").unwrap_or(None),
+        override_value: row
+            .try_get::<_, Option<i32>>("override_value")
+            .unwrap_or(None),
     }
 }
 
@@ -123,9 +133,9 @@ async fn load_player_cash_flows<C: GenericClient>(
     season_start_ms: i64,
 ) -> Result<PlayerCashFlows, PlayerReadError> {
     let local = now_ms - BRT_OFFSET_MS;
-    let brt_today_start =
-        local.div_euclid(genesis_core::time::MS_PER_DAY as i64) * genesis_core::time::MS_PER_DAY as i64
-            + BRT_OFFSET_MS;
+    let brt_today_start = local.div_euclid(genesis_core::time::MS_PER_DAY as i64)
+        * genesis_core::time::MS_PER_DAY as i64
+        + BRT_OFFSET_MS;
 
     let dep = conn
         .query_one(

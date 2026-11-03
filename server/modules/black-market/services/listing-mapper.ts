@@ -180,6 +180,14 @@ export type PlayerListingRow = {
   reserved_by?: number | null;
   buyer_paid_usdc?: number | string | null;
   is_player?: number | null;
+  item_name?: string | null;
+  item_image?: string | null;
+  item_icon?: string | null;
+  item_category?: string | null;
+  item_type?: string | null;
+  item_base_production?: number | string | null;
+  item_power_consumption?: number | string | null;
+  item_status?: string | null;
 };
 
 export type MarketListingClientDto = {
@@ -193,6 +201,14 @@ export type MarketListingClientDto = {
   expiresAt: number;
   reservedBy?: string;
   reservedUntil?: number;
+  itemName?: string;
+  itemImage?: string;
+  itemIcon?: string;
+  itemCategory?: string;
+  itemType?: string;
+  itemBaseProduction?: number;
+  itemPowerConsumption?: number;
+  itemStatus?: string;
 };
 
 /** Extrai o id do vendedor de uma linha crua (aceita tanto `seller_id` quanto `user_id`); `0` se ausente/inválido. */
@@ -212,6 +228,18 @@ export function resolveSellerDisplayNameFromListingRow(l: PlayerListingRow): str
   return e;
 }
 
+function optionalTrimmedString(raw: string | null | undefined): string | undefined {
+  if (raw == null) return undefined;
+  const t = String(raw).trim();
+  return t ? t : undefined;
+}
+
+function optionalFiniteNumber(raw: number | string | null | undefined): number | undefined {
+  if (raw == null || raw === '') return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /** Converte uma linha crua de `player_listings` no DTO enviado ao cliente (preço unitário, `lineTotal`, reserva ativa). */
 export function mapListingForClient(l: PlayerListingRow, now: number): MarketListingClientDto {
   const exp = timestampMsFromDb(l.expires_at);
@@ -223,6 +251,14 @@ export function mapListingForClient(l: PlayerListingRow, now: number): MarketLis
   }
   const unitPrice = Number(l.price);
   const qty = Math.max(1, parseInt(String(l.qty ?? 1), 10) || 1);
+  const itemName = optionalTrimmedString(l.item_name ?? undefined);
+  const itemImage = optionalTrimmedString(l.item_image ?? undefined);
+  const itemIcon = optionalTrimmedString(l.item_icon ?? undefined);
+  const itemCategory = optionalTrimmedString(l.item_category ?? undefined);
+  const itemType = optionalTrimmedString(l.item_type ?? undefined);
+  const itemBaseProduction = optionalFiniteNumber(l.item_base_production);
+  const itemPowerConsumption = optionalFiniteNumber(l.item_power_consumption);
+  const itemStatus = optionalTrimmedString(l.item_status ?? undefined);
   return {
     id: l.id,
     sellerId: resolveSellerIdFromListingRow(l),
@@ -233,7 +269,15 @@ export function mapListingForClient(l: PlayerListingRow, now: number): MarketLis
     lineTotal: unitPrice * qty,
     expiresAt: exp,
     reservedBy,
-    reservedUntil: reservedActive ? resUntil : undefined
+    reservedUntil: reservedActive ? resUntil : undefined,
+    ...(itemName ? { itemName } : {}),
+    ...(itemImage ? { itemImage } : {}),
+    ...(itemIcon ? { itemIcon } : {}),
+    ...(itemCategory ? { itemCategory } : {}),
+    ...(itemType ? { itemType } : {}),
+    ...(itemBaseProduction !== undefined ? { itemBaseProduction } : {}),
+    ...(itemPowerConsumption !== undefined ? { itemPowerConsumption } : {}),
+    ...(itemStatus ? { itemStatus } : {})
   };
 }
 

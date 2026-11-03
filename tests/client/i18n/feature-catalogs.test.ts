@@ -109,7 +109,8 @@ const FEATURE_ROOTS = [
   'upgrades',
   'mining',
   'auth',
-  'shell'
+  'shell',
+  'topidle'
 ] as const;
 
 describe('feature catalog key parity', () => {

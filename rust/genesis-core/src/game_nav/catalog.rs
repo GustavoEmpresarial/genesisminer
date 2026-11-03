@@ -24,10 +24,18 @@ pub const DEFAULT_ALLOWED_PAGES: &[&str] = &[
     "mini_blog",
     "quests",
     "offerwall",
+    "topidle",
 ];
 
 /// Extras sempre acrescentados a jogadores autenticados (legado).
-pub const EXTRA_ALWAYS_PAGES: &[&str] = &["partners", "mini_blog", "quests", "offerwall", "roleta"];
+pub const EXTRA_ALWAYS_PAGES: &[&str] = &[
+    "partners",
+    "mini_blog",
+    "quests",
+    "offerwall",
+    "roleta",
+    "topidle",
+];
 
 /// Em modo gerência só estas keys passam no filtro final.
 pub const MANAGER_ONLY_KEYS: &[&str] = &[
@@ -153,6 +161,11 @@ pub(crate) const CATALOG: &[CatalogEntry] = &[
     },
     CatalogEntry {
         key: "offerwall",
+        section: GameNavSection::Hub,
+        accent: GameNavAccent::Emerald,
+    },
+    CatalogEntry {
+        key: "topidle",
         section: GameNavSection::Hub,
         accent: GameNavAccent::Emerald,
     },

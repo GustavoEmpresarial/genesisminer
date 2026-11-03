@@ -163,18 +163,23 @@ pub fn resolve_mining_coin_usd_rate(coin: &MiningCoinInput) -> f64 {
     0.0
 }
 
+/// Admin class «Máquina normal (GPU)» stores this category. It wins over an `asic_` id.
+const MACHINE_CLASS_GPU_CATEGORY: &str = "gpu";
+
 pub fn is_asic_machine_upgrade(up_type: &str, up_id: &str, category: Option<&str>) -> bool {
     if up_type != "machine" {
         return false;
     }
-    let id = up_id.trim().to_lowercase();
-    if id.starts_with("asic_") {
+    let category = category
+        .map(|c| c.trim().to_lowercase())
+        .unwrap_or_default();
+    if category == MACHINE_CLASS_GPU_CATEGORY {
+        return false;
+    }
+    if category.contains("asic") {
         return true;
     }
-    category
-        .map(|c| c.trim().to_lowercase())
-        .map(|c| c.contains("asic"))
-        .unwrap_or(false)
+    up_id.trim().to_lowercase().starts_with("asic_")
 }
 
 pub fn is_nft_collectible_machine(up_type: &str, up_id: &str, category: Option<&str>) -> bool {

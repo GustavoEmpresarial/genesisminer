@@ -430,3 +430,133 @@ export async function getAdminSupportTicketDetail(
     return { ok: false, error: 'Erro de rede.' };
   }
 }
+
+export type AdminSupportAccountManagerActive = {
+  id: number;
+  ownerUserId: number;
+  managerUserId: number;
+  managerUsername: string;
+  managerEmail: string;
+  ownerUsername: string;
+  ownerEmail: string;
+  hiredAt: number | null;
+  fireLockedUntil: number | null;
+  canFire: boolean;
+};
+
+export type AdminSupportAccountManagerStatus =
+  | {
+      ok: true;
+      enabled: boolean;
+      userId: number;
+      username: string;
+      email: string;
+      active: AdminSupportAccountManagerActive | null;
+      managing: AdminSupportAccountManagerActive[];
+    }
+  | { ok: false; error: string };
+
+function parseAdminAmActive(raw: unknown): AdminSupportAccountManagerActive | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  const id = Number(o.id);
+  const managerUserId = Number(o.managerUserId);
+  const ownerUserId = Number(o.ownerUserId);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  if (!Number.isFinite(managerUserId) && !Number.isFinite(ownerUserId)) return null;
+  const hiredRaw = o.hiredAt;
+  const lockRaw = o.fireLockedUntil;
+  return {
+    id: Math.floor(id),
+    ownerUserId: Math.floor(Number(o.ownerUserId) || 0),
+    managerUserId: Math.floor(Number(o.managerUserId) || 0),
+    managerUsername: typeof o.managerUsername === 'string' ? o.managerUsername : '',
+    managerEmail: typeof o.managerEmail === 'string' ? o.managerEmail : '',
+    ownerUsername: typeof o.ownerUsername === 'string' ? o.ownerUsername : '',
+    ownerEmail: typeof o.ownerEmail === 'string' ? o.ownerEmail : '',
+    hiredAt: hiredRaw == null ? null : Number(hiredRaw) || null,
+    fireLockedUntil: lockRaw == null ? null : Number(lockRaw) || null,
+    canFire: o.canFire === true,
+  };
+}
+
+function parseAdminAmStatusBody(data: Record<string, unknown>): AdminSupportAccountManagerStatus {
+  const managingRaw = Array.isArray(data.managing) ? data.managing : [];
+  const managing = managingRaw
+    .map((row) => parseAdminAmActive(row))
+    .filter((row): row is AdminSupportAccountManagerActive => row != null);
+  return {
+    ok: true,
+    enabled: data.enabled !== false,
+    userId: Math.floor(Number(data.userId) || 0),
+    username: typeof data.username === 'string' ? data.username : '',
+    email: typeof data.email === 'string' ? data.email : '',
+    active: parseAdminAmActive(data.active),
+    managing,
+  };
+}
+
+/** Estado de gerência do jogador (dono e/ou gerente) — aba Suporte. */
+export async function getAdminSupportAccountManager(userId: number): Promise<AdminSupportAccountManagerStatus> {
+  if (!Number.isFinite(userId) || userId <= 0) {
+    return { ok: false, error: 'userId inválido.' };
+  }
+  try {
+    const res = await apiFetch(
+      `${API_BASE}/admin/support/account-manager?userId=${encodeURIComponent(String(Math.floor(userId)))}`
+    );
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      return { ok: false, error: typeof data.error === 'string' ? data.error : `HTTP ${res.status}` };
+    }
+    return parseAdminAmStatusBody(data);
+  } catch {
+    return { ok: false, error: 'Erro de rede.' };
+  }
+}
+
+/** Lookup de gerência por email (sem precisar de ticket). */
+export async function getAdminSupportAccountManagerByEmail(
+  email: string
+): Promise<AdminSupportAccountManagerStatus> {
+  const em = email.trim();
+  if (!em) return { ok: false, error: 'Informe um email.' };
+  try {
+    const res = await apiFetch(
+      `${API_BASE}/admin/support/account-manager?email=${encodeURIComponent(em)}`
+    );
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      return { ok: false, error: typeof data.error === 'string' ? data.error : `HTTP ${res.status}` };
+    }
+    return parseAdminAmStatusBody(data);
+  } catch {
+    return { ok: false, error: 'Erro de rede.' };
+  }
+}
+
+/** Demite o gerente do dono (bypass fire-lock). */
+export async function postAdminSupportFireManager(
+  userId: number
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!Number.isFinite(userId) || userId <= 0) {
+    return { ok: false, error: 'userId inválido.' };
+  }
+  try {
+    const res = await apiFetch(`${API_BASE}/admin/support/account-manager/fire`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: Math.floor(userId) }),
+    });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      return { ok: false, error: typeof data.error === 'string' ? data.error : `HTTP ${res.status}` };
+    }
+    if (data.ok === false) {
+      return { ok: false, error: typeof data.error === 'string' ? data.error : 'Falha ao demitir.' };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, error: 'Erro de rede.' };
+  }
+}

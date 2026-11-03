@@ -16,31 +16,37 @@ use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 use crate::config::{WorkerConfig, MINING_WORKER_AUTH_HEADER};
-use crate::errors::AuthPgError;
-use crate::mail::{self, DEFAULT_RESET_LINK_VALIDITY_MINUTES, DEFAULT_VERIFICATION_LINK_VALIDITY_HOURS};
-use crate::refresh::{
-    run_refresh_issue, run_refresh_revoke, run_refresh_rotate, REFRESH_ISSUE_PATH, REFRESH_REVOKE_PATH,
-    REFRESH_ROTATE_PATH,
-};
-use crate::hydrate::{
-    parse_hydrate_ids, run_session_hydrate, PublicProfile, SESSION_HYDRATE_PATH,
-};
 use crate::email_verify::{
     run_email_verify_complete, run_email_verify_request, EmailVerifyCompleteBody,
     EmailVerifyCompleteError, EmailVerifyRequestBody, EMAIL_VERIFY_COMPLETE_PATH,
     EMAIL_VERIFY_GENERIC_MESSAGE, EMAIL_VERIFY_REQUEST_PATH,
 };
-use crate::login::{run_login_complete, LoginCompleteError, LoginCompleteRequest, LOGIN_COMPLETE_PATH};
+use crate::errors::AuthPgError;
+use crate::hydrate::{parse_hydrate_ids, run_session_hydrate, PublicProfile, SESSION_HYDRATE_PATH};
+use crate::login::{
+    run_login_complete, LoginCompleteError, LoginCompleteRequest, LOGIN_COMPLETE_PATH,
+};
+use crate::mail::{
+    self, DEFAULT_RESET_LINK_VALIDITY_MINUTES, DEFAULT_VERIFICATION_LINK_VALIDITY_HOURS,
+};
 use crate::password_reset::{
     run_password_reset_complete, run_password_reset_request, PasswordResetCompleteBody,
     PasswordResetCompleteError, PasswordResetRequestBody, PASSWORD_RESET_COMPLETE_PATH,
     PASSWORD_RESET_GENERIC_MESSAGE, PASSWORD_RESET_REQUEST_PATH,
 };
-use crate::register::{run_register, RegisterError, RegisterRequest, REGISTER_PATH};
+use crate::refresh::{
+    run_refresh_issue, run_refresh_revoke, run_refresh_rotate, REFRESH_ISSUE_PATH,
+    REFRESH_REVOKE_PATH, REFRESH_ROTATE_PATH,
+};
+use crate::register::{
+    run_register, RegisterError, RegisterRequest, REGISTER_PATH,
+    REGISTER_RESPONSE_EMAIL_VERIFICATION_REQUIRED,
+};
 use crate::session::{
     run_session_create, run_session_delete, run_session_delete_by_user, run_session_load,
-    run_session_restore_from_original, run_session_update_flags, SessionUserBody, SESSION_CREATE_PATH,
-    SESSION_DELETE_BY_USER_PATH, SESSION_DELETE_PATH, SESSION_LOAD_PATH, SESSION_UPDATE_FLAGS_PATH,
+    run_session_restore_from_original, run_session_update_flags, SessionUserBody,
+    SESSION_CREATE_PATH, SESSION_DELETE_BY_USER_PATH, SESSION_DELETE_PATH, SESSION_LOAD_PATH,
+    SESSION_UPDATE_FLAGS_PATH,
 };
 use crate::turnstile::{self, TurnstileVerifyOutcome};
 
@@ -396,7 +402,10 @@ fn router(state: AppState) -> Router {
         .route(SESSION_CREATE_PATH, post(post_session_create))
         .route(SESSION_LOAD_PATH, post(post_session_load))
         .route(SESSION_DELETE_PATH, post(post_session_delete))
-        .route(SESSION_DELETE_BY_USER_PATH, post(post_session_delete_by_user))
+        .route(
+            SESSION_DELETE_BY_USER_PATH,
+            post(post_session_delete_by_user),
+        )
         .route(SESSION_UPDATE_FLAGS_PATH, post(post_session_update_flags))
         .route(REFRESH_ISSUE_PATH, post(post_refresh_issue))
         .route(REFRESH_ROTATE_PATH, post(post_refresh_rotate))
@@ -404,8 +413,14 @@ fn router(state: AppState) -> Router {
         .route(SESSION_HYDRATE_PATH, post(post_session_hydrate))
         .route(LOGIN_COMPLETE_PATH, post(post_login_complete))
         .route(REGISTER_PATH, post(post_register))
-        .route(PASSWORD_RESET_REQUEST_PATH, post(post_password_reset_request))
-        .route(PASSWORD_RESET_COMPLETE_PATH, post(post_password_reset_complete))
+        .route(
+            PASSWORD_RESET_REQUEST_PATH,
+            post(post_password_reset_request),
+        )
+        .route(
+            PASSWORD_RESET_COMPLETE_PATH,
+            post(post_password_reset_complete),
+        )
         .route(EMAIL_VERIFY_REQUEST_PATH, post(post_email_verify_request))
         .route(EMAIL_VERIFY_COMPLETE_PATH, post(post_email_verify_complete))
         .route_layer(middleware::from_fn_with_state(
@@ -444,9 +459,7 @@ async fn require_worker_auth(
     Ok(next.run(request).await)
 }
 
-async fn post_password_hash(
-    Json(body): Json<PasswordHashRequest>,
-) -> (StatusCode, Json<OkBody>) {
+async fn post_password_hash(Json(body): Json<PasswordHashRequest>) -> (StatusCode, Json<OkBody>) {
     // bcrypt is CPU-bound — run off the async runtime.
     let password = body.password;
     let rounds = body.rounds;
@@ -530,7 +543,9 @@ async fn post_password_verify(
 fn user_id_i64_from_json(raw: &serde_json::Value) -> Result<i64, AuthPgError> {
     match raw {
         serde_json::Value::Number(n) => {
-            let i = n.as_i64().ok_or_else(|| AuthPgError::bad("invalid userId"))?;
+            let i = n
+                .as_i64()
+                .ok_or_else(|| AuthPgError::bad("invalid userId"))?;
             if i <= 0 {
                 return Err(AuthPgError::bad("invalid userId"));
             }
@@ -1108,12 +1123,13 @@ async fn post_register(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RegisterRequest>,
 ) -> (StatusCode, Json<OkBody>) {
-    match run_register(&state.pool, &state.cfg, body).await {
+    match run_register(&state.pool, &state.cfg, &state.http, body).await {
         Ok(_) => (
             StatusCode::OK,
             Json(OkBody {
                 ok: true,
-                email_verification_required: Some(true),
+                email_verification_required: REGISTER_RESPONSE_EMAIL_VERIFICATION_REQUIRED
+                    .then_some(true),
                 ..Default::default()
             }),
         ),
@@ -1296,12 +1312,13 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::config::AUTH_WORKER_DEFAULT_PORT;
-    use crate::mail::{MailConfig, SmtpTlsMode};
-    use crate::refresh::{REFRESH_ISSUE_PATH, REFRESH_ROTATE_PATH, REFRESH_REVOKE_PATH};
     use crate::hydrate::SESSION_HYDRATE_PATH;
     use crate::login::LOGIN_COMPLETE_PATH;
+    use crate::mail::{MailConfig, SmtpTlsMode};
+    use crate::refresh::{REFRESH_ISSUE_PATH, REFRESH_REVOKE_PATH, REFRESH_ROTATE_PATH};
     use crate::session::{
-        SESSION_CREATE_PATH, SESSION_DELETE_BY_USER_PATH, SESSION_LOAD_PATH, SESSION_UPDATE_FLAGS_PATH,
+        SESSION_CREATE_PATH, SESSION_DELETE_BY_USER_PATH, SESSION_LOAD_PATH,
+        SESSION_UPDATE_FLAGS_PATH,
     };
     use crate::turnstile::{TurnstileConfig, TURNSTILE_SITEVERIFY_URL};
     use genesis_core::auth::constants::REFRESH_JWT_TTL_DEFAULT_SEC;
@@ -1310,7 +1327,10 @@ mod tests {
         let mut pg = deadpool_postgres::Config::new();
         pg.url = Some("postgres://invalid:invalid@127.0.0.1:1/none".into());
         let pool = pg
-            .create_pool(Some(deadpool_postgres::Runtime::Tokio1), tokio_postgres::NoTls)
+            .create_pool(
+                Some(deadpool_postgres::Runtime::Tokio1),
+                tokio_postgres::NoTls,
+            )
             .expect("pool");
         AppState {
             pool,
@@ -1545,7 +1565,11 @@ mod tests {
         assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     }
 
-    async fn json_status(app: axum::Router, path: &str, body: &str) -> (StatusCode, serde_json::Value) {
+    async fn json_status(
+        app: axum::Router,
+        path: &str,
+        body: &str,
+    ) -> (StatusCode, serde_json::Value) {
         let res = app
             .oneshot(
                 Request::builder()
@@ -1639,12 +1663,8 @@ mod tests {
 
     #[tokio::test]
     async fn refresh_issue_invalid_user_400() {
-        let (status, json) = json_status(
-            router(test_state()),
-            REFRESH_ISSUE_PATH,
-            r#"{"userId":-1}"#,
-        )
-        .await;
+        let (status, json) =
+            json_status(router(test_state()), REFRESH_ISSUE_PATH, r#"{"userId":-1}"#).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(json["ok"], false);
     }
@@ -1683,12 +1703,8 @@ mod tests {
 
     #[tokio::test]
     async fn refresh_revoke_invalid_user_400() {
-        let (status, json) = json_status(
-            router(test_state()),
-            REFRESH_REVOKE_PATH,
-            r#"{"userId":0}"#,
-        )
-        .await;
+        let (status, json) =
+            json_status(router(test_state()), REFRESH_REVOKE_PATH, r#"{"userId":0}"#).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(json["ok"], false);
     }

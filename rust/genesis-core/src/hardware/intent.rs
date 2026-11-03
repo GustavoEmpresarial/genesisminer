@@ -252,31 +252,40 @@ pub fn apply_rack_miner_equip(
     let mut rack = clone_rack(&placed_racks[ri]);
     let room_norm = normalize_placed_rack_room_id(&rack.room_id);
     let machine_row = def.machine_ref();
-    let is_asic_machine = is_asic_machine_upgrade_row(&machine_row);
-    let in_asic_room = is_asic_mining_room_id(&room_norm, asic_room_ids);
-    let in_nft_room = room_rules(&room_norm, nft_room_ids).asic_machines_only;
+    let explicit_rack = def.compatible_racks.as_deref().is_some_and(|compat| {
+        !compat.is_empty() && is_compatible_with_rack(Some(compat), &rack.item_id)
+    });
+    // Lista preenchida que inclui este chassis: a marcação do admin autoriza o encaixe.
+    // Lista vazia mantém o corte de sala (NFT / ASIC).
+    if !explicit_rack {
+        let is_asic_machine = is_asic_machine_upgrade_row(&machine_row);
+        let in_asic_room = is_asic_mining_room_id(&room_norm, asic_room_ids);
+        let in_nft_room = room_rules(&room_norm, nft_room_ids).asic_machines_only;
 
-    if is_asic_machine && !in_asic_room {
-        return HardwareApplyResult::fail("ASIC machines can only be installed in the ASICs Room.");
-    }
-    if in_asic_room && !is_asic_machine {
-        return HardwareApplyResult::fail("Only ASICs can be installed in the ASICs Room.");
-    }
-    if in_nft_room {
-        if !is_nft_collectible_machine_row(&machine_row) {
+        if is_asic_machine && !in_asic_room {
             return HardwareApplyResult::fail(
-                "Only NFT collectible machines can be installed in the NFT Room.",
+                "ASIC machines can only be installed in the ASICs Room.",
             );
         }
-        let coin = def
-            .nft_mining_coin_id
-            .as_deref()
-            .map(str::trim)
-            .unwrap_or("");
-        if coin.is_empty() {
-            return HardwareApplyResult::fail(
-                "This machine has no coin configured in the admin panel (NFT Room) yet.",
-            );
+        if in_asic_room && !is_asic_machine {
+            return HardwareApplyResult::fail("Only ASICs can be installed in the ASICs Room.");
+        }
+        if in_nft_room {
+            if !is_nft_collectible_machine_row(&machine_row) {
+                return HardwareApplyResult::fail(
+                    "Only NFT collectible machines can be installed in the NFT Room.",
+                );
+            }
+            let coin = def
+                .nft_mining_coin_id
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or("");
+            if coin.is_empty() {
+                return HardwareApplyResult::fail(
+                    "This machine has no coin configured in the admin panel (NFT Room) yet.",
+                );
+            }
         }
     }
 
@@ -878,6 +887,45 @@ mod tests {
         let out = apply_rack_miner_equip(&prev, "rack1", 0, "gpu_x", &upgrades, None, None);
         match out {
             HardwareApplyResult::Err(e) => assert_eq!(e.error, "Slot already occupied."),
+            HardwareApplyResult::Ok(_) => panic!("expected fail"),
+        }
+    }
+
+    #[test]
+    fn miner_equip_marked_rack_allows_nft_gpu_in_standard_room() {
+        let mut gpu = machine("gpu_natal", "nft");
+        gpu.compatible_racks = Some(vec!["rack04_cores".into()]);
+        let prev = HardwareState {
+            stock: HashMap::from([("gpu_natal".into(), 1)]),
+            stored_batteries: vec![],
+            placed_racks: vec![rack_in(ROOM_INITIAL_ID)],
+        };
+        let upgrades = vec![chassis("rack04_cores", 2), gpu];
+        let out = apply_rack_miner_equip(&prev, "rack1", 0, "gpu_natal", &upgrades, None, None);
+        match out {
+            HardwareApplyResult::Ok(ok) => {
+                assert_eq!(ok.placed_racks[0].slots[0], "gpu_natal");
+                assert_eq!(ok.stock.get("gpu_natal").copied().unwrap_or(0), 0);
+            }
+            HardwareApplyResult::Err(e) => panic!("unexpected {}", e.error),
+        }
+    }
+
+    #[test]
+    fn miner_equip_unmarked_rack_rejects_nft_gpu() {
+        let mut gpu = machine("gpu_natal", "nft");
+        gpu.compatible_racks = Some(vec!["rack_armario_1".into()]);
+        let prev = HardwareState {
+            stock: HashMap::from([("gpu_natal".into(), 1)]),
+            stored_batteries: vec![],
+            placed_racks: vec![rack_in(ROOM_INITIAL_ID)],
+        };
+        let upgrades = vec![chassis("rack04_cores", 2), gpu];
+        let out = apply_rack_miner_equip(&prev, "rack1", 0, "gpu_natal", &upgrades, None, None);
+        match out {
+            HardwareApplyResult::Err(e) => {
+                assert_eq!(e.error, "GPU incompatible with this rig.");
+            }
             HardwareApplyResult::Ok(_) => panic!("expected fail"),
         }
     }

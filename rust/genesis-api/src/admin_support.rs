@@ -31,6 +31,8 @@ const ADMIN_SUPPORT_TICKET_PATH: &str = "/api/admin/support/tickets/{ticket_id}"
 /// Legacy (Node-era) detail path — kept so stale admin browser bundles that
 /// still call `/api/admin/support-tickets/<id>` don't 404.
 const ADMIN_SUPPORT_TICKET_LEGACY_PATH: &str = "/api/admin/support-tickets/{ticket_id}";
+const ADMIN_SUPPORT_AM_STATUS_PATH: &str = "/api/admin/support/account-manager";
+const ADMIN_SUPPORT_AM_FIRE_PATH: &str = "/api/admin/support/account-manager/fire";
 
 // genesis-mining-worker twins.
 const W_TICKETS: &str = "/v1/support/admin/tickets-payload";
@@ -38,6 +40,8 @@ const W_TICKET: &str = "/v1/support/admin/ticket-payload";
 const W_USER_HISTORY: &str = "/v1/support/admin/user-history-payload";
 const W_STATUS: &str = "/v1/support/admin/status";
 const W_REPLY: &str = "/v1/support/admin-reply";
+const W_AM_STATUS: &str = "/v1/gerente/admin-status";
+const W_AM_FIRE: &str = "/v1/gerente/admin-fire";
 
 const TICKET_ID_MAX_LENGTH: usize = 80;
 
@@ -57,6 +61,15 @@ struct UserHistoryQ {
     limit: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+struct AccountManagerQ {
+    #[serde(default)]
+    #[serde(rename = "userId")]
+    user_id: Option<String>,
+    #[serde(default)]
+    email: Option<String>,
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -69,10 +82,14 @@ async fn tickets(
     headers: HeaderMap,
     Query(q): Query<LimitQ>,
 ) -> Response {
-    if let Err(e) = require_admin(&state, &headers, &Method::GET, ADMIN_SUPPORT_TICKETS_PATH).await {
+    if let Err(e) = require_admin(&state, &headers, &Method::GET, ADMIN_SUPPORT_TICKETS_PATH).await
+    {
         return e;
     }
-    let limit = q.limit.as_deref().and_then(|s| s.trim().parse::<i64>().ok());
+    let limit = q
+        .limit
+        .as_deref()
+        .and_then(|s| s.trim().parse::<i64>().ok());
     forward_mining(&state, W_TICKETS, json!({ "limit": limit })).await
 }
 
@@ -81,11 +98,21 @@ async fn ticket_detail(
     headers: HeaderMap,
     Path(ticket_id): Path<String>,
 ) -> Response {
-    if let Err(e) = require_admin(&state, &headers, &Method::GET, "/api/admin/support/tickets/x").await
+    if let Err(e) = require_admin(
+        &state,
+        &headers,
+        &Method::GET,
+        "/api/admin/support/tickets/x",
+    )
+    .await
     {
         return e;
     }
-    let ticket_id: String = ticket_id.trim().chars().take(TICKET_ID_MAX_LENGTH).collect();
+    let ticket_id: String = ticket_id
+        .trim()
+        .chars()
+        .take(TICKET_ID_MAX_LENGTH)
+        .collect();
     if ticket_id.is_empty() {
         return json_status(400, json!({ "ok": false, "error": "Pedido inválido." }));
     }
@@ -97,8 +124,13 @@ async fn user_history(
     headers: HeaderMap,
     Query(q): Query<UserHistoryQ>,
 ) -> Response {
-    if let Err(e) =
-        require_admin(&state, &headers, &Method::GET, ADMIN_SUPPORT_USER_HISTORY_PATH).await
+    if let Err(e) = require_admin(
+        &state,
+        &headers,
+        &Method::GET,
+        ADMIN_SUPPORT_USER_HISTORY_PATH,
+    )
+    .await
     {
         return e;
     }
@@ -110,7 +142,10 @@ async fn user_history(
         );
     }
     let page = q.page.as_deref().and_then(|s| s.trim().parse::<i64>().ok());
-    let limit = q.limit.as_deref().and_then(|s| s.trim().parse::<i64>().ok());
+    let limit = q
+        .limit
+        .as_deref()
+        .and_then(|s| s.trim().parse::<i64>().ok());
     forward_mining(
         &state,
         W_USER_HISTORY,
@@ -124,7 +159,8 @@ async fn status(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
-    if let Err(e) = require_admin(&state, &headers, &Method::POST, ADMIN_SUPPORT_STATUS_PATH).await {
+    if let Err(e) = require_admin(&state, &headers, &Method::POST, ADMIN_SUPPORT_STATUS_PATH).await
+    {
         return e;
     }
     let id = body.get("id").and_then(Value::as_str).unwrap_or("").trim();
@@ -133,6 +169,65 @@ async fn status(
     }
     let status = body.get("status").and_then(Value::as_str).unwrap_or("open");
     forward_mining(&state, W_STATUS, json!({ "id": id, "status": status })).await
+}
+
+async fn account_manager_status(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<AccountManagerQ>,
+) -> Response {
+    if let Err(e) =
+        require_admin(&state, &headers, &Method::GET, ADMIN_SUPPORT_AM_STATUS_PATH).await
+    {
+        return e;
+    }
+    let user_id = q
+        .user_id
+        .as_deref()
+        .and_then(|s| s.trim().parse::<i64>().ok())
+        .filter(|id| *id > 0);
+    if let Some(user_id) = user_id {
+        return forward_mining(&state, W_AM_STATUS, json!({ "userId": user_id })).await;
+    }
+    let email = q.email.unwrap_or_default();
+    let email = email.trim();
+    if email.is_empty() {
+        return json_status(
+            400,
+            json!({ "ok": false, "error": "Informe userId ou email." }),
+        );
+    }
+    forward_mining(&state, W_AM_STATUS, json!({ "email": email })).await
+}
+
+async fn account_manager_fire(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
+    let ctx = match require_admin(&state, &headers, &Method::POST, ADMIN_SUPPORT_AM_FIRE_PATH).await
+    {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
+    let user_id = body
+        .get("userId")
+        .and_then(Value::as_i64)
+        .or_else(|| {
+            body.get("userId")
+                .and_then(Value::as_str)
+                .and_then(|s| s.trim().parse::<i64>().ok())
+        })
+        .filter(|id| *id > 0);
+    let Some(user_id) = user_id else {
+        return json_status(400, json!({ "ok": false, "error": "userId obrigatório." }));
+    };
+    forward_mining(
+        &state,
+        W_AM_FIRE,
+        json!({ "userId": user_id, "adminUserId": ctx.user_id }),
+    )
+    .await
 }
 
 async fn reply(
@@ -205,4 +300,6 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(ADMIN_SUPPORT_USER_HISTORY_PATH, get(user_history))
         .route(ADMIN_SUPPORT_TICKET_PATH, get(ticket_detail))
         .route(ADMIN_SUPPORT_TICKET_LEGACY_PATH, get(ticket_detail))
+        .route(ADMIN_SUPPORT_AM_STATUS_PATH, get(account_manager_status))
+        .route(ADMIN_SUPPORT_AM_FIRE_PATH, post(account_manager_fire))
 }

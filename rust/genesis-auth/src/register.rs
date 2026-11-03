@@ -11,18 +11,17 @@ use crate::db::current_unix_ms;
 use crate::pg_types::pg_user_id;
 use genesis_core::auth::constants::{
     DEFAULT_ACCESS_LEVEL_ID, DEFAULT_PLAYER_UNLOCKED_SLOTS, EMAIL_ADDRESS_MAX_LENGTH,
-    EMAIL_VERIFICATION_TTL_HOURS, FINGERPRINT_IP_MAX_LENGTH, FINGERPRINT_USER_AGENT_MAX_LENGTH,
-    IP_SIGNUP_LIMIT_MAX_ACCOUNTS, IP_SIGNUP_LIMIT_WINDOW_DAYS, IP_SIGNUP_LIMIT_WINDOW_MS,
-    LOOT_TRIGGER_REGISTRATION, REFERRAL_CODE_CLASH_RETRY_MAX, WELCOME_BOX_QTY,
+    FINGERPRINT_IP_MAX_LENGTH, FINGERPRINT_USER_AGENT_MAX_LENGTH, IP_SIGNUP_LIMIT_MAX_ACCOUNTS,
+    IP_SIGNUP_LIMIT_WINDOW_DAYS, IP_SIGNUP_LIMIT_WINDOW_MS, LOOT_TRIGGER_REGISTRATION,
+    REFERRAL_CODE_CLASH_RETRY_MAX, WELCOME_BOX_QTY,
 };
 use genesis_core::auth::password::hash_password_register;
 use genesis_core::calculator::constants::{ASIC_ROOM_ID, EXTRA_ROOM_ID};
 use genesis_core::generate_referral_code;
 use genesis_core::{
-    assert_public_signup_email_allowed, build_signed_email_verification_token, hash_token_sha256,
-    sanitize_device_fingerprint, validate_optional_polygon_wallet,
-    validate_optional_referral_code_input, validate_signup_password, validate_signup_username,
-    WalletValidation,
+    assert_public_signup_email_allowed, sanitize_device_fingerprint,
+    validate_optional_polygon_wallet, validate_optional_referral_code_input,
+    validate_signup_password, validate_signup_username, WalletValidation,
 };
 
 pub const REGISTER_PATH: &str = "/v1/auth/register";
@@ -30,9 +29,14 @@ pub const REGISTER_PATH: &str = "/v1/auth/register";
 const _: () = assert!(IP_SIGNUP_LIMIT_WINDOW_DAYS == 90);
 const _: () = assert!(IP_SIGNUP_LIMIT_MAX_ACCOUNTS == 3);
 const _: () = assert!(REFERRAL_CODE_CLASH_RETRY_MAX == 10);
-const _: () = assert!(EMAIL_VERIFICATION_TTL_HOURS == 24);
 const _: () = assert!(WELCOME_BOX_QTY == 1);
 const _: () = assert!(DEFAULT_PLAYER_UNLOCKED_SLOTS == 0);
+
+/// POST `/register` success: cliente não trata o cadastro como "tem de verificar".
+pub(crate) const REGISTER_RESPONSE_EMAIL_VERIFICATION_REQUIRED: bool = false;
+/// Conta nasce verificada — sem exigência de link no correio.
+const REGISTER_EMAIL_VERIFIED: i32 = 1;
+const REGISTER_EMAIL_VERIFICATION_REQUIRED: i32 = 0;
 
 const HTTP_BAD_REQUEST: u16 = 400;
 const HTTP_FORBIDDEN: u16 = 403;
@@ -191,7 +195,10 @@ fn resolve_registration_ip(raw: Option<&str>) -> Option<String> {
         return Some(n.to_string());
     }
     let lower = n.to_ascii_lowercase();
-    if lower == "::1" || lower.starts_with("fe80:") || lower.starts_with("fc") || lower.starts_with("fd")
+    if lower == "::1"
+        || lower.starts_with("fe80:")
+        || lower.starts_with("fc")
+        || lower.starts_with("fd")
     {
         return None;
     }
@@ -421,10 +428,7 @@ async fn get_user_id_by_email(
         Ok(row) => row.get("id"),
         Err(e) if is_unique_violation(&e) => {
             let retry = client
-                .query_opt(
-                    "SELECT id FROM users WHERE lower(email) = $1",
-                    &[&email],
-                )
+                .query_opt("SELECT id FROM users WHERE lower(email) = $1", &[&email])
                 .await
                 .map_err(RegisterError::transport)?;
             if let Some(row) = retry {
@@ -547,27 +551,6 @@ async fn bind_referral_and_accrue(
     Ok(())
 }
 
-async fn persist_verification_token(
-    pool: &Pool,
-    email: &str,
-    secret: &str,
-) -> Result<String, RegisterError> {
-    let now = current_unix_ms();
-    let ttl = i64::try_from(genesis_core::auth::constants::EMAIL_VERIFICATION_TTL_MS)
-        .map_err(RegisterError::transport)?;
-    let token = build_signed_email_verification_token(email, now.saturating_add(ttl), secret);
-    let token_hash = hash_token_sha256(&token);
-    let client = pool.get().await.map_err(RegisterError::transport)?;
-    client
-        .execute(
-            "UPDATE users SET email_verification_token_hash = $2 WHERE lower(email) = $1",
-            &[&email, &token_hash],
-        )
-        .await
-        .map_err(RegisterError::transport)?;
-    Ok(token)
-}
-
 async fn insert_fingerprint_log(
     pool: &Pool,
     user_id: i64,
@@ -582,7 +565,10 @@ async fn insert_fingerprint_log(
         return;
     };
     let ip_trunc: String = ip.chars().take(FINGERPRINT_IP_MAX_LENGTH).collect();
-    let ua_trunc: String = user_agent.chars().take(FINGERPRINT_USER_AGENT_MAX_LENGTH).collect();
+    let ua_trunc: String = user_agent
+        .chars()
+        .take(FINGERPRINT_USER_AGENT_MAX_LENGTH)
+        .collect();
     let now = current_unix_ms();
     let client = match pool.get().await {
         Ok(c) => c,
@@ -622,6 +608,7 @@ async fn hash_register_password(password: String) -> Result<String, RegisterErro
 pub async fn run_register(
     pool: &Pool,
     cfg: &WorkerConfig,
+    http: &reqwest::Client,
     body: RegisterRequest,
 ) -> Result<RegisterOk, RegisterError> {
     let normalized_email = body
@@ -640,7 +627,9 @@ pub async fn run_register(
     let user_vu = validate_signup_username(body.username.as_deref());
     if !user_vu.ok {
         return Err(RegisterError::bad(
-            user_vu.error.unwrap_or_else(|| "Username is required.".into()),
+            user_vu
+                .error
+                .unwrap_or_else(|| "Username is required.".into()),
         ));
     }
     let nickname = user_vu.username.unwrap_or_default();
@@ -679,7 +668,9 @@ pub async fn run_register(
     let ref_in = validate_optional_referral_code_input(body.referred_by.as_deref());
     if !ref_in.ok {
         return Err(RegisterError::bad(
-            ref_in.error.unwrap_or_else(|| "Invalid referral code.".into()),
+            ref_in
+                .error
+                .unwrap_or_else(|| "Invalid referral code.".into()),
         ));
     }
     let referred_by_for_db = ref_in.code;
@@ -740,7 +731,10 @@ pub async fn run_register(
 
     let pg_uid = pg_user_id(uid).map_err(RegisterError::transport)?;
     let mut client = pool.get().await.map_err(RegisterError::transport)?;
-    let tx = client.transaction().await.map_err(RegisterError::transport)?;
+    let tx = client
+        .transaction()
+        .await
+        .map_err(RegisterError::transport)?;
     let access_level = default_access_level_id(&tx).await?;
     tx.execute(
         "UPDATE users SET
@@ -749,7 +743,9 @@ pub async fn run_register(
             access_level_id = $4,
             referred_by = $5,
             polygon_wallet = COALESCE($6, polygon_wallet),
-            password = COALESCE($7, password)
+            password = COALESCE($7, password),
+            email_verified = $8,
+            email_verification_required = $9
           WHERE id = $1",
         &[
             &pg_uid,
@@ -759,6 +755,8 @@ pub async fn run_register(
             &referred_by_for_db,
             &polygon_for_db,
             &password_hash,
+            &REGISTER_EMAIL_VERIFIED,
+            &REGISTER_EMAIL_VERIFICATION_REQUIRED,
         ],
     )
     .await
@@ -766,12 +764,6 @@ pub async fn run_register(
     if let Some(rid) = referrer_id {
         bind_referral_and_accrue(&tx, rid, &nickname, current_unix_ms()).await?;
     }
-    tx.execute(
-        "UPDATE users SET email_verification_required = 1, email_verified = 0 WHERE id = $1",
-        &[&pg_uid],
-    )
-    .await
-    .map_err(RegisterError::transport)?;
     tx.commit().await.map_err(RegisterError::transport)?;
 
     if let Some(fp) = body.device_fingerprint.as_ref() {
@@ -780,22 +772,12 @@ pub async fn run_register(
         insert_fingerprint_log(pool, uid, fp, &ip, &ua).await;
     }
 
-    match persist_verification_token(pool, &normalized_email, &cfg.auth_flow_token_secret).await {
-        Ok(token) => {
-            if let Err(e) = crate::mail::send_verification_email(
-                &cfg.mail,
-                &normalized_email,
-                &token,
-                Some(u32::try_from(EMAIL_VERIFICATION_TTL_HOURS).unwrap_or(u32::MAX)),
-            )
-            .await
-            {
-                error!(err = %e, "registration verification mail");
-            }
-        }
-        Err(e) => {
-            error!(err = ?e, "registration verification token persist");
-        }
+    if let Err(e) = crate::email_verify::credit_referral_on_verified(cfg, http, uid).await {
+        warn!(
+            err = %e.error_message(),
+            user_id = uid,
+            "referral credit on register (non-fatal)"
+        );
     }
 
     Ok(RegisterOk)
@@ -821,5 +803,12 @@ mod tests {
         assert_eq!(HTTP_BAD_REQUEST, 400);
         assert_eq!(HTTP_FORBIDDEN, 403);
         assert_eq!(HTTP_CONFLICT, 409);
+    }
+
+    #[test]
+    fn signup_does_not_require_email_verification() {
+        assert!(!REGISTER_RESPONSE_EMAIL_VERIFICATION_REQUIRED);
+        assert_eq!(REGISTER_EMAIL_VERIFIED, 1);
+        assert_eq!(REGISTER_EMAIL_VERIFICATION_REQUIRED, 0);
     }
 }

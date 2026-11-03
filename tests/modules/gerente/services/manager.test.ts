@@ -129,6 +129,31 @@ describe('gerente services/manager', () => {
     });
   });
 
+  describe('adminFireManager', () => {
+    it('sem gerente ativo: NOT_FOUND', async () => {
+      client.query.mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce({ rows: [] });
+      const { adminFireManager } = await importManager();
+      await expect(adminFireManager(pool, 1)).rejects.toMatchObject({ code: 'NOT_FOUND', httpStatus: 404 });
+    });
+
+    it('dentro do fire-lock: demite na mesma (bypass admin)', async () => {
+      const future = Date.now() + 100000;
+      client.query
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ rows: [{ id: 10, fire_locked_until: future }] })
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined);
+      const { adminFireManager } = await importManager();
+      await adminFireManager(pool, 1);
+      expect(callAuthSessionUpdateFlags).toHaveBeenCalledWith({
+        restoreUserIdFromOriginal: true,
+        matchActingAsOwnerId: 1
+      });
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
+    });
+  });
+
   describe('resignManager', () => {
     it('contrato não pertence ao gerente que está a resignar: FORBIDDEN', async () => {
       client.query.mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce({

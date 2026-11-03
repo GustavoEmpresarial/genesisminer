@@ -1,6 +1,7 @@
 import { DISCORD_COMMUNITY_URL, TELEGRAM_COMMUNITY_URL } from '../../../shared/constants/communityLinks';
 import { DiscordIcon, TelegramIcon } from '../../../shared/icons/SocialBrandIcons';
 import { useT } from '../../../shared/i18n';
+import { TopIdleVerificationMark } from '../../../shared/seo/TopIdleVerificationMark';
 
 export type PublicView =
   | 'home'
@@ -27,6 +28,7 @@ export function PublicFooter({ onNavigate }: PublicFooterProps) {
 
   return (
     <footer className="shrink-0 border-t border-slate-200 bg-slate-50 transition-colors duration-300 dark:border-amber-900/35 dark:bg-[#0f0c08]">
+      <TopIdleVerificationMark />
       <div className="mx-auto max-w-7xl px-4 py-8">
         <div className="grid gap-8 text-sm md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <div className="space-y-4">

@@ -511,16 +511,13 @@ mod tests {
         let kv = by_key(build_web3_settings_upserts(&json!({})).unwrap());
         assert!(!kv.contains_key("web3_withdraw_tokens"));
 
-        let kv = by_key(
-            build_web3_settings_upserts(&json!({ "minDepositUsdc": 1 })).unwrap(),
-        );
+        let kv = by_key(build_web3_settings_upserts(&json!({ "minDepositUsdc": 1 })).unwrap());
         assert!(!kv.contains_key("web3_withdraw_tokens"));
     }
 
     #[test]
     fn withdraw_tokens_empty_array_clears_deliberately() {
-        let kv =
-            by_key(build_web3_settings_upserts(&json!({ "withdrawTokens": [] })).unwrap());
+        let kv = by_key(build_web3_settings_upserts(&json!({ "withdrawTokens": [] })).unwrap());
         assert_eq!(kv["web3_withdraw_tokens"], "[]");
         assert_eq!(
             build_web3_settings_upserts(&json!({ "withdrawTokens": [] }))
@@ -553,8 +550,7 @@ mod tests {
             assert!(build_web3_settings_upserts(&bad).is_err(), "{bad}");
         }
 
-        let err =
-            build_web3_settings_upserts(&json!({ "withdrawTokens": "x" })).unwrap_err();
+        let err = build_web3_settings_upserts(&json!({ "withdrawTokens": "x" })).unwrap_err();
         match err {
             WalletError::Domain {
                 status,

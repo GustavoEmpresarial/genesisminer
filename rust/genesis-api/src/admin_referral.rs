@@ -46,7 +46,9 @@ fn is_ymd(s: &str) -> bool {
     s.len() == 10
         && b[4] == b'-'
         && b[7] == b'-'
-        && b.iter().enumerate().all(|(i, c)| matches!(i, 4 | 7) || c.is_ascii_digit())
+        && b.iter()
+            .enumerate()
+            .all(|(i, c)| matches!(i, 4 | 7) || c.is_ascii_digit())
 }
 fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
@@ -66,7 +68,13 @@ fn parse_date_ms(raw: Option<&str>) -> Option<i64> {
         return s.parse::<i64>().ok();
     }
     if is_ymd(s) {
-        return Some(days_from_civil(s[0..4].parse().ok()?, s[5..7].parse().ok()?, s[8..10].parse().ok()?) * MS_PER_DAY);
+        return Some(
+            days_from_civil(
+                s[0..4].parse().ok()?,
+                s[5..7].parse().ok()?,
+                s[8..10].parse().ok()?,
+            ) * MS_PER_DAY,
+        );
     }
     None
 }
@@ -100,7 +108,11 @@ fn n_f64(s: &Option<String>) -> Option<f64> {
     s.as_deref().and_then(|x| x.trim().parse::<f64>().ok())
 }
 
-async fn require_super(state: &AppState, headers: &HeaderMap, method: &Method) -> Result<crate::admin_auth::AdminCtx, Response> {
+async fn require_super(
+    state: &AppState,
+    headers: &HeaderMap,
+    method: &Method,
+) -> Result<crate::admin_auth::AdminCtx, Response> {
     require_admin(state, headers, method, P_SUMMARY).await
 }
 
@@ -125,14 +137,22 @@ fn commissions_body(q: &Q) -> Value {
     })
 }
 
-async fn commissions(State(state): State<Arc<AppState>>, headers: HeaderMap, Query(q): Query<Q>) -> Response {
+async fn commissions(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<Q>,
+) -> Response {
     if let Err(e) = require_super(&state, &headers, &Method::GET).await {
         return e;
     }
     forward_mining(&state, W_COMMISSIONS, commissions_body(&q)).await
 }
 
-async fn links(State(state): State<Arc<AppState>>, headers: HeaderMap, Query(q): Query<Q>) -> Response {
+async fn links(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<Q>,
+) -> Response {
     if let Err(e) = require_super(&state, &headers, &Method::GET).await {
         return e;
     }
@@ -144,7 +164,11 @@ async fn links(State(state): State<Arc<AppState>>, headers: HeaderMap, Query(q):
     .await
 }
 
-async fn export_csv(State(state): State<Arc<AppState>>, headers: HeaderMap, Query(q): Query<Q>) -> Response {
+async fn export_csv(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<Q>,
+) -> Response {
     if let Err(e) = require_super(&state, &headers, &Method::GET).await {
         return e;
     }
@@ -155,7 +179,12 @@ async fn export_csv(State(state): State<Arc<AppState>>, headers: HeaderMap, Quer
     if w.status != 0 && w.status != 200 {
         return json_status(w.status, w.body);
     }
-    let csv = w.body.get("csv").and_then(Value::as_str).unwrap_or("").to_string();
+    let csv = w
+        .body
+        .get("csv")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis())
@@ -178,21 +207,33 @@ struct LookupQ {
     q: Option<String>,
 }
 
-async fn lookup(State(state): State<Arc<AppState>>, headers: HeaderMap, Query(q): Query<LookupQ>) -> Response {
+async fn lookup(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Query(q): Query<LookupQ>,
+) -> Response {
     if let Err(e) = require_super(&state, &headers, &Method::GET).await {
         return e;
     }
     forward_mining(&state, W_LOOKUP, json!({ "q": q.q })).await
 }
 
-async fn network_block(State(state): State<Arc<AppState>>, headers: HeaderMap, Json(body): Json<Value>) -> Response {
+async fn network_block(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
     if let Err(e) = require_admin(&state, &headers, &Method::POST, P_NETWORK_BLOCK).await {
         return e;
     }
     forward_mining(&state, W_NETWORK_BLOCK, body).await
 }
 
-async fn network_delete(State(state): State<Arc<AppState>>, headers: HeaderMap, Json(body): Json<Value>) -> Response {
+async fn network_delete(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<Value>,
+) -> Response {
     let ctx = match require_admin(&state, &headers, &Method::POST, P_NETWORK_DELETE).await {
         Ok(c) => c,
         Err(e) => return e,

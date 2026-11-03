@@ -143,6 +143,8 @@ services:
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-3}
       # Partner Games tab + session API maintenance (1/true = on). Source of truth: mining-worker.
       PARTNER_GAMES_MAINTENANCE: "0"
+      # TopIdle vote webhook HMAC (painel → POST /api/webhooks/topidle). Blank = 503.
+      TOPIDLE_WEBHOOK_SECRET: ${TOPIDLE_WEBHOOK_SECRET:-}
       # Off-site copy to Google Drive (optional — idles unless all 4 are set).
       GDRIVE_CLIENT_ID: ${GDRIVE_CLIENT_ID:-}
       GDRIVE_CLIENT_SECRET: ${GDRIVE_CLIENT_SECRET:-}

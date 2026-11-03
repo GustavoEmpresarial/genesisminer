@@ -54,7 +54,10 @@ pub async fn run_admin_wheel_prizes_list(pool: &Pool) -> Result<Value, WheelErro
     Ok(Value::Array(out))
 }
 
-pub async fn run_admin_wheel_prizes_replace(pool: &Pool, body: &Value) -> Result<Value, WheelError> {
+pub async fn run_admin_wheel_prizes_replace(
+    pool: &Pool,
+    body: &Value,
+) -> Result<Value, WheelError> {
     let items = body
         .get("prizes")
         .and_then(Value::as_array)
@@ -64,9 +67,21 @@ pub async fn run_admin_wheel_prizes_replace(pool: &Pool, body: &Value) -> Result
     let tx = conn.transaction().await?;
     tx.execute("DELETE FROM wheel_prizes", &[]).await?;
     for item in items {
-        let id = item.get("id").and_then(Value::as_str).unwrap_or("").to_string();
-        let label = item.get("label").and_then(Value::as_str).unwrap_or("").to_string();
-        let color = item.get("color").and_then(Value::as_str).unwrap_or("").to_string();
+        let id = item
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let label = item
+            .get("label")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let color = item
+            .get("color")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
         let weight = item
             .get("weight")
             .and_then(|v| v.as_f64())
@@ -145,14 +160,19 @@ fn value_to_f64(v: Option<&Value>) -> Option<f64> {
     }
 }
 
-pub async fn run_admin_wheel_runtime_config_set(pool: &Pool, body: &Value) -> Result<Value, WheelError> {
+pub async fn run_admin_wheel_runtime_config_set(
+    pool: &Pool,
+    body: &Value,
+) -> Result<Value, WheelError> {
     let spin_raw = value_to_f64(body.get("spinPriceUsdc"));
     let Some(spin) = spin_raw else {
         return Err(WheelError::bad("spinPriceUsdc obrigatório"));
     };
     let min = value_to_f64(body.get("minSpinPriceUsdc")).unwrap_or(spin);
     if spin + 1e-9 < MIN_SPIN_PRICE_USDC || min + 1e-9 < MIN_SPIN_PRICE_USDC {
-        return Err(WheelError::unprocessable("Preço mínimo permitido: 0.10 USDC"));
+        return Err(WheelError::unprocessable(
+            "Preço mínimo permitido: 0.10 USDC",
+        ));
     }
     let is_enabled = match body.get("isEnabled") {
         Some(Value::Bool(false)) => 0,
@@ -257,7 +277,10 @@ pub async fn run_admin_wheel_players_add(pool: &Pool, body: &Value) -> Result<Va
     Ok(json!({ "ok": true }))
 }
 
-pub async fn run_admin_wheel_players_remove(pool: &Pool, body: &Value) -> Result<Value, WheelError> {
+pub async fn run_admin_wheel_players_remove(
+    pool: &Pool,
+    body: &Value,
+) -> Result<Value, WheelError> {
     let username = body
         .get("username")
         .and_then(Value::as_str)

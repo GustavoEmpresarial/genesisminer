@@ -245,14 +245,14 @@ pub async fn run_withdrawals_history(
     );
     let rows = conn
         .query(
-            "SELECT w.id, w.user_id, w.coin_id, c.symbol AS coin_symbol,
+            "SELECT w.id::text, w.user_id, w.coin_id, c.symbol AS coin_symbol,
                     w.amount_crypto::double precision AS amount_crypto,
                     w.amount_usdc::double precision AS amount_usdc,
                     w.fee_amount::double precision AS fee_amount,
                     w.net_amount::double precision AS net_amount,
                     w.wallet_address, w.status, w.tx_hash, w.created_at, w.processed_at
                FROM withdrawal_requests w
-               JOIN mining_coins c ON w.coin_id = c.id
+               LEFT JOIN mining_coins c ON w.coin_id = c.id
               WHERE w.user_id = $1
               ORDER BY w.created_at DESC
               LIMIT $2",
@@ -301,7 +301,7 @@ pub async fn run_deposits_history(
     );
     let rows = conn
         .query(
-            "SELECT id, user_id, tx_hash, network,
+            "SELECT id::text, user_id, tx_hash, network,
                     amount_usdc::double precision AS amount_usdc,
                     wallet_address, token_contract, created_at
                FROM user_deposit_history

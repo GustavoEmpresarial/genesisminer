@@ -10,8 +10,9 @@ mod bus;
 mod chat;
 mod rooms;
 
+pub use auth::{resolve_chat_actor, ChatActor};
 pub use bus::{publish_ws_emit, WsEmitMessage, WS_EMIT_CHANNEL};
-pub use rooms::{chat_room_name, CHAT_CHANNEL_GLOBAL};
+pub use rooms::{chat_room_name, map_am_peer_dtos, normalize_chat_channel, CHAT_CHANNEL_GLOBAL};
 
 use std::sync::Arc;
 

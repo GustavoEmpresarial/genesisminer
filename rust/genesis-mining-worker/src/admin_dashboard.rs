@@ -57,7 +57,10 @@ fn count_col(row: &tokio_postgres::Row, col: &str) -> i64 {
     0
 }
 fn f64_col(row: &tokio_postgres::Row, col: &str) -> f64 {
-    row.try_get::<_, Option<f64>>(col).ok().flatten().unwrap_or(0.0)
+    row.try_get::<_, Option<f64>>(col)
+        .ok()
+        .flatten()
+        .unwrap_or(0.0)
 }
 
 // ===========================================================================
@@ -329,14 +332,20 @@ async fn compute_dashboard_stats(
 // ===========================================================================
 
 fn utc_day_start_ms(now_ms: i64) -> i64 {
-    let dt = Utc.timestamp_millis_opt(now_ms).single().unwrap_or_else(Utc::now);
+    let dt = Utc
+        .timestamp_millis_opt(now_ms)
+        .single()
+        .unwrap_or_else(Utc::now);
     Utc.with_ymd_and_hms(dt.year(), dt.month(), dt.day(), 0, 0, 0)
         .single()
         .map(|d| d.timestamp_millis())
         .unwrap_or(now_ms)
 }
 fn utc_month_start_ms(now_ms: i64) -> i64 {
-    let dt = Utc.timestamp_millis_opt(now_ms).single().unwrap_or_else(Utc::now);
+    let dt = Utc
+        .timestamp_millis_opt(now_ms)
+        .single()
+        .unwrap_or_else(Utc::now);
     Utc.with_ymd_and_hms(dt.year(), dt.month(), 1, 0, 0, 0)
         .single()
         .map(|d| d.timestamp_millis())
@@ -368,9 +377,13 @@ pub async fn run_site_metrics(pool: &Pool) -> Result<Value, PlayerReadError> {
     let one = |sql: String, params: Vec<i64>| {
         let c = &c;
         async move {
-            let refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
-                params.iter().map(|p| p as &(dyn tokio_postgres::types::ToSql + Sync)).collect();
-            c.query_one(&sql, &refs).await.map(|r| count_col(&r, "count"))
+            let refs: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = params
+                .iter()
+                .map(|p| p as &(dyn tokio_postgres::types::ToSql + Sync))
+                .collect();
+            c.query_one(&sql, &refs)
+                .await
+                .map(|r| count_col(&r, "count"))
         }
     };
 

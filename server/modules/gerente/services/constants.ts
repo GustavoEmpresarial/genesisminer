@@ -1,7 +1,14 @@
 /**
  * Constantes do domínio Gerente (ex-account-manager).
+ * Espelho: `rust/genesis-core/src/gerente.rs`.
  */
-export const ACCOUNT_MANAGER_SHARE = 0.1;
+
+/** Percentagem do minerado do dono creditada ao gerente. */
+export const ACCOUNT_MANAGER_SHARE_PERCENT = 5;
+/** Multiplicador percentagem (`sharePercent` em GET /me). */
+export const ACCOUNT_MANAGER_PERCENT_MULTIPLIER = 100;
+/** Fração do minerado do dono creditada ao gerente. */
+export const ACCOUNT_MANAGER_SHARE = ACCOUNT_MANAGER_SHARE_PERCENT / ACCOUNT_MANAGER_PERCENT_MULTIPLIER;
 export const ACCOUNT_MANAGER_FIRE_LOCK_DAYS = 7;
 
 export const ACCOUNT_MANAGER_STATUS = {

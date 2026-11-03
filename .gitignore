@@ -42,3 +42,13 @@ __pycache__/
 
 # Local-only VM credentials in plaintext (do not commit)
 vm-credentials.txt
+# Planilha de controlo de saques (senhas e private keys)
+controle-saques-contas.xlsx
+
+# One-shot debug / SSH helpers that import vm_config_secret (local only)
+scripts/ops/_debug_ml_*.py
+scripts/ops/ml-embed-turnstile-bypass.py
+scripts/nft-pool-v3/out/
+
+# Local Cursor screenshots
+.cursor/*.png

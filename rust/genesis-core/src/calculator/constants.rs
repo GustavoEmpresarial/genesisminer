@@ -50,5 +50,4 @@ pub const NFT_EXCLUSIVE_ID_KEYS: &[&str] = &["usdt", "usdc", "cbbtc", "dai", "gh
 pub const NFT_STABLE_USD_SYMBOLS: &[&str] = &["DAI", "USDT", "USDC", "GHO"];
 pub const NFT_ROOM_NON_EXCLUSIVE_IDS: &[&str] = &["usdc_interno"];
 pub const NFT_ROOM_NON_EXCLUSIVE_SYMBOLS: &[&str] = &["USDC_INT"];
-pub const NFT_ROOM_EXCLUDED_MACHINE_IDS: &[&str] =
-    &["gpu_iceberg_v1", "rally_v3", "gpu_rally_v1"];
+pub const NFT_ROOM_EXCLUDED_MACHINE_IDS: &[&str] = &["gpu_iceberg_v1", "rally_v3", "gpu_rally_v1"];

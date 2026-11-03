@@ -67,7 +67,13 @@ const ALLOWED: Array<{ method: string; pattern: RegExp }> = [
   { method: 'POST', pattern: /^\/api\/lucky-boxes\/purchase\/?$/ },
   { method: 'POST', pattern: /^\/api\/lucky-boxes\/open\/?$/ },
   { method: 'POST', pattern: /^\/api\/lucky-boxes\/discard\/?$/ },
-  { method: 'POST', pattern: /^\/api\/lucky-boxes\/promocodes\/redeem\/?$/ }
+  { method: 'POST', pattern: /^\/api\/lucky-boxes\/promocodes\/redeem\/?$/ },
+  // Mini-chat gerência (DM dono↔gerente). HTTP é de genesis-api; allowlist
+  // cobre o caso de o pedido ainda cair no Express.
+  { method: 'POST', pattern: /^\/api\/chat\/messages\/?$/ },
+  { method: 'PATCH', pattern: /^\/api\/chat\/messages\/[^/]+\/?$/ },
+  { method: 'DELETE', pattern: /^\/api\/chat\/messages\/[^/]+\/?$/ },
+  { method: 'POST', pattern: /^\/api\/chat\/audio\/?$/ }
 ];
 
 function requestPath(req: Request): string {

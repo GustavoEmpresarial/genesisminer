@@ -17,6 +17,8 @@ export type AdminUpgradeUpsertInput = {
   grantUsdc?: number;
   grantAccessLevelId?: string | null;
   isActive?: unknown;
+  /** URL/path público da foto do passe (`admin_upgrades.image_url`). */
+  imageUrl?: string | null;
   items?: Array<{ itemId: string; qty: number }>;
   boxes?: Array<{ boxId: string; qty: number }>;
   /** Legado aceitava tanto `string[]` (ids) quanto `{passId, qty}[]` — `qty` nunca é lido no grant (`services/grant.ts`), só existe pela coluna `NOT NULL` da tabela. */
@@ -24,6 +26,12 @@ export type AdminUpgradeUpsertInput = {
   coins?: Array<{ coinId: string; amount: number }>;
   visibleToAccessLevelIds?: string[];
 };
+
+function normalizeImageUrl(raw: string | null | undefined): string | null {
+  if (raw == null) return null;
+  const t = String(raw).trim();
+  return t === '' ? null : t;
+}
 
 const DEFAULT_PASS_QTY = 1;
 const TX_TIMEOUT_MS = 60_000;
@@ -47,6 +55,7 @@ export async function upsertAdminUpgrade(u: AdminUpgradeUpsertInput): Promise<vo
   if (!id) {
     throw new HttpControlledError(HTTP_BAD_REQUEST, { error: 'id do pacote é obrigatório.' });
   }
+  const imageUrl = normalizeImageUrl(u.imageUrl);
 
   await prisma.$transaction(
     async (tx) => {
@@ -61,6 +70,7 @@ export async function upsertAdminUpgrade(u: AdminUpgradeUpsertInput): Promise<vo
           grant_usdc: Number(u.grantUsdc) || 0,
           grant_access_level_id: u.grantAccessLevelId || null,
           is_active: u.isActive ? 1 : 0,
+          image_url: imageUrl,
           created_at: BigInt(Date.now())
         },
         update: {
@@ -70,6 +80,7 @@ export async function upsertAdminUpgrade(u: AdminUpgradeUpsertInput): Promise<vo
           grant_usdc: Number(u.grantUsdc) || 0,
           grant_access_level_id: u.grantAccessLevelId || null,
           is_active: u.isActive ? 1 : 0,
+          image_url: imageUrl,
           version: (existing?.version ?? 0) + 1
         }
       });

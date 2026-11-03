@@ -34,7 +34,10 @@ export const upgradesEn: MessageTree = {
   purchaseNotCompleted: 'Purchase not completed',
   tryAgain: 'Try again.',
   purchaseFailedTitle: 'Could not complete the purchase',
-  purchaseFailed: 'Purchase failed.'
+  purchaseFailed: 'Purchase failed.',
+  carouselPrev: 'Previous pass',
+  carouselNext: 'Next pass',
+  carouselPosition: '{{current}} of {{total}}'
 };
 
 export const upgradesPt: MessageTree = {
@@ -68,7 +71,10 @@ export const upgradesPt: MessageTree = {
   purchaseNotCompleted: 'Compra não concluída',
   tryAgain: 'Tente novamente.',
   purchaseFailedTitle: 'Não foi possível concluir a compra',
-  purchaseFailed: 'Falha na compra.'
+  purchaseFailed: 'Falha na compra.',
+  carouselPrev: 'Passe anterior',
+  carouselNext: 'Passe seguinte',
+  carouselPosition: '{{current}} de {{total}}'
 };
 
 export const upgradesEs: MessageTree = {
@@ -102,5 +108,8 @@ export const upgradesEs: MessageTree = {
   purchaseNotCompleted: 'Compra no completada',
   tryAgain: 'Inténtalo de nuevo.',
   purchaseFailedTitle: 'No se pudo completar la compra',
-  purchaseFailed: 'La compra falló.'
+  purchaseFailed: 'La compra falló.',
+  carouselPrev: 'Pase anterior',
+  carouselNext: 'Pase siguiente',
+  carouselPosition: '{{current}} de {{total}}'
 };

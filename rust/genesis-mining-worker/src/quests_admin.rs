@@ -70,9 +70,7 @@ pub async fn run_quests_admin_list(pool: &Pool) -> Result<Value, PlayerReadError
     ensure_quest_schema(&conn, now_ms()).await?;
     let rows = conn
         .query(
-            &format!(
-                "SELECT {SELECT_COLS} FROM quest_definitions ORDER BY sort_order ASC, id ASC"
-            ),
+            &format!("SELECT {SELECT_COLS} FROM quest_definitions ORDER BY sort_order ASC, id ASC"),
             &[],
         )
         .await?;

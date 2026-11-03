@@ -6,9 +6,7 @@ use std::time::Duration;
 use reqwest::Client;
 use serde_json::{json, Value};
 
-use crate::config::{
-    WorkerConfig, HARDWARE_CREDIT_TIMEOUT_MS, MINING_WORKER_AUTH_HEADER,
-};
+use crate::config::{WorkerConfig, HARDWARE_CREDIT_TIMEOUT_MS, MINING_WORKER_AUTH_HEADER};
 use crate::player_reads::{PlayerReadError, HTTP_SERVICE_UNAVAILABLE};
 
 const HARDWARE_CREDIT_PATH: &str = "/v1/hardware/credit";

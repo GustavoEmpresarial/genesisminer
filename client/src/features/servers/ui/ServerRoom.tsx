@@ -14,7 +14,10 @@ import {
     findAsicRackDisplayCoin,
     listAsicRackDisplayCoins,
     listAsicRackBaseProductionByCoin,
-    isAsicMachineUpgrade
+    isAsicMachineUpgrade,
+    findAsicLeaseForSlot,
+    rackWithPastLeasesHidden,
+    visibleMachineSlotId
 } from '../types';
 import { NftRoomPaybackCard } from './NftRoomPaybackCard';
 import { AsicRoomPaybackCard } from './AsicRoomPaybackCard';
@@ -604,13 +607,17 @@ export const ServerRoom: React.FC<ServerRoomProps> = ({
     const asicRoomDisplayCoin = useMemo(() => findUsdcInternoMiningCoin(miningCoins), [miningCoins]);
 
     const roomTotalProduction = useMemo(() => {
+        const nowMs = Date.now();
+        const racks = currentRoomRacks.map((rack) =>
+            rackWithPastLeasesHidden(rack, asicLeaseDetails, nowMs)
+        );
         return calculatePlacedRacksProductionHashrate(
-            currentRoomRacks,
+            racks,
             upgrades,
             storedBatteries,
             batteryCatalogHints
         );
-    }, [currentRoomRacks, upgrades, storedBatteries, batteryCatalogHints]);
+    }, [currentRoomRacks, asicLeaseDetails, upgrades, storedBatteries, batteryCatalogHints]);
 
     const roomPlacedCount = currentRoomRacks.length;
 
@@ -1223,7 +1230,7 @@ export const ServerRoom: React.FC<ServerRoomProps> = ({
                     const rackSkin = normalizePublicAssetUrl(rackDef?.image);
 
                     const finalProd = calculatePlacedRacksProductionHashrate(
-                        [rack],
+                        [rackWithPastLeasesHidden(rack, asicLeaseDetails, Date.now())],
                         upgrades,
                         storedBatteries,
                         batteryCatalogHints
@@ -1305,8 +1312,18 @@ export const ServerRoom: React.FC<ServerRoomProps> = ({
                                                             : layoutToUse.slots
                                                                 .slice(0, i + 1)
                                                                 .filter((s) => s.type === slot.type).length - 1;
-                                                        const slotContent = slot.type === 'machine' ? rack.slots[idx] :
-                                                            slot.type === 'multiplier' ? rack.multiplierSlots[idx] :
+                                                        const slotContent = slot.type === 'machine'
+                                                            ? visibleMachineSlotId(
+                                                                rack.slots[idx],
+                                                                findAsicLeaseForSlot(
+                                                                    asicLeaseDetails,
+                                                                    rack.id,
+                                                                    idx,
+                                                                    rack.slotLeaseIds?.[idx]
+                                                                ),
+                                                                Date.now()
+                                                            )
+                                                            : slot.type === 'multiplier' ? rack.multiplierSlots[idx] :
                                                                 slot.type === 'wiring' ? rack.wiringId :
                                                                     slot.type === 'battery' ? rack.batteryId : null;
 

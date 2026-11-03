@@ -7,7 +7,7 @@ export const AdminSiteMaintenance: React.FC = () => {
   const [msg, setMsg] = useState('');
 
   React.useEffect(() => {
-    void getSiteStatus().then((s) => setOn(s.maintenance));
+    void getSiteStatus().then((s) => setOn(s.armed));
   }, []);
 
   const toggle = async () => {
@@ -25,9 +25,9 @@ export const AdminSiteMaintenance: React.FC = () => {
 
   return (
     <div className="space-y-3 rounded-xl border border-slate-200 p-4 dark:border-slate-700">
-      <h3 className="text-sm font-bold uppercase tracking-wide">Manutenção do site</h3>
+      <h3 className="text-sm font-bold uppercase tracking-wide">Manutenção programada</h3>
       <p className="text-sm text-slate-600 dark:text-slate-400">
-        Fecha landing e jogo para jogadores. Admins continuam a entrar.
+        Fecha o site principal (genesisdao.tech) para jogadores. Staging (dev.genesisdao.tech) continua aberto. Admins entram nos dois.
       </p>
       <button
         type="button"

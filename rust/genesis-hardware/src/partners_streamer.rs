@@ -16,8 +16,8 @@ pub const STREAMER_ROOM_DEACTIVATE_PATH: &str = "/v1/partners/streamer-room/deac
 
 /// `STREAMER_ROOM_ID_CONST` in Node.
 pub const STREAMER_ROOM_ID: &str = "room_1766898636697";
-/// `STREAMER_LEVEL_IDS` in Node.
-const STREAMER_LEVEL_IDS: [&str; 2] = ["creator", "tester"];
+/// STREAMER membership id (tester retired from catalog).
+const STREAMER_LEVEL_IDS: [&str; 1] = ["creator"];
 
 pub async fn deactivate_streamer_room<C: GenericClient>(
     client: &C,

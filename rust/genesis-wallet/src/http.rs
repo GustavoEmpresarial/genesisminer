@@ -18,19 +18,16 @@ use crate::admin_balances::{
     run_admin_bulk_coin_balance, run_admin_save_game_balances, run_admin_set_coin_balance,
     ADMIN_BULK_COIN_BALANCE_PATH, ADMIN_SAVE_GAME_BALANCES_PATH, ADMIN_SET_COIN_BALANCE_PATH,
 };
+use crate::admin_reinvestment_list::{run_admin_reinvestment_list, ADMIN_REINVESTMENT_LIST_PATH};
 use crate::admin_web3::{
     post_wallet_labels_list, post_wallet_labels_upsert, post_web3_settings_persist,
     WALLET_LABELS_LIST_PATH, WALLET_LABELS_UPSERT_PATH, WEB3_SETTINGS_PERSIST_PATH,
-};
-use crate::admin_reinvestment_list::{
-    run_admin_reinvestment_list, ADMIN_REINVESTMENT_LIST_PATH,
 };
 use crate::admin_withdrawal_status::{
     run_admin_withdrawal_status, run_admin_withdrawals_list, ADMIN_WITHDRAWALS_LIST_PATH,
     ADMIN_WITHDRAWAL_STATUS_PATH,
 };
 use crate::config::{WorkerConfig, MINING_WORKER_AUTH_HEADER};
-use crate::treasury_token_txs::{run_treasury_token_txs, TreasuryTokenTxsQuery, TREASURY_TOKEN_TXS_PATH};
 use crate::deposit::{run_deposit_credit, DEPOSIT_CREDIT_PATH};
 use crate::deposit_receipt::{
     run_resolve_deposit_receipt, DepositSettingsPayload, DEPOSIT_RESOLVE_RECEIPT_PATH,
@@ -46,6 +43,9 @@ use crate::player_reads::{
 };
 use crate::quest_claim::{run_quest_claim, QUEST_CLAIM_PATH};
 use crate::referral_credit::{run_referral_credit_on_email_verified, REFERRAL_CREDIT_PATH};
+use crate::treasury_token_txs::{
+    run_treasury_token_txs, TreasuryTokenTxsQuery, TREASURY_TOKEN_TXS_PATH,
+};
 use crate::withdraw::{run_withdraw_request, WITHDRAW_REQUEST_PATH};
 use crate::zerads_credit::{run_zerads_credit, ZERADS_CREDIT_PATH};
 use crate::zerads_offerwall::{
@@ -312,7 +312,10 @@ fn router(state: AppState) -> Router {
             ADMIN_BULK_COIN_BALANCE_PATH,
             post(post_admin_bulk_coin_balance),
         )
-        .route(ADMIN_WITHDRAWALS_LIST_PATH, post(post_admin_withdrawals_list))
+        .route(
+            ADMIN_WITHDRAWALS_LIST_PATH,
+            post(post_admin_withdrawals_list),
+        )
         .route(
             ADMIN_REINVESTMENT_LIST_PATH,
             post(post_admin_reinvestment_list),
@@ -792,7 +795,13 @@ async fn post_admin_bulk_coin_balance(
         ),
         Err(e) => {
             let (sc, body) = wallet_fail(e);
-            (sc, Json(serde_json::to_value(&body.0).unwrap_or_else(|_| serde_json::json!({ "ok": false }))))
+            (
+                sc,
+                Json(
+                    serde_json::to_value(&body.0)
+                        .unwrap_or_else(|_| serde_json::json!({ "ok": false })),
+                ),
+            )
         }
     }
 }
@@ -804,7 +813,13 @@ async fn post_admin_withdrawals_list(
         Ok(v) => (StatusCode::OK, Json(v)),
         Err(e) => {
             let (sc, body) = wallet_fail(e);
-            (sc, Json(serde_json::to_value(&body.0).unwrap_or_else(|_| serde_json::json!({ "ok": false }))))
+            (
+                sc,
+                Json(
+                    serde_json::to_value(&body.0)
+                        .unwrap_or_else(|_| serde_json::json!({ "ok": false })),
+                ),
+            )
         }
     }
 }
@@ -817,7 +832,13 @@ async fn post_admin_reinvestment_list(
         Ok(v) => (StatusCode::OK, Json(v)),
         Err(e) => {
             let (sc, body) = wallet_fail(e);
-            (sc, Json(serde_json::to_value(&body.0).unwrap_or_else(|_| serde_json::json!({ "ok": false }))))
+            (
+                sc,
+                Json(
+                    serde_json::to_value(&body.0)
+                        .unwrap_or_else(|_| serde_json::json!({ "ok": false })),
+                ),
+            )
         }
     }
 }

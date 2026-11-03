@@ -105,10 +105,7 @@ pub fn project_rows(user_hps: f64, yield_per_hash: f64, price_usd: f64) -> Vec<P
 /// * `legacy` — `(block_reward / block_time) / effective`, where effective is
 ///   [`effective_network_hashrate_for_coin`] using `active_or_effective_net` as
 ///   the live map entry for this coin.
-pub fn resolve_yield_per_hash(
-    coin: &CoinYieldInput,
-    active_or_effective_net: f64,
-) -> (f64, f64) {
+pub fn resolve_yield_per_hash(coin: &CoinYieldInput, active_or_effective_net: f64) -> (f64, f64) {
     let active = if active_or_effective_net.is_finite() && active_or_effective_net > 0.0 {
         active_or_effective_net
     } else {

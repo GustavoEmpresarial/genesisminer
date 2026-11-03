@@ -53,6 +53,7 @@ fn is_ported_admin_route(method: &Method, path: &str) -> bool {
         || (method == Method::GET && path == "/api/admin/accounts-dormant-mining")
         || (method == Method::GET && path == "/api/admin/shop/checkouts")
         || (method == Method::GET && path == "/api/admin/purchases/report")
+        || (method == Method::POST && path == "/api/admin/site-maintenance")
 }
 
 /// `POST /api/admin/users/:userId/save-game-override` — genesis-api `admin_users`.
@@ -177,6 +178,19 @@ mod tests {
     }
 
     #[test]
+    fn admin_site_maintenance_is_owned() {
+        assert!(is_owned_route(&Method::POST, "/api/admin/site-maintenance"));
+        assert!(!should_proxy_express(
+            &Method::POST,
+            "/api/admin/site-maintenance"
+        ));
+        assert!(should_proxy_express(
+            &Method::GET,
+            "/api/admin/site-maintenance"
+        ));
+    }
+
+    #[test]
     fn admin_users_is_proxy() {
         assert!(should_proxy_express(&Method::GET, "/api/admin/users"));
         assert!(!is_owned_route(&Method::GET, "/api/admin/users"));
@@ -273,10 +287,7 @@ mod tests {
             &Method::POST,
             "/api/admin/stop-impersonate"
         ));
-        assert!(is_owned_route(
-            &Method::POST,
-            "/api/admin/stop-impersonate"
-        ));
+        assert!(is_owned_route(&Method::POST, "/api/admin/stop-impersonate"));
         assert!(!should_proxy_express(
             &Method::POST,
             "/api/admin/users/7/save-game-override"
@@ -341,27 +352,18 @@ mod tests {
             &Method::GET,
             "/api/admin/shop/checkouts"
         ));
-        assert!(is_owned_route(
-            &Method::GET,
-            "/api/admin/shop/checkouts"
-        ));
+        assert!(is_owned_route(&Method::GET, "/api/admin/shop/checkouts"));
         assert!(!should_proxy_express(
             &Method::GET,
             "/api/admin/purchases/report"
         ));
-        assert!(is_owned_route(
-            &Method::GET,
-            "/api/admin/purchases/report"
-        ));
+        assert!(is_owned_route(&Method::GET, "/api/admin/purchases/report"));
         // Unported admin users sub-routes still proxy.
         assert!(should_proxy_express(
             &Method::GET,
             "/api/admin/users/7/account-trace"
         ));
-        assert!(should_proxy_express(
-            &Method::GET,
-            "/api/admin/users"
-        ));
+        assert!(should_proxy_express(&Method::GET, "/api/admin/users"));
     }
 
     #[test]

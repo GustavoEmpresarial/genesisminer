@@ -16,6 +16,7 @@ import { LuckyBoxesPage } from '../../lucky-boxes';
 import { MergePage } from '../../merge';
 import { MiniBlogPage } from '../../mini-blog';
 import { OfferwallPage } from '../../offerwall';
+import { TOPIDLE_NAV_ENABLED, TopIdleVotePage } from '../../topidle';
 import { PartnersPage } from '../../partners';
 import { ProfilePage } from '../../profile';
 import { QuestsPage } from '../../quests';
@@ -133,6 +134,10 @@ export function GameViewOutlet({
     return <OfferwallPage />;
   }
 
+  if (view === 'topidle' && TOPIDLE_NAV_ENABLED) {
+    return <TopIdleVotePage />;
+  }
+
   if (view === 'arcade') {
     return <ArcadePage />;
   }
@@ -156,7 +161,19 @@ export function GameViewOutlet({
   }
 
   if (view === 'management') {
-    return <GerentePage onSessionRefresh={onSessionRefresh} />;
+    return (
+      <GerentePage
+        onSessionRefresh={onSessionRefresh}
+        currentUserId={Number(user.id)}
+        currentUsername={user.username}
+        realUserId={
+          user.isManagingAccount || user.managerMode
+            ? Number(user.managerUserId) || Number(user.id)
+            : Number(user.id)
+        }
+        isManagingAccount={!!user.isManagingAccount || !!user.managerMode}
+      />
+    );
   }
 
   if (view === 'upgrade') {

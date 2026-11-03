@@ -41,10 +41,10 @@ describe('checkin premium-policy', () => {
     vi.doUnmock('../../../../server/core/database/prisma.js');
   });
 
-  it('loadCheckinPremiumPolicy defaults (enabled=true quando não configurado)', async () => {
+  it('loadCheckinPremiumPolicy defaults (enabled=false quando não configurado — só diário)', async () => {
     const { loadCheckinPremiumPolicy } = await import('../../../../server/modules/checkin/services/premium-policy.js');
     const policy = await loadCheckinPremiumPolicy();
-    expect(policy).toEqual({ enabled: true, minUsdc: 100, intervalDays: 7 });
+    expect(policy).toEqual({ enabled: false, minUsdc: 100, intervalDays: 7 });
   });
 
   it('saveCheckinPremiumPolicy grava e persiste', async () => {
@@ -107,16 +107,16 @@ describe('checkin premium-policy', () => {
     expect(prismaMock.prisma.$executeRaw).not.toHaveBeenCalled();
   });
 
-  it('resolveUserCheckinPremiumContext: elegível quando policy enabled e spend/unlock', async () => {
+  it('resolveUserCheckinPremiumContext: nunca ativa modo semanal (mesmo com unlock)', async () => {
+    stored.checkin_premium_enabled = '1';
     queryRawQueue = [[{ ok: 1 }]];
     const { resolveUserCheckinPremiumContext } = await import('../../../../server/modules/checkin/services/premium-policy.js');
     const ctx = await resolveUserCheckinPremiumContext(1);
     expect(ctx.eligible).toBe(true);
-    expect(ctx.premiumWeeklyCheckin).toBe(true);
+    expect(ctx.premiumWeeklyCheckin).toBe(false);
   });
 
-  it('resolveUserCheckinPremiumContext: não elegível quando policy desabilitada (não consulta spend)', async () => {
-    stored.checkin_premium_enabled = '0';
+  it('resolveUserCheckinPremiumContext: default off — não consulta spend', async () => {
     const { resolveUserCheckinPremiumContext } = await import('../../../../server/modules/checkin/services/premium-policy.js');
     const ctx = await resolveUserCheckinPremiumContext(1);
     expect(ctx.eligible).toBe(false);

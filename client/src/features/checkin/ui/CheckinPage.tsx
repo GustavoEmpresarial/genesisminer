@@ -52,16 +52,6 @@ export function CheckinPage({ onRewardGranted }: CheckinPageProps) {
 
   const statusHeadline = (() => {
     if (!status) return null;
-    if (status.premiumWeeklyCheckin) {
-      return frozen
-        ? t('checkin.titlePremiumFrozen', {
-            days: String(status.premiumIntervalDays),
-            minUsdc: String(status.premiumMinUsdc)
-          })
-        : t('checkin.titlePremiumActive', {
-            time: formatCheckinCountdown(status.nextResetMs)
-          });
-    }
     return frozen
       ? t('checkin.titleDailyFrozen')
       : t('checkin.titleDailyActive', {
@@ -71,10 +61,6 @@ export function CheckinPage({ onRewardGranted }: CheckinPageProps) {
 
   const windowLine = (() => {
     if (!status) return null;
-    if (status.premiumWeeklyCheckin) {
-      if (frozen) return t('checkin.premiumWindowExpired');
-      return t('checkin.premiumNextDue', { time: formatCheckinCountdown(status.nextResetMs) });
-    }
     if (frozen) return t('checkin.dailyWindowExpired');
     if (status.canCheckinNow || status.nextCheckinAtMs == null) {
       return t('checkin.dailyWindowAvailable');
@@ -175,16 +161,6 @@ export function CheckinPage({ onRewardGranted }: CheckinPageProps) {
                   </p>
                   <p className="text-sm font-semibold leading-snug text-slate-100">{statusHeadline}</p>
                   {windowLine ? <p className="text-xs leading-relaxed text-slate-400">{windowLine}</p> : null}
-                  {!status.canCheckinNow &&
-                  status.nextCheckinAllowedMs != null &&
-                  !frozen &&
-                  status.premiumWeeklyCheckin ? (
-                    <p className="text-xs text-slate-400">
-                      {t('checkin.premiumAvailableIn', {
-                        time: formatCheckinCountdown(status.nextCheckinAllowedMs)
-                      })}
-                    </p>
-                  ) : null}
                 </div>
               </div>
 

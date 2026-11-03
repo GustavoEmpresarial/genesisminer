@@ -1,6 +1,7 @@
 import React from 'react';
 import { TrendingUp, ShieldCheck, Zap, ArrowRight, Server, Lock, Info } from 'lucide-react';
 import { useT, type TranslateFn } from '../../../shared/i18n';
+import { TopIdleVerificationMark } from '../../../shared/seo/TopIdleVerificationMark';
 
 interface HomePageProps {
     onNavigate: (view: 'auth' | 'docs', opts?: { mode?: 'login' | 'register' }) => void;
@@ -44,6 +45,7 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate }) => {
 
     return (
         <div className="flex flex-col min-h-full bg-slate-50 dark:bg-[#120e09] text-slate-800 dark:text-slate-200 animate-in fade-in duration-500 transition-colors">
+            <TopIdleVerificationMark />
 
             {/* Hero — ouro / âmbar Genesis DAO */}
             <div className="relative overflow-hidden py-20 lg:py-32 bg-gradient-to-b from-slate-50 via-white to-slate-100 dark:from-[#120e09] dark:via-[#1c140c] dark:to-[#0a0805]">

@@ -88,9 +88,7 @@ pub async fn run_grant_premium_checkin(
     }))
 }
 
-async fn load_interval_days(
-    conn: &deadpool_postgres::Object,
-) -> Result<i32, PlayerReadError> {
+async fn load_interval_days(conn: &deadpool_postgres::Object) -> Result<i32, PlayerReadError> {
     let row = conn
         .query_opt(
             "SELECT value FROM settings WHERE key = 'checkin_premium_interval_days'",
@@ -101,7 +99,9 @@ async fn load_interval_days(
         return Ok(DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS);
     };
     let raw: String = r.try_get("value").unwrap_or_default();
-    let parsed = raw.parse::<i32>().unwrap_or(DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS);
+    let parsed = raw
+        .parse::<i32>()
+        .unwrap_or(DEFAULT_CHECKIN_PREMIUM_INTERVAL_DAYS);
     Ok(if parsed >= 1 {
         parsed
     } else {

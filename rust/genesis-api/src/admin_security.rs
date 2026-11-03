@@ -60,7 +60,12 @@ async fn stats(
     if let Err(e) = require_admin(&state, &headers, &Method::GET, P_STATS).await {
         return e;
     }
-    forward_mining(&state, W_STATS, json!({ "section": q.section.unwrap_or_default() })).await
+    forward_mining(
+        &state,
+        W_STATS,
+        json!({ "section": q.section.unwrap_or_default() }),
+    )
+    .await
 }
 
 async fn blacklist_add(
@@ -79,7 +84,14 @@ async fn blacklist_remove(
     headers: HeaderMap,
     Path(ip): Path<String>,
 ) -> Response {
-    if let Err(e) = require_admin(&state, &headers, &Method::DELETE, "/api/admin/security/blacklist/x").await {
+    if let Err(e) = require_admin(
+        &state,
+        &headers,
+        &Method::DELETE,
+        "/api/admin/security/blacklist/x",
+    )
+    .await
+    {
         return e;
     }
     forward_mining(&state, W_BLACKLIST_REMOVE, json!({ "ip": ip })).await

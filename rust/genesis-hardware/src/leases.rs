@@ -26,11 +26,15 @@ pub const ASIC_LEASE_STATUS_EXPIRED: &str = "expired";
 /// P2P book — same UUID, clock (`expires_at`) still runs.
 pub const ASIC_LEASE_STATUS_LISTED: &str = "listed";
 
+/// `compute_asic_lease_expires_at` stores this when the machine has no clock.
+/// Those rows must not be selected by `expires_at <= now`.
+pub(crate) const ASIC_LEASE_NO_CLOCK_EXPIRES_AT: i64 = 0;
+
 /// Lock instances of candidate leases first (same order as `p2p`: instance then lease).
 pub(crate) const EXPIRE_LOCK_INSTANCES_SQL: &str = "SELECT id FROM item_instances
              WHERE id IN (
                SELECT id FROM player_asic_leases
-               WHERE user_id = $1 AND expires_at <= $2 AND status IN ($3, $4, $5)
+               WHERE user_id = $1 AND expires_at > 0 AND expires_at <= $2 AND status IN ($3, $4, $5)
              )
              ORDER BY id
              FOR UPDATE";
@@ -38,7 +42,7 @@ pub(crate) const EXPIRE_LOCK_INSTANCES_SQL: &str = "SELECT id FROM item_instance
 pub(crate) const EXPIRE_SELECT_SQL: &str =
     "SELECT id, item_id, status, rack_id, slot_index, acquired_at, expires_at
              FROM player_asic_leases
-             WHERE user_id = $1 AND expires_at <= $2 AND status IN ($3, $4, $5)
+             WHERE user_id = $1 AND expires_at > 0 AND expires_at <= $2 AND status IN ($3, $4, $5)
              ORDER BY id
              FOR UPDATE";
 
@@ -1123,6 +1127,9 @@ mod tests {
     #[test]
     fn listed_status_and_expire_sql_include_listed() {
         assert_eq!(ASIC_LEASE_STATUS_LISTED, "listed");
+        assert!(EXPIRE_SELECT_SQL.contains("expires_at > 0"));
+        assert!(EXPIRE_LOCK_INSTANCES_SQL.contains("expires_at > 0"));
+        assert_eq!(ASIC_LEASE_NO_CLOCK_EXPIRES_AT, 0);
         assert!(EXPIRE_SELECT_SQL.contains("status IN ($3, $4, $5)"));
         assert!(EXPIRE_SELECT_SQL.contains("FOR UPDATE"));
         assert!(EXPIRE_SELECT_SQL.contains("ORDER BY id"));

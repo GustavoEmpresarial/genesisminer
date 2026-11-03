@@ -44,9 +44,7 @@ fn clamp_i64(raw: Option<&str>, default: i64, max: i64) -> i64 {
 }
 
 fn is_addr(s: &str) -> bool {
-    s.len() == 42
-        && s.starts_with("0x")
-        && s[2..].bytes().all(|b| b.is_ascii_hexdigit())
+    s.len() == 42 && s.starts_with("0x") && s[2..].bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 /// `web3_deposit_wallet` (lower-cased, validated) or `""`.
@@ -77,8 +75,7 @@ pub(crate) fn resolve_treasury_address(requested: Option<&str>, configured: &str
         configured.to_string()
     };
     let req = requested.unwrap_or("").trim().to_ascii_lowercase();
-    if is_addr(&req)
-        && (req == LEGACY_TREASURY || req == LEGACY_LAUNCH_TREASURY || req == primary)
+    if is_addr(&req) && (req == LEGACY_TREASURY || req == LEGACY_LAUNCH_TREASURY || req == primary)
     {
         return req;
     }
@@ -206,7 +203,10 @@ mod tests {
     #[test]
     fn address_allowlist() {
         // unknown -> primary (fallback when unconfigured)
-        assert_eq!(resolve_treasury_address(Some("0xdead"), ""), FALLBACK_TREASURY);
+        assert_eq!(
+            resolve_treasury_address(Some("0xdead"), ""),
+            FALLBACK_TREASURY
+        );
         // legacy allowed
         assert_eq!(
             resolve_treasury_address(Some(&LEGACY_TREASURY.to_uppercase()), ""),

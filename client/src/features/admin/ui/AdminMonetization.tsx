@@ -1,7 +1,7 @@
 // @ts-nocheck — template legado 1:1.
 
 import React, { useState } from 'react';
-import { Banknote, PlayCircle, Monitor, Save, Info, ShoppingCart, Ticket, RefreshCw, Trash2, Plus, Users, Gift, CalendarCheck, ListChecks } from 'lucide-react';
+import { Banknote, PlayCircle, Monitor, Save, Info, ShoppingCart, Ticket, RefreshCw, Trash2, Plus, Users, Gift, ListChecks } from 'lucide-react';
 import { AdminQuests } from './AdminQuests';
 import {
     getAdminMonetizationSettings,
@@ -12,18 +12,14 @@ import {
     getUpgrades,
     getAdminUpgrades,
     syncMiningCoinLivePricesNow,
-    getAdminCheckinPremiumPolicy,
-    setAdminCheckinPremiumPolicy,
     getAdminCheckinRewardPolicy,
     setAdminCheckinRewardPolicy,
-    type CheckinPremiumPolicyPayload,
     type CheckinRewardPolicyPayload
 } from '../../../shared/api/admin-legacy';
 import { MonetizationSettings, EconomySettings, PromoCode, LootBox, Upgrade, AdminUpgrade } from '../lib/adminTypes';
 import { ApplixirConfig } from './monetization/ApplixirConfig';
 import { EzoicConfig } from './monetization/EzoicConfig';
 import { apiFetch } from '../../../shared/api/http';
-import { DEFAULT_CHECKIN_PREMIUM_MIN_USDC } from '../../../shared/constants/checkinPremium';
 
 export const AdminMonetization: React.FC = () => {
     const [subTab, setSubTab] = useState<'rewarded' | 'ads' | 'economy' | 'promo' | 'quests'>('rewarded');
@@ -55,15 +51,10 @@ export const AdminMonetization: React.FC = () => {
     const [bundles, setBundles] = useState<AdminUpgrade[]>([]);
     const [rewardType, setRewardType] = useState<'box' | 'upgrade' | 'bundle'>('box');
     const [newCodeForm, setNewCodeForm] = useState({ lootBoxId: '', upgradeId: '', adminUpgradeId: '', type: 'per_player' as 'per_player' | 'global_once', code: '' });
-    const [checkinPremium, setCheckinPremium] = useState<CheckinPremiumPolicyPayload>({
-        enabled: true,
-        minUsdc: DEFAULT_CHECKIN_PREMIUM_MIN_USDC,
-        intervalDays: 7
-    });
     const [checkinReward, setCheckinReward] = useState<CheckinRewardPolicyPayload>({
         rewardType: 'hashrate',
         dailyRewardAmount: 1,
-        weeklyRewardAmount: 7,
+        weeklyRewardAmount: 0,
         rewardItemId: 'battery_estelar',
         streakRewardEnabled: false,
         streakRewardItemId: '',
@@ -82,18 +73,16 @@ export const AdminMonetization: React.FC = () => {
     React.useEffect(() => {
         const load = async () => {
             try {
-                const [monet, econ, boxes, upgs, bndls, checkinPol, checkinRewardPol] = await Promise.all([
+                const [monet, econ, boxes, upgs, bndls, checkinRewardPol] = await Promise.all([
                     getAdminMonetizationSettings(),
                     getEconomySettings(),
                     getLootBoxes(),
                     getUpgrades(),
                     getAdminUpgrades(),
-                    getAdminCheckinPremiumPolicy(),
                     getAdminCheckinRewardPolicy()
                 ]);
                 if (monet) setSettings(monet);
                 if (econ) setEconomy(econ);
-                if (checkinPol) setCheckinPremium(checkinPol);
                 if (checkinRewardPol) setCheckinReward(checkinRewardPol);
                 if (boxes) setLootBoxes(boxes);
                 if (upgs) setUpgrades(upgs);
@@ -120,7 +109,6 @@ export const AdminMonetization: React.FC = () => {
         try {
             if (subTab === 'economy') {
                 await apiSetEconomySettings(economy);
-                await setAdminCheckinPremiumPolicy(checkinPremium);
                 await setAdminCheckinRewardPolicy(checkinReward);
             } else if (subTab !== 'promo') {
                 await setMonetizationSettings(settings);
@@ -299,83 +287,20 @@ export const AdminMonetization: React.FC = () => {
                                 </button>
                             </div>
 
-                            <div className="p-5 rounded-xl border border-sky-900/40 bg-sky-950/20 space-y-4">
-                                <div className="flex items-center gap-2">
-                                    <CalendarCheck className="text-sky-400" size={20} />
-                                    <div>
-                                        <h4 className="text-xs font-bold uppercase tracking-widest text-sky-300">
-                                            Check-in premium (gasto USDC acumulado ≥ limite)
-                                        </h4>
-                                        <p className="text-[11px] text-slate-400 mt-0.5">
-                                            Elegível 1× na vida quando o gasto vitalício (loja, merge, passe, upgrades, P2P,
-                                            wheel) ≥ limite — ou via botão admin. Depois fica desbloqueado para sempre.
-                                            Check-in a cada N dias; missões creditam automaticamente na janela activa.
-                                        </p>
-                                    </div>
-                                </div>
-                                <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={checkinPremium.enabled}
-                                        onChange={(e) => setCheckinPremium((p) => ({ ...p, enabled: e.target.checked }))}
-                                    />
-                                    Regra activa
-                                </label>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
-                                    <div>
-                                        <label className="block text-[10px] text-slate-500 uppercase font-bold mb-1">
-                                            Preço mínimo (USDC)
-                                        </label>
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            step={1}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-white"
-                                            value={checkinPremium.minUsdc}
-                                            onChange={(e) =>
-                                                setCheckinPremium((p) => ({
-                                                    ...p,
-                                                    minUsdc: Math.max(0, Number(e.target.value) || 0)
-                                                }))
-                                            }
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] text-slate-500 uppercase font-bold mb-1">
-                                            Dias entre check-ins
-                                        </label>
-                                        <input
-                                            type="number"
-                                            min={1}
-                                            step={1}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-white"
-                                            value={checkinPremium.intervalDays}
-                                            onChange={(e) =>
-                                                setCheckinPremium((p) => ({
-                                                    ...p,
-                                                    intervalDays: Math.max(1, Math.floor(Number(e.target.value) || 7))
-                                                }))
-                                            }
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
                             <div className="p-5 rounded-xl border border-emerald-900/40 bg-emerald-950/20 space-y-4">
                                 <div className="flex items-center gap-2">
                                     <Gift className="text-emerald-400" size={20} />
                                     <div>
                                         <h4 className="text-xs font-bold uppercase tracking-widest text-emerald-300">
-                                            Recompensa do check-in
+                                            Recompensa do check-in diário
                                         </h4>
                                         <p className="text-[11px] text-slate-400 mt-0.5">
-                                            Diário: quantidade por ciclo. Premium semanal: quantidade por check-in do intervalo.
-                                            Pode mudar o tipo (H/s, bateria ou item) quando quiser. H/s de check-in não entra
-                                            nas moedas ASIC da SALA DAS ASICS — só rigs fora dessa sala.
+                                            Quantidade por check-in (1× por dia UTC). Pode mudar o tipo (H/s, bateria ou item).
+                                            H/s de check-in não entra nas moedas ASIC da SALA DAS ASICS — só rigs fora dessa sala.
                                         </p>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-w-4xl">
                                     <div>
                                         <label className="block text-[10px] text-slate-500 uppercase font-bold mb-1">
                                             Tipo de recompensa
@@ -397,7 +322,7 @@ export const AdminMonetization: React.FC = () => {
                                     </div>
                                     <div>
                                         <label className="block text-[10px] text-slate-500 uppercase font-bold mb-1">
-                                            Diário (por check-in)
+                                            Quantidade (por check-in)
                                         </label>
                                         <input
                                             type="number"
@@ -409,24 +334,6 @@ export const AdminMonetization: React.FC = () => {
                                                 setCheckinReward((p) => ({
                                                     ...p,
                                                     dailyRewardAmount: Math.max(0, Number(e.target.value) || 0)
-                                                }))
-                                            }
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-[10px] text-slate-500 uppercase font-bold mb-1">
-                                            Premium semanal (por check-in)
-                                        </label>
-                                        <input
-                                            type="number"
-                                            min={0}
-                                            step={checkinReward.rewardType === 'hashrate' ? 0.1 : 1}
-                                            className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-white"
-                                            value={checkinReward.weeklyRewardAmount}
-                                            onChange={(e) =>
-                                                setCheckinReward((p) => ({
-                                                    ...p,
-                                                    weeklyRewardAmount: Math.max(0, Number(e.target.value) || 0)
                                                 }))
                                             }
                                         />
@@ -476,7 +383,7 @@ export const AdminMonetization: React.FC = () => {
                                             </div>
                                             <p className="text-[11px] text-slate-400 mt-0.5">
                                                 No 7º, 14º, 21º… check-in diário consecutivo, entrega 1 máquina temporária no stock
-                                                (com validade). Só aplica ao check-in diário, não ao premium por intervalo.
+                                                (com validade).
                                             </p>
                                         </div>
                                     </div>

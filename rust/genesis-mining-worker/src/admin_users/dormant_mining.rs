@@ -199,10 +199,7 @@ fn map_dormant_row(r: &tokio_postgres::Row) -> Value {
         },
     );
     let ranking = i32_cell(r, "ranking_excluded");
-    obj.insert(
-        "rankingExcluded".into(),
-        json!(truthy_flag(Some(ranking))),
-    );
+    obj.insert("rankingExcluded".into(), json!(truthy_flag(Some(ranking))));
     Value::Object(obj)
 }
 

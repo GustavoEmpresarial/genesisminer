@@ -138,7 +138,10 @@ const DIST_MODE_USD_MONTH: &str = "usd_month";
 
 /// Accept only the two known modes; anything else → `legacy`.
 fn normalize_distribution_mode(raw: Option<&Value>) -> String {
-    match raw.and_then(|v| v.as_str()).map(|s| s.trim().to_ascii_lowercase()) {
+    match raw
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim().to_ascii_lowercase())
+    {
         Some(ref s) if s == DIST_MODE_USD_MONTH => DIST_MODE_USD_MONTH.to_string(),
         _ => DIST_MODE_LEGACY.to_string(),
     }
@@ -161,8 +164,8 @@ fn default_known_local_icon_slug(symbol: &str, name: &str, id: &str) -> Option<&
             continue;
         }
         for suffix in [
-            "_interno", "-interno", " interno", "_int", "-int", " int", "_nft", "-nft",
-            " nft", "_gpu", "-gpu", " gpu", "_airdrop", "-airdrop",
+            "_interno", "-interno", " interno", "_int", "-int", " int", "_nft", "-nft", " nft",
+            "_gpu", "-gpu", " gpu", "_airdrop", "-airdrop",
         ] {
             if let Some(stripped) = s.strip_suffix(suffix) {
                 s = stripped.to_string();
@@ -668,7 +671,10 @@ mod tests {
 
     #[test]
     fn comma_decimal_is_accepted() {
-        let row = plan_mining_coin_row(&json!({ "priceUSD": "0,11", "blockReward": "1.234,50" }), GENERATED);
+        let row = plan_mining_coin_row(
+            &json!({ "priceUSD": "0,11", "blockReward": "1.234,50" }),
+            GENERATED,
+        );
         assert_eq!(row.price_usd, 0.11);
         assert_eq!(row.block_reward, 1234.5);
     }
@@ -694,15 +700,27 @@ mod tests {
         assert_eq!(btc.icon_url, Some("/img/coin-logos/btc.png".to_string()));
 
         let usdc_int = plan_mining_coin_row(&json!({ "symbol": "USDC_INTERNO" }), GENERATED);
-        assert_eq!(usdc_int.icon_url, Some("/img/coin-logos/usdc.png".to_string()));
+        assert_eq!(
+            usdc_int.icon_url,
+            Some("/img/coin-logos/usdc.png".to_string())
+        );
 
-        let btc_named = plan_mining_coin_row(&json!({ "name": "Bitcoin", "symbol": "Bitcoin" }), GENERATED);
-        assert_eq!(btc_named.icon_url, Some("/img/coin-logos/btc.png".to_string()));
+        let btc_named = plan_mining_coin_row(
+            &json!({ "name": "Bitcoin", "symbol": "Bitcoin" }),
+            GENERATED,
+        );
+        assert_eq!(
+            btc_named.icon_url,
+            Some("/img/coin-logos/btc.png".to_string())
+        );
 
         let custom = plan_mining_coin_row(
             &json!({ "symbol": "BTC", "iconUrl": "/storage/uploads/custom.png" }),
             GENERATED,
         );
-        assert_eq!(custom.icon_url, Some("/storage/uploads/custom.png".to_string()));
+        assert_eq!(
+            custom.icon_url,
+            Some("/storage/uploads/custom.png".to_string())
+        );
     }
 }

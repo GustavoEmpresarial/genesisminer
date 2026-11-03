@@ -3,6 +3,7 @@
  * Game tabs use `/{view}` (e.g. `/servers`, `/checkin`). Partner play: `/partner_games/:slug`.
  */
 import { VALID_GAME_VIEWS, type GameView } from '../features/game/nav/buildGameNavItems';
+import { TOPIDLE_NAV_ENABLED } from '../features/topidle/lib/constants';
 
 export type AuthMode = 'login' | 'register' | 'recovery';
 
@@ -66,6 +67,7 @@ export function pathForGameView(view: GameView): string {
 export function gameViewFromPath(pathname: string): GameView | null {
   const seg = normalizePathname(pathname).split('/').filter(Boolean)[0];
   if (!seg) return null;
+  if (seg === 'topidle' && !TOPIDLE_NAV_ENABLED) return null;
   if ((VALID_GAME_VIEWS as readonly string[]).includes(seg)) return seg as GameView;
   return null;
 }

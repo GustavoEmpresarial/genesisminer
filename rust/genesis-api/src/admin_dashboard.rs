@@ -63,11 +63,7 @@ async fn users_map(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Re
     }
     match post_mining(&state.cfg, &state.http, W_USERS_MAP, &json!({})).await {
         Ok(w) => {
-            let rows = w
-                .body
-                .get("rows")
-                .cloned()
-                .unwrap_or_else(|| json!([]));
+            let rows = w.body.get("rows").cloned().unwrap_or_else(|| json!([]));
             json_status(if w.status == 0 { 502 } else { w.status }, rows)
         }
         Err(e) => json_status(worker_infra_status(&e), worker_unavailable_body(&e)),

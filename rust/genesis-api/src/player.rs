@@ -25,6 +25,7 @@ use crate::rate_limit::{
     PROFILE_IDENTITY_LIMIT_MAX, PROFILE_PASSWORD_LIMIT_MAX, PROFILE_RATE_LIMIT_WINDOW_MS,
     SCOPE_PROFILE_IDENTITY, SCOPE_PROFILE_PASSWORD,
 };
+use crate::realtime::{map_am_peer_dtos, normalize_chat_channel, resolve_chat_actor, ChatActor};
 use crate::session::{json_status, require_player};
 use crate::workers::{get_mining, post_hardware, post_mining_multipart, WorkerJson};
 
@@ -1708,11 +1709,33 @@ async fn chat_peers(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
 ) -> axum::response::Response {
-    let uid = match require_player(&state, &headers).await {
-        Ok(u) => u,
+    let actor = match require_chat_actor(&state, &headers).await {
+        Ok(a) => a,
         Err(e) => return e,
     };
-    forward_mining(&state, CHAT_PEERS_PATH, json!({ "userId": uid })).await
+    match crate::workers::post_mining(
+        &state.cfg,
+        &state.http,
+        CHAT_PEERS_PATH,
+        &json!({ "userId": actor.real_user_id }),
+    )
+    .await
+    {
+        Ok(r) if r.status == HTTP_OK && r.body["ok"] == true => {
+            let rows = r.body.get("rows").cloned().unwrap_or_else(|| json!([]));
+            let peers = map_am_peer_dtos(actor.real_user_id, &rows);
+            json_status(
+                HTTP_OK,
+                json!({
+                    "ok": true,
+                    "peers": peers,
+                    "realUserId": actor.real_user_id
+                }),
+            )
+        }
+        Ok(r) => worker_to_response(r),
+        Err(e) => worker_err_response(e),
+    }
 }
 
 async fn chat_history(
@@ -1720,20 +1743,21 @@ async fn chat_history(
     headers: HeaderMap,
     Query(q): Query<ChatHistoryQ>,
 ) -> axum::response::Response {
-    let uid = match require_player(&state, &headers).await {
-        Ok(u) => u,
+    let actor = match require_chat_actor(&state, &headers).await {
+        Ok(a) => a,
         Err(e) => return e,
     };
-    let channel = q
-        .channel
-        .as_deref()
-        .filter(|s| !s.is_empty())
-        .unwrap_or(CHAT_CHANNEL_GLOBAL);
+    let channel = normalize_chat_channel(
+        q.channel
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(CHAT_CHANNEL_GLOBAL),
+    );
     let access = crate::workers::post_mining(
         &state.cfg,
         &state.http,
         CHAT_CAN_ACCESS_PATH,
-        &json!({ "userId": uid, "channel": channel }),
+        &json!({ "userId": actor.real_user_id, "channel": channel }),
     )
     .await;
     match access {
@@ -1808,15 +1832,17 @@ async fn chat_insert(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> axum::response::Response {
-    let uid = match require_player(&state, &headers).await {
-        Ok(u) => u,
+    let actor = match require_chat_actor(&state, &headers).await {
+        Ok(a) => a,
         Err(e) => return e,
     };
-    let channel = body
-        .get("channel")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .unwrap_or(CHAT_CHANNEL_GLOBAL);
+    let channel = normalize_chat_channel(
+        body.get("channel")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or(CHAT_CHANNEL_GLOBAL),
+    );
+    let sender_uid = actor.sender_user_id(&channel);
     let text = body
         .get("body")
         .and_then(|v| v.as_str())
@@ -1829,7 +1855,7 @@ async fn chat_insert(
         &state.cfg,
         &state.http,
         CHAT_CAN_ACCESS_PATH,
-        &json!({ "userId": uid, "channel": channel }),
+        &json!({ "userId": actor.real_user_id, "channel": channel }),
     )
     .await
     {
@@ -1852,7 +1878,7 @@ async fn chat_insert(
         &state.cfg,
         &state.http,
         CHAT_RATE_LIMIT_PATH,
-        &json!({ "userId": uid }),
+        &json!({ "userId": actor.real_user_id }),
     )
     .await
     {
@@ -1869,7 +1895,7 @@ async fn chat_insert(
         &state.cfg,
         &state.http,
         CHAT_SENDER_PATH,
-        &json!({ "userId": uid }),
+        &json!({ "userId": sender_uid }),
     )
     .await
     {
@@ -1894,7 +1920,7 @@ async fn chat_insert(
         &state.http,
         CHAT_INSERT_PATH,
         &json!({
-            "userId": uid,
+            "userId": sender_uid,
             "username": username,
             "body": text,
             "channel": channel
@@ -1918,31 +1944,30 @@ async fn chat_edit(
     Path(id): Path<String>,
     Json(body): Json<Value>,
 ) -> axum::response::Response {
-    let uid = match require_player(&state, &headers).await {
-        Ok(u) => u,
+    let actor = match require_chat_actor(&state, &headers).await {
+        Ok(a) => a,
         Err(e) => return e,
     };
     let text = body
         .get("body")
         .cloned()
         .unwrap_or(Value::String(String::new()));
-    match crate::workers::post_mining(
-        &state.cfg,
-        &state.http,
+    match chat_mutate_as_actor(
+        &state,
         CHAT_EDIT_PATH,
-        &merge_user_id(json!({ "messageId": id, "body": text }), uid),
+        &actor,
+        json!({ "messageId": id, "body": text }),
     )
     .await
     {
-        Ok(r) if r.status == HTTP_OK && r.body["ok"] == true => {
+        Ok(r) => {
             let message = chat_message_from_insert(&r.body);
             if let Some(channel) = message.get("channel").and_then(|v| v.as_str()) {
                 state.emit_chat_message(channel.to_string(), message.clone());
             }
             json_status(HTTP_OK, json!({ "ok": true, "message": message }))
         }
-        Ok(r) => worker_to_response(r),
-        Err(e) => worker_err_response(e),
+        Err(e) => e,
     }
 }
 
@@ -1951,16 +1976,14 @@ async fn chat_delete(
     headers: HeaderMap,
     Path(id): Path<String>,
 ) -> axum::response::Response {
-    let uid = match require_player(&state, &headers).await {
-        Ok(u) => u,
+    let actor = match require_chat_actor(&state, &headers).await {
+        Ok(a) => a,
         Err(e) => return e,
     };
-    forward_mining(
-        &state,
-        CHAT_DELETE_PATH,
-        merge_user_id(json!({ "messageId": id }), uid),
-    )
-    .await
+    match chat_mutate_as_actor(&state, CHAT_DELETE_PATH, &actor, json!({ "messageId": id })).await {
+        Ok(r) => worker_to_response(r),
+        Err(e) => e,
+    }
 }
 
 pub(crate) fn is_multipart(headers: &HeaderMap) -> bool {
@@ -1977,6 +2000,60 @@ fn worker_err_response(e: crate::workers::WorkerCallError) -> axum::response::Re
         crate::workers::worker_infra_status(&e),
         crate::workers::worker_unavailable_body(&e),
     )
+}
+
+/// HTTP twin of Socket.IO `resolveChatActor`: session user + human in manager_mode.
+async fn require_chat_actor(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<ChatActor, axum::response::Response> {
+    let session_user_id = require_player(state, headers).await?;
+    let cookie = headers
+        .get(axum::http::header::COOKIE)
+        .and_then(|v| v.to_str().ok());
+    Ok(resolve_chat_actor(state, cookie)
+        .await
+        .filter(|a| a.session_user_id == session_user_id)
+        .unwrap_or(ChatActor {
+            session_user_id,
+            real_user_id: session_user_id,
+            manager_mode: false,
+            sid: None,
+        }))
+}
+
+/// Node socket `unique_actor_ids`: try session then real until the worker accepts.
+async fn chat_mutate_as_actor(
+    state: &AppState,
+    path: &str,
+    actor: &ChatActor,
+    base: Value,
+) -> Result<crate::workers::WorkerJson, axum::response::Response> {
+    let mut last_forbidden: Option<crate::workers::WorkerJson> = None;
+    for uid in actor.unique_user_ids() {
+        match crate::workers::post_mining(
+            &state.cfg,
+            &state.http,
+            path,
+            &merge_user_id(base.clone(), uid),
+        )
+        .await
+        {
+            Ok(r) if r.body["ok"] == true => return Ok(r),
+            Ok(r) if r.body["code"] == "FORBIDDEN" => {
+                last_forbidden = Some(r);
+            }
+            Ok(r) => return Err(worker_to_response(r)),
+            Err(e) => return Err(worker_err_response(e)),
+        }
+    }
+    Err(match last_forbidden {
+        Some(r) => worker_to_response(r),
+        None => json_status(
+            403,
+            json!({ "error": "No access to this channel.", "code": "FORBIDDEN" }),
+        ),
+    })
 }
 
 async fn chat_gate_access(
@@ -2064,8 +2141,8 @@ async fn chat_audio(
     headers: HeaderMap,
     mut multipart: Multipart,
 ) -> axum::response::Response {
-    let uid = match require_player(&state, &headers).await {
-        Ok(u) => u,
+    let actor = match require_chat_actor(&state, &headers).await {
+        Ok(a) => a,
         Err(e) => return e,
     };
     let mut audio_bytes: Option<bytes::Bytes> = None;
@@ -2102,7 +2179,7 @@ async fn chat_audio(
                 if let Ok(t) = field.text().await {
                     let c = t.trim();
                     if !c.is_empty() {
-                        channel = c.to_string();
+                        channel = normalize_chat_channel(c);
                     }
                 }
             }
@@ -2122,7 +2199,7 @@ async fn chat_audio(
             json!({ "error": "Audio file missing.", "code": "EMPTY" }),
         );
     };
-    if let Err(e) = chat_gate_access(&state, uid, &channel).await {
+    if let Err(e) = chat_gate_access(&state, actor.real_user_id, &channel).await {
         return e;
     }
     let Some(raw) = duration_raw else {
@@ -2144,10 +2221,11 @@ async fn chat_audio(
         );
     }
     let duration_ms = raw.clamp(AUDIO_DURATION_FLOOR_MS, CHAT_AUDIO_MAX_DURATION_MS);
-    if let Err(e) = chat_gate_rate(&state, uid).await {
+    if let Err(e) = chat_gate_rate(&state, actor.real_user_id).await {
         return e;
     }
-    let username = match chat_load_username(&state, uid).await {
+    let sender_uid = actor.sender_user_id(&channel);
+    let username = match chat_load_username(&state, sender_uid).await {
         Ok(u) => u,
         Err(e) => return e,
     };
@@ -2192,7 +2270,7 @@ async fn chat_audio(
         &state.http,
         CHAT_INSERT_PATH,
         &json!({
-            "userId": uid,
+            "userId": sender_uid,
             "username": username,
             "body": "",
             "channel": channel,
@@ -2224,7 +2302,11 @@ async fn support_state(
     };
     let mut body = json!({ "userId": uid });
     // Worker `SupportStateRequest.limit` is i64 — parse the query string.
-    if let Some(l) = q.limit.as_deref().and_then(|s| s.trim().parse::<i64>().ok()) {
+    if let Some(l) = q
+        .limit
+        .as_deref()
+        .and_then(|s| s.trim().parse::<i64>().ok())
+    {
         body["limit"] = json!(l);
     }
     if let Some(c) = q.cursor {
@@ -2340,7 +2422,8 @@ pub(crate) async fn parse_support_multipart(
     uid: i64,
     name_prefix: &str,
     mut multipart: Multipart,
-) -> Result<(String, String, Option<String>, Option<String>, Vec<Value>), axum::response::Response> {
+) -> Result<(String, String, Option<String>, Option<String>, Vec<Value>), axum::response::Response>
+{
     let mut subject = String::new();
     let mut message = String::new();
     let mut idempotency_key: Option<String> = None;
@@ -2729,7 +2812,8 @@ async fn bm_listings(
         Err(e) => return e,
     };
     let search = q.search.clone().or(q.q).unwrap_or_default();
-    let limit = genesis_core::market_clamp_limit(q.limit.as_deref().and_then(|s| s.parse::<i64>().ok()));
+    let limit =
+        genesis_core::market_clamp_limit(q.limit.as_deref().and_then(|s| s.parse::<i64>().ok()));
     let offset =
         genesis_core::market_clamp_offset(q.offset.as_deref().and_then(|s| s.parse::<i64>().ok()));
     let body = json!({
@@ -3644,5 +3728,18 @@ mod tests {
         let payload = merge_user_id(json!({ "messageId": "1" }), uid);
         assert_eq!(payload["userId"], uid);
         assert!(json!({ "messageId": "1" }).get("userId").is_none());
+    }
+
+    #[test]
+    fn chat_actor_am_sends_as_real_user_global_as_session() {
+        let actor = ChatActor {
+            session_user_id: 10,
+            real_user_id: 20,
+            manager_mode: true,
+            sid: None,
+        };
+        assert_eq!(actor.sender_user_id("global"), 10);
+        assert_eq!(actor.sender_user_id("am:10:20"), 20);
+        assert_eq!(actor.unique_user_ids(), vec![10, 20]);
     }
 }

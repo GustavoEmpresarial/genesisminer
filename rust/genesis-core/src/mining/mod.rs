@@ -31,14 +31,14 @@ pub use network::{
     MIN_NETWORK_HASHRATE, NETWORK_FLOOR_BELOW_LIVE_WARN_RATIO,
     NETWORK_FLOOR_SINGLE_MINER_DOMINANCE_WARN_PCT,
 };
+pub use projection::{
+    coins_per_sec, project_rows, projection_periods, resolve_yield_per_hash, ProjectionPeriod,
+    ProjectionRow,
+};
 pub use wall_clock::{
     last_completed_ten_minute_utc_grid, list_credit_history_windows,
     list_pending_ten_minute_boundaries, mining_credit_cap_now_ms, utc_midnight_ms,
     CreditHistoryWindow, TEN_MIN_MS,
-};
-pub use projection::{
-    coins_per_sec, project_rows, projection_periods, resolve_yield_per_hash, ProjectionPeriod,
-    ProjectionRow,
 };
 pub use yield_boundary::{
     build_yield_history_rows_for_boundary, usd_month_yield, CoinYieldInput, DistributionMode,

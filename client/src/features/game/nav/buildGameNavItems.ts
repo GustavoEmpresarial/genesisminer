@@ -27,6 +27,7 @@ import {
   Sparkles,
   Trophy,
   User as UserIcon,
+  Vote,
   Wallet,
 } from 'lucide-react';
 import {
@@ -36,6 +37,7 @@ import {
   type GameNavLabelKey
 } from '../../../shared/constants/gameNavLabels';
 import type { User } from '../../../shared/types/auth';
+import { TOPIDLE_NAV_ENABLED } from '../../topidle/lib/constants';
 
 export type GameView =
   | GameNavLabelKey
@@ -63,6 +65,7 @@ export const GAME_LAST_VIEW_SS = 'lastView';
 export function parseSavedGameView(raw: string | null | undefined): GameView {
   if (!raw || typeof raw !== 'string') return 'servers';
   const t = raw.trim();
+  if (t === 'topidle' && !TOPIDLE_NAV_ENABLED) return 'servers';
   return (VALID_GAME_VIEWS as readonly string[]).includes(t) ? (t as GameView) : 'servers';
 }
 
@@ -156,7 +159,7 @@ function extraNavLabel(t: ((key: string) => string) | undefined, key: string, fa
 export function resolveAllowedPages(user: User | null): string[] {
   const pages: string[] = [...DEFAULT_ALLOWED_PAGES];
   // Áreas sempre acessíveis a jogadores autenticados (legado).
-  for (const extra of ['partners', 'mini_blog', 'quests', 'offerwall', 'roleta', 'checkin']) {
+  for (const extra of ['partners', 'mini_blog', 'quests', 'offerwall', 'roleta', 'checkin', 'topidle']) {
     if (!pages.includes(extra)) pages.push(extra);
   }
   if (user?.isManagingAccount || user?.managerMode) {
@@ -376,6 +379,14 @@ export function buildGameNavItems(opts: BuildGameNavItemsOpts): GameNavItem[] {
       accent: 'emerald',
       section: 'hub',
       allowed: has('offerwall')
+    },
+    {
+      key: 'topidle',
+      label: nav('topidle'),
+      icon: Vote,
+      accent: 'emerald',
+      section: 'hub',
+      allowed: TOPIDLE_NAV_ENABLED && has('topidle')
     },
     {
       key: 'arcade',

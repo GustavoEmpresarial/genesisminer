@@ -84,7 +84,13 @@ pub fn sanitize_base_name(raw: &str, fallback: &str) -> String {
     let cleaned: String = raw
         .trim()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .take(80)
         .collect();
     if cleaned.is_empty() {
@@ -135,7 +141,11 @@ pub async fn create_verified_backup(
         .map_err(|e| format!("rename dump: {e}"))?;
     write_sha256_sidecar(&dest, &filename, &sha256).await;
 
-    Ok(BackupArtifact { filename, bytes: size, sha256 })
+    Ok(BackupArtifact {
+        filename,
+        bytes: size,
+        sha256,
+    })
 }
 
 /// Verify an existing backup file (by name) inside `backup_dir`.
@@ -181,7 +191,10 @@ pub async fn sha256_file(path: &Path) -> Result<String, String> {
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; 1 << 20];
     loop {
-        let n = f.read(&mut buf).await.map_err(|e| format!("read for hash: {e}"))?;
+        let n = f
+            .read(&mut buf)
+            .await
+            .map_err(|e| format!("read for hash: {e}"))?;
         if n == 0 {
             break;
         }
@@ -255,7 +268,14 @@ fn pg_conn_args() -> Vec<String> {
     let user = std::env::var("PGUSER").unwrap_or_else(|_| "postgres".into());
     let database = std::env::var("PGDATABASE").unwrap_or_else(|_| "minestation".into());
     vec![
-        "-h".into(), host, "-p".into(), port, "-U".into(), user, "-d".into(), database,
+        "-h".into(),
+        host,
+        "-p".into(),
+        port,
+        "-U".into(),
+        user,
+        "-d".into(),
+        database,
     ]
 }
 
@@ -328,7 +348,8 @@ fn is_safe_abs_unix_path(p: &str) -> bool {
         && p.len() <= MAX_SAFE_UNIX_PATH_LENGTH
         && p.starts_with('/')
         && !p.contains("..")
-        && p.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '+' | '-'))
+        && p.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '.' | '_' | '+' | '-'))
 }
 
 #[cfg(test)]
@@ -347,7 +368,10 @@ mod tests {
     #[test]
     fn base_name_is_sanitized() {
         assert_eq!(sanitize_base_name("  a b/c;d  ", "x"), "a_b_c_d");
-        assert_eq!(sanitize_base_name("   ", "manual_backup_"), "manual_backup_");
+        assert_eq!(
+            sanitize_base_name("   ", "manual_backup_"),
+            "manual_backup_"
+        );
         assert_eq!(sanitize_base_name(&"z".repeat(200), "x").len(), 80);
     }
 
@@ -369,6 +393,9 @@ mod tests {
         let dir = "/tmp/genesis_bkp_test_sql";
         std::fs::create_dir_all(dir).unwrap();
         std::fs::write(format!("{dir}/legacy.sql"), b"-- dump\n").unwrap();
-        assert_eq!(verify_existing(dir, "legacy.sql").await, Integrity::Unverified);
+        assert_eq!(
+            verify_existing(dir, "legacy.sql").await,
+            Integrity::Unverified
+        );
     }
 }

@@ -14,6 +14,8 @@ use genesis_core::hardware::catalog::normalize_known_1000wh_battery_catalog_id;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::config::current_unix_ms;
+use crate::leases::expire_user_asic_leases;
 use crate::pg_types::pg_user_id;
 
 use super::inventory::overlay_timed_lease_stock_counts;
@@ -68,8 +70,12 @@ enum GameStateAudience {
 }
 
 pub async fn run_servers_state(pool: &Pool, user_id: i64) -> Result<Value, PlayerReadError> {
-    let conn = pool.get().await?;
-    build_servers_state(&conn, user_id).await
+    let mut conn = pool.get().await?;
+    let tx = conn.transaction().await?;
+    expire_user_asic_leases(&tx, user_id, current_unix_ms()).await?;
+    let state = build_servers_state(&tx, user_id).await?;
+    tx.commit().await?;
+    Ok(state)
 }
 
 pub async fn run_game_state_me(pool: &Pool, user_id: i64) -> Result<Value, PlayerReadError> {

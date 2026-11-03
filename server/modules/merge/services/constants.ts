@@ -85,20 +85,26 @@ export function isMergeableSourceRarity(r: string): r is MergeableSourceRarity {
   return (MERGEABLE_SOURCE_RARITIES as readonly string[]).includes(r);
 }
 
+/** Classe admin «Máquina normal (GPU)» — categoria gravada pelo `AdminEditor`. */
+const MACHINE_CLASS_GPU_CATEGORY = 'gpu';
+
 export function isAsicMachineForMerge(id: string, category: string, type: string): boolean {
   if (type !== 'machine') return false;
+  const cat = String(category || '').trim().toLowerCase();
+  if (cat === MACHINE_CLASS_GPU_CATEGORY) return false;
+  if (cat.includes('asic')) return true;
   const iid = String(id || '').trim().toLowerCase();
-  if (iid.startsWith('asic_')) return true;
-  return String(category || '').trim().toLowerCase().includes('asic');
+  return iid.startsWith('asic_');
 }
 
 /**
  * Itens que nunca devem entrar no Merge:
  * - todos com is_nft=1
  * - Dólar F2P / Dólar Gênesis / Rack Dólar NFT / Fiação sem garantia / Bateria Nébula
+ * - GPU STREAMERS (`gpu_quantum_v2`, bónus de criador / YouTuber)
  * - qualquer resultado de merge derivado desses roots
  */
-export const MERGE_FORBIDDEN_ROOT_IDS = ['dolar_f2p', 'dolar_f2p2', 'armario_1', 'battery_nebula', 'cic'] as const;
+export const MERGE_FORBIDDEN_ROOT_IDS = ['dolar_f2p', 'dolar_f2p2', 'armario_1', 'battery_nebula', 'cic', 'gpu_quantum_v2'] as const;
 
 export function isForbiddenMergeRootId(itemId: string): boolean {
   const id = String(itemId || '').trim();

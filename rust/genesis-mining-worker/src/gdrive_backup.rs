@@ -122,10 +122,7 @@ async fn access_token(cfg: &WorkerConfig, http: &reqwest::Client) -> Result<Stri
         .await
         .map_err(|e| format!("oauth request: {e}"))?;
     let status = resp.status();
-    let body: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("oauth json: {e}"))?;
+    let body: serde_json::Value = resp.json().await.map_err(|e| format!("oauth json: {e}"))?;
     if !status.is_success() {
         return Err(format!(
             "oauth HTTP {}: {}",
@@ -141,7 +138,10 @@ async fn access_token(cfg: &WorkerConfig, http: &reqwest::Client) -> Result<Stri
         .and_then(|v| v.as_str())
         .ok_or("oauth: no access_token")?
         .to_string();
-    let ttl = body.get("expires_in").and_then(|v| v.as_u64()).unwrap_or(3300);
+    let ttl = body
+        .get("expires_in")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(3300);
 
     *token_cache().lock().await = Some(CachedToken {
         value: value.clone(),
@@ -163,7 +163,9 @@ async fn upload_file(
         .map_err(|e| format!("stat {name}: {e}"))?
         .len();
     if total > MAX_UPLOAD_BYTES {
-        return Err(format!("{name} is {total} bytes — over the {MAX_UPLOAD_BYTES}-byte cap; skipped"));
+        return Err(format!(
+            "{name} is {total} bytes — over the {MAX_UPLOAD_BYTES}-byte cap; skipped"
+        ));
     }
 
     let mut metadata = json!({ "name": name, "parents": [folder_id] });
@@ -186,7 +188,13 @@ async fn upload_file(
         return Err(format!(
             "resumable start HTTP {}: {}",
             start.status().as_u16(),
-            start.text().await.unwrap_or_default().chars().take(200).collect::<String>()
+            start
+                .text()
+                .await
+                .unwrap_or_default()
+                .chars()
+                .take(200)
+                .collect::<String>()
         ));
     }
     let session = start
@@ -240,11 +248,20 @@ async fn upload_file(
         }
         if resp.status().is_success() {
             let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
-            return Ok(body.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string());
+            return Ok(body
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string());
         }
         return Err(format!(
             "upload chunk @{offset} HTTP {code}: {}",
-            resp.text().await.unwrap_or_default().chars().take(200).collect::<String>()
+            resp.text()
+                .await
+                .unwrap_or_default()
+                .chars()
+                .take(200)
+                .collect::<String>()
         ));
     }
     Err("upload finished without a final 2xx".into())
@@ -276,7 +293,11 @@ async fn prune_drive_folder(
         return Err(format!("list HTTP {}", resp.status().as_u16()));
     }
     let body: serde_json::Value = resp.json().await.map_err(|e| format!("list json: {e}"))?;
-    let files = body.get("files").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let files = body
+        .get("files")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
 
     let cutoff = chrono::Utc::now() - chrono::Duration::days(i64::from(retention_days.max(1)));
     for (i, f) in files.iter().enumerate() {
@@ -296,7 +317,9 @@ async fn prune_drive_folder(
         if created.with_timezone(&chrono::Utc) >= cutoff {
             continue;
         }
-        let Some(id) = f.get("id").and_then(|v| v.as_str()) else { continue };
+        let Some(id) = f.get("id").and_then(|v| v.as_str()) else {
+            continue;
+        };
         let del = http
             .delete(format!("{DRIVE_FILES_URL}/{id}?supportsAllDrives=true"))
             .bearer_auth(token)

@@ -36,7 +36,9 @@ const W_CREATE: &str = "/v1/admin/backups/create";
 const W_VERIFY: &str = "/v1/admin/backups/verify";
 
 /// Extensions the panel recognises as a backup file.
-const BACKUP_EXTS: &[&str] = &[".dump", ".sql", ".json.gz", ".json", ".gz", ".db", ".sqlite", ".back"];
+const BACKUP_EXTS: &[&str] = &[
+    ".dump", ".sql", ".json.gz", ".json", ".gz", ".db", ".sqlite", ".back",
+];
 const NAME_MAX: usize = 120;
 
 fn is_backup_name(name: &str) -> bool {
@@ -70,7 +72,9 @@ async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respons
         Err(e) => return json_status(500, json!({ "error": format!("read backup dir: {e}") })),
     };
     while let Ok(Some(ent)) = rd.next_entry().await {
-        let Ok(ft) = ent.file_type().await else { continue };
+        let Ok(ft) = ent.file_type().await else {
+            continue;
+        };
         if !ft.is_file() {
             continue;
         }
@@ -78,7 +82,9 @@ async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respons
         if !is_backup_name(&name) {
             continue;
         }
-        let Ok(md) = ent.metadata().await else { continue };
+        let Ok(md) = ent.metadata().await else {
+            continue;
+        };
         let created = md
             .modified()
             .ok()
@@ -97,7 +103,13 @@ async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Respons
         .collect();
     let mut integrity: serde_json::Map<String, Value> = serde_json::Map::new();
     if !dumps.is_empty() {
-        if let Ok(w) = post_mining(&state.cfg, &state.http, W_VERIFY, &json!({ "files": dumps })).await
+        if let Ok(w) = post_mining(
+            &state.cfg,
+            &state.http,
+            W_VERIFY,
+            &json!({ "files": dumps }),
+        )
+        .await
         {
             if let Some(map) = w.body.get("results").and_then(Value::as_object) {
                 integrity = map.clone();
@@ -126,7 +138,10 @@ async fn create(
     if let Err(e) = require_admin(&state, &headers, &Method::POST, P_CREATE).await {
         return e;
     }
-    let name = body.get("name").and_then(Value::as_str).unwrap_or("manual_backup");
+    let name = body
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("manual_backup");
     forward_mining(&state, W_CREATE, json!({ "name": name })).await
 }
 
@@ -187,10 +202,7 @@ async fn download(
 
 /// Kept only so a stale client that still POSTs here gets a clear 501 instead of
 /// a confusing SPA fallback.
-async fn restore_not_supported(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-) -> Response {
+async fn restore_not_supported(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
     if let Err(e) = require_admin(&state, &headers, &Method::POST, "/api/admin/restore").await {
         return e;
     }

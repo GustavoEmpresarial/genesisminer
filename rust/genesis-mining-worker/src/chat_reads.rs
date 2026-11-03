@@ -5,23 +5,23 @@
 
 use deadpool_postgres::Pool;
 use genesis_core::gerente::ACCOUNT_MANAGER_STATUS_ACTIVE;
-use genesis_core::time::MS_PER_HOUR;
+use genesis_core::time::MS_PER_DAY;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::chat_writes::{
-    i64_col, map_chat_row, parse_message_id, user_can_access_chat_channel, ChatMessageRow,
-    ChatWriteError, CHAT_SELECT_COLS,
+    chat_channel_uses_message_ttl, i64_col, map_chat_row, normalize_chat_channel, parse_message_id,
+    user_can_access_chat_channel, ChatMessageRow, ChatWriteError, CHAT_SELECT_COLS,
 };
 
 /// Node `CHAT_HISTORY_DEFAULT`.
 const CHAT_HISTORY_DEFAULT: i64 = 60;
 /// Node `CHAT_HISTORY_MAX`.
 const CHAT_HISTORY_MAX: i64 = 100;
-/// Node `CHAT_MESSAGE_TTL_HOURS`.
-const CHAT_MESSAGE_TTL_HOURS: u64 = 1;
+/// Retenção mínima do chat global (pedido ops: ≥90 dias).
+const CHAT_MESSAGE_TTL_DAYS: u64 = 90;
 /// Node `CHAT_MESSAGE_TTL_MS`.
-const CHAT_MESSAGE_TTL_MS: i64 = (CHAT_MESSAGE_TTL_HOURS * MS_PER_HOUR) as i64;
+const CHAT_MESSAGE_TTL_MS: i64 = (CHAT_MESSAGE_TTL_DAYS * MS_PER_DAY) as i64;
 /// Node `MENTION_SEARCH_DEFAULT_LIMIT`.
 const MENTION_SEARCH_DEFAULT_LIMIT: i64 = 8;
 /// Node `MENTION_SEARCH_MAX_LIMIT`.
@@ -37,7 +37,7 @@ const BLOCKED_FLAG: i32 = 1;
 
 const _: () = assert!(CHAT_HISTORY_DEFAULT == 60);
 const _: () = assert!(CHAT_HISTORY_MAX == 100);
-const _: () = assert!(CHAT_MESSAGE_TTL_MS == 3_600_000);
+const _: () = assert!(CHAT_MESSAGE_TTL_MS == 7_776_000_000);
 const _: () = assert!(MENTION_SEARCH_DEFAULT_LIMIT == 8);
 const _: () = assert!(MENTION_SEARCH_MAX_LIMIT == 10);
 const _: () = assert!(MENTION_RESOLVE_MAX_ROWS == 20);
@@ -229,30 +229,45 @@ pub async fn run_chat_history(
     pool: &Pool,
     req: ChatHistoryRequest,
 ) -> Result<ChatHistoryResponse, ChatWriteError> {
-    let channel = req.channel.trim();
+    let channel = normalize_chat_channel(req.channel.trim());
     if channel.is_empty() {
         return Err(ChatWriteError::validation("Invalid channel."));
     }
     let limit = clamp_limit(req.limit, CHAT_HISTORY_DEFAULT, CHAT_HISTORY_MAX);
     let now_ms = req.now_ms.unwrap_or_else(current_unix_ms);
-    let cutoff = now_ms - CHAT_MESSAGE_TTL_MS;
     let client = pool
         .get()
         .await
         .map_err(|e| ChatWriteError::internal(e.to_string()))?;
-    let sql = format!(
-        "SELECT {CHAT_SELECT_COLS}
+    let rows = if chat_channel_uses_message_ttl(&channel) {
+        let cutoff = now_ms - CHAT_MESSAGE_TTL_MS;
+        let sql = format!(
+            "SELECT {CHAT_SELECT_COLS}
      FROM chat_messages
      WHERE channel = $1
        AND deleted_at IS NULL
        AND created_at >= $2
      ORDER BY created_at DESC, id DESC
      LIMIT $3"
-    );
-    let rows = client
-        .query(&sql, &[&channel, &cutoff, &limit])
-        .await
-        .map_err(|e| ChatWriteError::internal(e.to_string()))?;
+        );
+        client
+            .query(&sql, &[&channel, &cutoff, &limit])
+            .await
+            .map_err(|e| ChatWriteError::internal(e.to_string()))?
+    } else {
+        let sql = format!(
+            "SELECT {CHAT_SELECT_COLS}
+     FROM chat_messages
+     WHERE channel = $1
+       AND deleted_at IS NULL
+     ORDER BY created_at DESC, id DESC
+     LIMIT $2"
+        );
+        client
+            .query(&sql, &[&channel, &limit])
+            .await
+            .map_err(|e| ChatWriteError::internal(e.to_string()))?
+    };
     let mapped: Vec<ChatMessageRow> = rows.iter().map(map_chat_row).collect::<Result<_, _>>()?;
     Ok(ChatHistoryResponse {
         ok: true,
@@ -597,7 +612,14 @@ mod tests {
 
     #[test]
     fn ttl_matches_node_one_hour() {
-        assert_eq!(CHAT_MESSAGE_TTL_MS, 3_600_000);
+        assert_eq!(CHAT_MESSAGE_TTL_MS, 7_776_000_000);
+    }
+
+    #[test]
+    fn ttl_applies_only_to_global_channel() {
+        assert!(chat_channel_uses_message_ttl("global"));
+        assert!(chat_channel_uses_message_ttl(""));
+        assert!(!chat_channel_uses_message_ttl("am:1:2"));
     }
 
     #[test]
