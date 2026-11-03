@@ -42,8 +42,7 @@ Ordem: `core/` e `shared/` primeiro (fundação), depois `modules/` por domínio
 
 ## `server/modules/` (por domínio)
 
-Lista completa de origem em [../../architecture/modules/README.md](../../architecture/modules/README.md)
-e mapeamento pasta-a-pasta em `../../../ESTRUTURA.txt`.
+Lista completa de origem em [../../architecture/modules/README.md](../../architecture/modules/README.md).
 
 - [x] `modules/auth/config.ts` ← `src/auth/config.ts`
 - [x] `modules/auth/cookies.ts` ← `src/auth/cookies.ts`
